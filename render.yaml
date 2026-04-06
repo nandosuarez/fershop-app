@@ -1,0 +1,25 @@
+databases:
+  - name: fershop-postgres
+    plan: basic-256mb
+    databaseName: fershop_app
+
+services:
+  - type: web
+    name: fershop-app
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: FERSHOP_HOST
+        value: 0.0.0.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fershop-postgres
+          property: connectionString
+      - key: FERSHOP_DEFAULT_ADMIN_PASSWORD
+        sync: false
