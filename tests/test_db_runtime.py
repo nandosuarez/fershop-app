@@ -1,7 +1,9 @@
 import os
+import sqlite3
 import unittest
 from unittest.mock import patch
 
+import fershop_calculadora.database as database
 from fershop_calculadora.db_runtime import CompatConnection, CompatRow, is_postgres_enabled
 
 
@@ -74,6 +76,35 @@ class DbRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(raw_connection.cursor_instance.executed_params, ("fershop", 1))
         self.assertEqual(row["name"], "FerShop")
+
+    def test_init_db_keeps_sqlite_reinitializable(self) -> None:
+        original_connect = database._connect
+        original_initialized_targets = dict(database._INITIALIZED_TARGETS)
+        database._INITIALIZED_TARGETS.clear()
+
+        db_uri = f"file:test-init-cache-{id(self)}?mode=memory&cache=shared"
+        keepalive = sqlite3.connect(db_uri, uri=True)
+        connect_calls = 0
+
+        def _memory_connect() -> sqlite3.Connection:
+            nonlocal connect_calls
+            connect_calls += 1
+            connection = sqlite3.connect(db_uri, uri=True)
+            connection.execute("PRAGMA journal_mode=MEMORY")
+            connection.execute("PRAGMA temp_store=MEMORY")
+            return connection
+
+        try:
+            database._connect = _memory_connect
+            database.init_db()
+            database.init_db()
+        finally:
+            database._connect = original_connect
+            database._INITIALIZED_TARGETS.clear()
+            database._INITIALIZED_TARGETS.update(original_initialized_targets)
+            keepalive.close()
+
+        self.assertEqual(connect_calls, 2)
 
 
 if __name__ == "__main__":

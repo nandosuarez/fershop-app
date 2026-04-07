@@ -8,6 +8,7 @@ const clientSelect = document.getElementById("client-select");
 const addProductButton = document.getElementById("add-product-button");
 const addQuoteItemButton = document.getElementById("add-quote-item-button");
 const quoteLineItemsContainer = document.getElementById("quote-line-items");
+const quoteLiveSummaryContainer = document.getElementById("quote-live-summary");
 const quoteModeBadge = document.getElementById("quote-mode-badge");
 const cancelEditButton = document.getElementById("cancel-edit-button");
 const resultsContainer = document.getElementById("results");
@@ -31,6 +32,9 @@ const clientDetailClearButton = document.getElementById("client-detail-clear");
 const productDetailSection = document.getElementById("product-detail-section");
 const productDetailContainer = document.getElementById("product-detail");
 const productDetailClearButton = document.getElementById("product-detail-clear");
+const moduleMenu = document.getElementById("module-menu");
+const menuToggleButton = document.getElementById("menu-toggle-button");
+const menuOverlay = document.getElementById("menu-overlay");
 const modulePages = Array.from(document.querySelectorAll("[data-module-page]"));
 const moduleLinks = Array.from(document.querySelectorAll("[data-module-link]"));
 const expenseForm = document.getElementById("expense-form");
@@ -86,6 +90,7 @@ const state = {
   dashboard: null,
   followup: null,
   activeModule: "dashboard",
+  menuOpen: false,
   clientDetail: null,
   productDetail: null,
   pendingQuoteSeedId: null,
@@ -141,6 +146,7 @@ const dateFormatter = new Intl.DateTimeFormat("es-CO", {
 const shortDateFormatter = new Intl.DateTimeFormat("es-CO", {
   dateStyle: "medium",
 });
+const COMPACT_NAV_BREAKPOINT = 1100;
 
 function normalizeAdminCopy() {
   const adminSection = document.getElementById("administracion");
@@ -197,6 +203,28 @@ function setText(element, value) {
   }
 }
 
+function isCompactNavigation() {
+  return window.innerWidth <= COMPACT_NAV_BREAKPOINT;
+}
+
+function setMenuOpen(isOpen) {
+  const nextState = Boolean(isOpen) && isCompactNavigation();
+  state.menuOpen = nextState;
+  document.body.classList.toggle("menu-open", nextState);
+  moduleMenu?.classList.toggle("is-open", nextState);
+  menuOverlay?.classList.toggle("is-visible", nextState);
+  menuToggleButton?.classList.toggle("is-active", nextState);
+  if (menuToggleButton) {
+    menuToggleButton.setAttribute("aria-expanded", nextState ? "true" : "false");
+  }
+}
+
+function syncResponsiveShell() {
+  if (!isCompactNavigation() && state.menuOpen) {
+    setMenuOpen(false);
+  }
+}
+
 const MODULE_ALIASES = {
   dashboard: "dashboard",
   seguimiento: "seguimiento",
@@ -230,6 +258,10 @@ function setActiveModule(moduleKey) {
   moduleLinks.forEach((link) => {
     link.classList.toggle("is-active", link.dataset.moduleLink === moduleKey);
   });
+
+  if (state.menuOpen) {
+    setMenuOpen(false);
+  }
 }
 
 function syncModuleFromHash() {
@@ -467,12 +499,14 @@ function invalidateQuoteCalculation() {
   state.quoteCalculationRequestId += 1;
   state.lastPayload = null;
   state.lastResult = null;
+  renderQuoteLiveSummary();
   syncSaveButtonState();
 }
 
 function clearClientFromQuote() {
   setQuoteField("client_id", "");
   setQuoteField("client_name", "");
+  renderQuoteLiveSummary();
 }
 
 function clearProductFromQuote() {
@@ -485,6 +519,7 @@ function clearProductFromQuote() {
   if (productSelect) {
     productSelect.value = "";
   }
+  renderQuoteLiveSummary();
 }
 
 function syncSaveButtonState() {
@@ -508,6 +543,7 @@ function setQuoteItemEditorState(index = null) {
         ? "Agregar producto a la cotizacion"
         : "Actualizar producto en la cotizacion";
   }
+  renderQuoteLiveSummary();
 }
 
 function loadProductIntoCalculator(product) {
@@ -532,6 +568,7 @@ function loadProductIntoCalculator(product) {
   if (!quoteElements.namedItem("notes").value.trim() && product.notes) {
     setQuoteField("notes", product.notes);
   }
+  renderQuoteLiveSummary();
   scheduleQuoteCalculation({ immediate: true });
 }
 
@@ -600,6 +637,7 @@ function normalizeStoredQuoteItem(item) {
   };
 }
 
+/* Duplicate legacy renderer kept commented out; the later definition is the active one.
 function renderQuoteLineItems() {
   if (!quoteLineItemsContainer) {
     return;
@@ -608,6 +646,7 @@ function renderQuoteLineItems() {
   if (!state.quoteLineItems.length) {
     quoteLineItemsContainer.className = "catalog-empty";
     quoteLineItemsContainer.innerHTML = "<p>Aun no has agregado productos a esta cotizacion.</p>";
+    renderQuoteLiveSummary();
     return;
   }
 
@@ -652,6 +691,7 @@ function renderQuoteLineItems() {
     )
     .join("");
 }
+*/
 
 function syncQuoteBuilderState({ scheduleCalculation = true } = {}) {
   syncQuoteLineItemTotals();
@@ -1130,6 +1170,57 @@ function productLabel(product) {
   return reference ? `${productName} (${reference})` : productName;
 }
 
+function renderQuoteLiveSummary() {
+  if (!quoteLiveSummaryContainer) {
+    return;
+  }
+
+  const clientName = String(quoteElements.namedItem("client_name")?.value || clientSelect?.value || "").trim();
+  const productName = String(
+    quoteElements.namedItem("product_name")?.value || productSelect?.value || ""
+  ).trim();
+  const totalSale = state.quoteLineItems.reduce((total, item) => total + Number(item.sale_price_cop || 0), 0);
+  const finalData = state.lastResult?.final || null;
+  const workingValue = finalData ? formatCop(finalData.sale_price_cop) : "Sin calcular";
+  const itemsLabel = state.quoteLineItems.length
+    ? `${state.quoteLineItems.length} item${state.quoteLineItems.length === 1 ? "" : "s"}`
+    : "Sin items";
+  const editorLabel =
+    state.editingQuoteItemIndex === null
+      ? "Producto actual"
+      : `Editando item ${state.editingQuoteItemIndex + 1}`;
+
+  if (!clientName && !productName && !state.quoteLineItems.length && !finalData) {
+    quoteLiveSummaryContainer.className = "quote-live-summary quote-live-summary-empty";
+    quoteLiveSummaryContainer.innerHTML =
+      "<p>Selecciona cliente y producto para empezar a cotizar con mas rapidez.</p>";
+    return;
+  }
+
+  quoteLiveSummaryContainer.className = "quote-live-summary";
+  quoteLiveSummaryContainer.innerHTML = `
+    <div class="quote-live-summary-grid">
+      <article class="quote-live-summary-card">
+        <span>Cliente</span>
+        <strong>${escapeHtml(clientName || "Sin seleccionar")}</strong>
+      </article>
+      <article class="quote-live-summary-card">
+        <span>${escapeHtml(editorLabel)}</span>
+        <strong>${escapeHtml(productName || "Carga un producto")}</strong>
+      </article>
+      <article class="quote-live-summary-card">
+        <span>Calculo actual</span>
+        <strong>${workingValue}</strong>
+      </article>
+      <article class="quote-live-summary-card">
+        <span>Cotizacion armada</span>
+        <strong>${escapeHtml(itemsLabel)}</strong>
+        <small>${state.quoteLineItems.length ? formatCop(totalSale) : "Aun no hay total acumulado"}</small>
+      </article>
+    </div>
+  `;
+}
+
 function updateExpenseCategoryOptions(items) {
   const currentValue = expenseCategorySelect.value;
   const options = ['<option value="">Selecciona una categoria</option>'];
@@ -1276,6 +1367,7 @@ function renderResults(result) {
       </section>
     </div>
   `;
+  renderQuoteLiveSummary();
 }
 
 function renderHistory(items) {
@@ -2632,6 +2724,38 @@ function buildTravelTransportOptions(selectedValue) {
     .join("");
 }
 
+function describeOrderNextAction(order) {
+  const balanceDue = Number(order.balance_due_cop || 0);
+  const isTravelOrder = order.snapshot?.input?.purchase_type === "travel";
+  const routeUndecided = isTravelOrder && (order.travel_transport_type || "undecided") === "undecided";
+
+  if (order.status_key === "client_notified" && balanceDue > 0) {
+    return {
+      title: "Cobrar segundo pago",
+      detail: "El cliente ya fue notificado y todavia tiene saldo pendiente.",
+    };
+  }
+
+  if (routeUndecided) {
+    return {
+      title: "Definir ruta del viaje",
+      detail: "Marca si este producto llega por casillero o en la maleta.",
+    };
+  }
+
+  if (order.next_status_label) {
+    return {
+      title: `Avanzar a ${order.next_status_label}`,
+      detail: `Estado actual: ${order.status_label}.`,
+    };
+  }
+
+  return {
+    title: "Flujo completado",
+    detail: "Esta compra ya completo el ciclo operativo.",
+  };
+}
+
 function renderOrders(items) {
   const visibleItems = items.filter((item) => item.status_key !== "cycle_closed");
   if (!visibleItems.length) {
@@ -2641,10 +2765,37 @@ function renderOrders(items) {
     return;
   }
 
+  const pendingCollectionCount = visibleItems.filter(
+    (item) => item.status_key === "client_notified" && Number(item.balance_due_cop || 0) > 0
+  ).length;
+  const travelRoutePendingCount = visibleItems.filter(
+    (item) =>
+      item.snapshot?.input?.purchase_type === "travel" &&
+      (item.travel_transport_type || "undecided") === "undecided"
+  ).length;
+  const readyToAdvanceCount = visibleItems.filter(
+    (item) =>
+      item.next_status_key &&
+      !(item.next_status_key === "second_payment_received" && Number(item.balance_due_cop || 0) > 0)
+  ).length;
+  const activeSalesTotal = visibleItems.reduce((total, item) => total + Number(item.sale_price_cop || 0), 0);
+
   ordersListContainer.className = "orders-list";
-  ordersListContainer.innerHTML = visibleItems
-    .map(
-      (order) => `
+  ordersListContainer.innerHTML = `
+    <section class="orders-board-summary">
+      ${makeMetricCard("Compras activas", String(visibleItems.length), "Pedidos abiertos que debes mover en operacion")}
+      ${makeMetricCard("Por cobrar", String(pendingCollectionCount), "Clientes notificados y pendientes de segundo pago")}
+      ${makeMetricCard("Ruta por definir", String(travelRoutePendingCount), "Compras en viaje que aun no tienen casillero o maleta")}
+      ${makeMetricCard("Listas para avanzar", String(readyToAdvanceCount), "Pedidos que ya pueden pasar al siguiente estado")}
+      ${makeMetricCard("Venta activa", formatCop(activeSalesTotal), "Valor comprometido en compras aun abiertas")}
+    </section>
+    <div class="orders-card-grid">
+      ${visibleItems
+    .map((order) => {
+      const nextAction = describeOrderNextAction(order);
+      const secondPaymentBlocked =
+        order.next_status_key === "second_payment_received" && Number(order.balance_due_cop || 0) > 0;
+      return `
         <article class="order-card">
           <div class="order-card-top">
             <div>
@@ -2652,6 +2803,12 @@ function renderOrders(items) {
               <p>${escapeHtml(order.client_name || "Cliente no registrado")} · Desde cotización #${order.quote_id}</p>
             </div>
             <span class="order-status-badge">${escapeHtml(order.status_label)}</span>
+          </div>
+
+          <div class="order-next-step-card">
+            <span>Proxima accion</span>
+            <strong>${escapeHtml(nextAction.title)}</strong>
+            <small>${escapeHtml(nextAction.detail)}</small>
           </div>
 
           <div class="order-metrics">
@@ -2749,11 +2906,7 @@ function renderOrders(items) {
                     type="button"
                     data-advance-order-status="${order.id}"
                     data-next-status-key="${escapeHtml(order.next_status_key)}"
-                    ${
-                      order.next_status_key === "second_payment_received" && order.balance_due_cop > 0
-                        ? "disabled"
-                        : ""
-                    }
+                    ${secondPaymentBlocked ? "disabled" : ""}
                   >
                     Avanzar a ${escapeHtml(order.next_status_label)}
                   </button>`
@@ -2775,9 +2928,11 @@ function renderOrders(items) {
               .join("")}
           </div>
         </article>
-      `
-    )
-    .join("");
+      `;
+    })
+    .join("")}
+    </div>
+  `;
 }
 
 function clearPendingClientSelection() {
@@ -2871,6 +3026,7 @@ function resetQuoteComposerState() {
   resultsContainer.innerHTML =
     "<p>Cuando calcules, aqui veras el costo real, el precio sugerido y el escenario final.</p>";
   statusMessage.textContent = "Volviste al modo de nueva cotizacion.";
+  renderQuoteLiveSummary();
   invalidateQuoteCalculation();
 }
 
@@ -2916,6 +3072,7 @@ function applyClientToQuote(client) {
   clientSelect.value = clientSearchLabel(client);
   setQuoteField("client_id", client.id);
   setQuoteField("client_name", client.name);
+  renderQuoteLiveSummary();
   scheduleQuoteCalculation();
 }
 
@@ -3043,6 +3200,7 @@ function renderQuoteLineItems() {
       )
       .join("")}
   `;
+  renderQuoteLiveSummary();
 }
 
 function removeQuoteLineItem(index) {
@@ -3107,6 +3265,7 @@ function loadQuoteItemIntoCalculator(index) {
     invalidateQuoteCalculation();
     scheduleQuoteCalculation({ immediate: true });
   }
+  renderQuoteLiveSummary();
   syncSaveButtonState();
 }
 
@@ -4510,9 +4669,11 @@ async function logout() {
 async function initApp() {
   normalizeAdminCopy();
   syncModuleFromHash();
+  syncResponsiveShell();
   syncPurchaseTypeUi();
   resetQuoteEditingState();
   renderQuoteLineItems();
+  renderQuoteLiveSummary();
   setupAutocomplete();
   await loadSession();
   state.dashboardPeriod = dashboardPeriodSelect.value || "daily";
@@ -4529,6 +4690,25 @@ async function initApp() {
     loadExpenses(),
   ]);
 }
+
+if (menuToggleButton) {
+  menuToggleButton.addEventListener("click", () => {
+    setMenuOpen(!state.menuOpen);
+  });
+}
+
+if (menuOverlay) {
+  menuOverlay.addEventListener("click", () => {
+    setMenuOpen(false);
+  });
+}
+
+window.addEventListener("resize", syncResponsiveShell);
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && state.menuOpen) {
+    setMenuOpen(false);
+  }
+});
 
 window.addEventListener("hashchange", syncModuleFromHash);
 

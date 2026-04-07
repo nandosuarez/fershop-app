@@ -22,6 +22,15 @@
           </div>
         </div>
         <div class="brand-actions">
+          <button
+            id="menu-toggle-button"
+            class="secondary nav-toggle-button"
+            type="button"
+            aria-controls="module-menu"
+            aria-expanded="false"
+          >
+            Modulos
+          </button>
           <div class="brand-pill">Sesion activa</div>
           <div class="session-chip">
             <span data-current-user>Usuario</span>
@@ -30,8 +39,15 @@
         </div>
       </header>
 
+      <button
+        id="menu-overlay"
+        class="menu-overlay"
+        type="button"
+        aria-label="Cerrar menu"
+      ></button>
+
       <div class="workspace-shell">
-        <aside class="module-menu" aria-label="Modulos">
+        <aside id="module-menu" class="module-menu" aria-label="Modulos">
           <div class="menu-group">
             <p class="menu-group-title">Vision general</p>
             <a class="module-link is-active" data-module-link="dashboard" href="#dashboard">
@@ -230,8 +246,8 @@
               </p>
             </header>
 
-            <section id="cotizacion" class="layout">
-              <section class="panel form-panel">
+            <section id="cotizacion" class="layout quote-operations-layout">
+              <section class="panel form-panel quote-form-panel">
                 <div class="panel-header">
                   <h2>Datos de la cotizacion</h2>
                   <p>Selecciona cliente y producto del catalogo. La cotizacion se recalcula sola mientras ajustas valores.</p>
@@ -282,6 +298,10 @@
                       />
                     </label>
                   </div>
+
+                  <section id="quote-live-summary" class="quote-live-summary quote-live-summary-empty">
+                    <p>Selecciona cliente y producto para empezar a cotizar con mas rapidez.</p>
+                  </section>
 
                   <section class="quote-items-panel">
                     <div class="panel-header panel-header-inline">
@@ -411,7 +431,7 @@
                     ></textarea>
                   </label>
 
-                  <div class="actions">
+                  <div class="actions quote-actions-bar">
                     <button type="button" id="add-quote-item-button">Agregar producto a la cotizacion</button>
                     <button type="submit" class="secondary">Recalcular manual</button>
                     <button type="button" id="save-button" class="secondary" disabled>
@@ -421,7 +441,7 @@
                 </form>
               </section>
 
-              <section class="panel result-panel">
+              <section class="panel result-panel quote-result-panel">
                 <div class="panel-header">
                   <h2>Resultado</h2>
                   <p id="status-message">Ajusta los valores y la cotizacion se actualizara automaticamente.</p>
