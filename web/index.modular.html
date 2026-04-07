@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Portal comercial</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-brand">
+        <div class="brand-lockup">
+          <img
+            class="brand-logo"
+            data-company-logo
+            src="/static/assets/fershop-logo-crop.jpg"
+            alt="Logo de la empresa"
+          />
+          <div class="brand-copy">
+            <p class="brand-kicker" data-company-brand>Portal comercial</p>
+            <p class="brand-subtitle">Cotizaciones elegantes para importacion y cierre comercial</p>
+          </div>
+        </div>
+        <div class="brand-actions">
+          <div class="brand-pill">Sesion activa</div>
+          <div class="session-chip">
+            <span data-current-user>Usuario</span>
+            <button id="logout-button" class="secondary" type="button">Salir</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="workspace-shell">
+        <aside class="module-menu" aria-label="Modulos">
+          <div class="menu-group">
+            <p class="menu-group-title">Vision general</p>
+            <a class="module-link is-active" data-module-link="dashboard" href="#dashboard">
+              <strong>Dashboard</strong>
+              <span>Ventas, cartera, gastos y radar comercial</span>
+            </a>
+          </div>
+
+          <div class="menu-group">
+            <p class="menu-group-title">Operacion comercial</p>
+            <a class="module-link" data-module-link="comercial" href="#comercial">
+              <strong>Cotizaciones y catalogo</strong>
+              <span>Cotiza, guarda historial y administra clientes y productos</span>
+            </a>
+          </div>
+
+          <div class="menu-group">
+            <p class="menu-group-title">Operacion de compra</p>
+            <a class="module-link" data-module-link="compras" href="#compras">
+              <strong>Compras y seguimiento</strong>
+              <span>Controla cada pedido desde la confirmacion hasta el cierre</span>
+            </a>
+          </div>
+
+          <div class="menu-group">
+            <p class="menu-group-title">Finanzas</p>
+            <a class="module-link" data-module-link="gastos" href="#gastos">
+              <strong>Gastos del negocio</strong>
+              <span>Registra salidas de dinero y alimenta el dashboard</span>
+            </a>
+          </div>
+
+          <div class="menu-group">
+            <p class="menu-group-title">Configuracion</p>
+            <a class="module-link" data-module-link="administracion" href="#administracion">
+              <strong>Administracion</strong>
+              <span>Define estados y orden del flujo operativo</span>
+            </a>
+          </div>
+        </aside>
+
+        <main class="workspace-content">
+          <section id="dashboard" class="module-page is-active" data-module-page="dashboard">
+            <header class="hero">
+              <div>
+                <p class="eyebrow">Empresa activa</p>
+                <h1>Panel gerencial para dirigir la operacion completa</h1>
+                <p class="hero-copy">
+                  Aqui ves el negocio como un todo: ventas, recaudo, cartera, gastos y el
+                  comportamiento de clientes y productos.
+                </p>
+              </div>
+              <div class="hero-card">
+                <span>Empresa autenticada</span>
+                <strong>Operacion independiente</strong>
+                <p>
+                  Cada cuenta entra con su usuario, su informacion, su logo y su flujo
+                  comercial totalmente separado.
+                </p>
+              </div>
+            </header>
+
+            <section class="dashboard-layout">
+              <section class="panel dashboard-panel">
+                <div class="panel-header">
+                  <div>
+                    <h2>Dashboard gerencial</h2>
+                    <p>Resumen de ventas, recaudo, cartera, utilidad y gasto.</p>
+                  </div>
+                  <label class="dashboard-filter">
+                    <span>Periodo</span>
+                    <select id="dashboard-period">
+                      <option value="daily">Diario</option>
+                      <option value="weekly">Semanal</option>
+                      <option value="biweekly">Quincenal</option>
+                      <option value="monthly">Mensual</option>
+                      <option value="quarterly">Trimestral</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div id="dashboard-summary" class="results-empty">
+                  <p>Aqui veras el resumen financiero del negocio.</p>
+                </div>
+              </section>
+
+              <section class="panel dashboard-panel">
+                <div class="panel-header">
+                  <h2>Radar de gastos</h2>
+                  <p>Distribucion del gasto del periodo y movimientos recientes.</p>
+                </div>
+
+                <div id="dashboard-expenses" class="catalog-empty">
+                  <p>Aun no hay gasto suficiente para mostrar este radar.</p>
+                </div>
+              </section>
+
+              <section class="panel dashboard-panel">
+                <div class="panel-header">
+                  <h2>Pulso de clientes</h2>
+                  <p>Identifica quienes mas compran y quienes mantienen cartera abierta.</p>
+                </div>
+
+                <div id="dashboard-clients" class="catalog-empty">
+                  <p>Aun no hay suficiente informacion por cliente.</p>
+                </div>
+              </section>
+
+              <section class="panel dashboard-panel">
+                <div class="panel-header">
+                  <h2>Pulso de productos</h2>
+                  <p>Visualiza que referencias venden mas y cuales dejan mejor utilidad.</p>
+                </div>
+
+                <div id="dashboard-products" class="catalog-empty">
+                  <p>Aun no hay suficiente informacion por producto.</p>
+                </div>
+              </section>
+            </section>
+          </section>
+
+          <section id="comercial" class="module-page" data-module-page="comercial">
+            <header class="module-page-header">
+              <p class="module-page-kicker">Operacion comercial</p>
+              <h2>Cotizaciones, clientes y productos</h2>
+              <p>
+                En este modulo armas la cotizacion, revisas el historial y mantienes viva la
+                base comercial de clientes y productos.
+              </p>
+            </header>
+
+            <section id="cotizacion" class="layout">
+              <section class="panel form-panel">
+                <div class="panel-header">
+                  <h2>Datos de la cotizacion</h2>
+                  <p>Selecciona cliente y producto del catalogo, luego calcula.</p>
+                </div>
+
+                <form id="quote-form" class="quote-form">
+                  <input name="product_id" type="hidden" />
+                  <input name="client_id" type="hidden" />
+                  <input name="product_name" type="hidden" />
+                  <input name="client_name" type="hidden" />
+
+                  <div class="catalog-picker-row">
+                    <label>
+                      <span>Producto guardado</span>
+                      <select id="product-select" required>
+                        <option value="">Selecciona un producto del catalogo</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      <span>Cliente guardado</span>
+                      <select id="client-select" required>
+                        <option value="">Selecciona un cliente</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div class="field-grid">
+                    <label>
+                      <span>Precio USD neto</span>
+                      <input name="price_usd_net" type="number" min="0" step="0.01" value="75" required />
+                    </label>
+
+                    <label>
+                      <span>Tax USA %</span>
+                      <input name="tax_usa_percent" type="number" min="0" step="0.01" value="7" required />
+                    </label>
+
+                    <label>
+                      <span>Costo viaje USD</span>
+                      <input name="travel_cost_usd" type="number" min="0" step="0.01" value="0" required />
+                    </label>
+
+                    <label>
+                      <span>Envio casillero USD</span>
+                      <input name="locker_shipping_usd" type="number" min="0" step="0.01" value="9.5" required />
+                    </label>
+
+                    <label>
+                      <span>TRM COP por USD</span>
+                      <input name="exchange_rate_cop" type="number" min="1" step="1" value="3790" required />
+                    </label>
+
+                    <label>
+                      <span>Costos locales COP</span>
+                      <input name="local_costs_cop" type="number" min="0" step="1" value="0" required />
+                    </label>
+
+                    <label>
+                      <span>Margen deseado %</span>
+                      <input
+                        name="desired_margin_percent"
+                        type="number"
+                        min="0"
+                        max="99.99"
+                        step="0.01"
+                        value="30"
+                        required
+                      />
+                    </label>
+
+                    <label>
+                      <span>Anticipo cliente %</span>
+                      <input name="advance_percent" type="number" min="0" max="100" step="0.01" value="50" required />
+                    </label>
+
+                    <label>
+                      <span>Precio final negociado COP</span>
+                      <input name="final_sale_price_cop" type="number" min="0" step="1" placeholder="Opcional" />
+                    </label>
+
+                    <label>
+                      <span>Anticipo final pactado COP</span>
+                      <input name="final_advance_cop" type="number" min="0" step="1" placeholder="Opcional" />
+                    </label>
+                  </div>
+
+                  <label class="full-width">
+                    <span>Productos para PDF / WhatsApp</span>
+                    <textarea
+                      name="client_quote_items_text"
+                      rows="4"
+                      placeholder="Opcional. Escribe una linea por producto, por ejemplo:&#10;iPhone 15 Pro Max - $4.900.000 COP&#10;AirPods Pro - $1.350.000 COP"
+                    ></textarea>
+                  </label>
+
+                  <label class="full-width">
+                    <span>Observaciones</span>
+                    <textarea
+                      name="notes"
+                      rows="4"
+                      placeholder="Color, capacidad, proveedor, condiciones o cualquier detalle relevante."
+                    ></textarea>
+                  </label>
+
+                  <div class="actions">
+                    <button type="submit" class="primary">Calcular</button>
+                    <button type="button" id="save-button" class="secondary" disabled>
+                      Guardar cotizacion
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              <section class="panel result-panel">
+                <div class="panel-header">
+                  <h2>Resultado</h2>
+                  <p id="status-message">Usa los valores del formulario y pulsa calcular.</p>
+                </div>
+
+                <div id="results" class="results-empty">
+                  <p>Cuando calcules, aqui veras el costo real, el precio sugerido y el escenario final.</p>
+                </div>
+              </section>
+            </section>
+
+            <section id="historial" class="panel history-panel">
+              <div class="panel-header">
+                <h2>Historico reciente</h2>
+                <p>Desde aqui puedes descargar PDF o copiar un texto listo para WhatsApp.</p>
+              </div>
+              <div id="history" class="history-empty">
+                <p>Aun no hay cotizaciones guardadas.</p>
+              </div>
+            </section>
+
+            <section class="catalog-layout">
+              <section id="clientes" class="panel catalog-panel">
+                <div class="panel-header">
+                  <h2>Clientes</h2>
+                  <p>Crea tu base comercial y luego seleccionalos desde la calculadora.</p>
+                </div>
+
+                <form id="client-form" class="catalog-form">
+                  <div class="field-grid">
+                    <label>
+                      <span>Nombre</span>
+                      <input name="name" type="text" placeholder="Ej. Laura Ramirez" required />
+                    </label>
+
+                    <label>
+                      <span>Telefono</span>
+                      <input name="phone" type="text" placeholder="Ej. 3001234567" />
+                    </label>
+
+                    <label>
+                      <span>Email</span>
+                      <input name="email" type="email" placeholder="Opcional" />
+                    </label>
+
+                    <label>
+                      <span>Ciudad</span>
+                      <input name="city" type="text" placeholder="Ej. Bogota" />
+                    </label>
+
+                    <label>
+                      <span>Direccion</span>
+                      <input name="address" type="text" placeholder="Ej. Cra 15 # 93 - 40" />
+                    </label>
+
+                    <label>
+                      <span>Barrio / zona</span>
+                      <input name="neighborhood" type="text" placeholder="Ej. Chico, Laureles, Cedritos" />
+                    </label>
+
+                    <label>
+                      <span>Canal preferido</span>
+                      <input
+                        name="preferred_contact_channel"
+                        type="text"
+                        placeholder="Ej. WhatsApp, llamada, Instagram"
+                      />
+                    </label>
+
+                    <label>
+                      <span>Pago preferido</span>
+                      <input
+                        name="preferred_payment_method"
+                        type="text"
+                        placeholder="Ej. transferencia, efectivo, anticipo 50%"
+                      />
+                    </label>
+                  </div>
+
+                  <label class="full-width">
+                    <span>Intereses del cliente</span>
+                    <textarea
+                      name="interests"
+                      rows="3"
+                      placeholder="Ej. Apple, gama premium, regalos, combos, tecnologia, accesorios"
+                    ></textarea>
+                  </label>
+
+                  <label class="full-width">
+                    <span>Notas del cliente</span>
+                    <textarea name="notes" rows="3" placeholder="Preferencias, tiempos, historial o acuerdos."></textarea>
+                  </label>
+
+                  <div class="actions">
+                    <button type="submit" class="primary">Guardar cliente</button>
+                  </div>
+                </form>
+
+                <div id="clients-list" class="catalog-empty">
+                  <p>Aun no hay clientes guardados.</p>
+                </div>
+              </section>
+
+              <section id="productos" class="panel catalog-panel">
+                <div class="panel-header">
+                  <h2>Productos</h2>
+                  <p>Guarda costos base para cotizar mas rapido sin volver a escribir todo.</p>
+                </div>
+
+                <form id="product-form" class="catalog-form">
+                  <div class="field-grid">
+                    <label>
+                      <span>Nombre</span>
+                      <input name="name" type="text" placeholder="Ej. iPhone 15 Pro Max" required />
+                    </label>
+
+                    <label>
+                      <span>Referencia</span>
+                      <input name="reference" type="text" placeholder="Opcional" />
+                    </label>
+
+                    <label>
+                      <span>Precio USD neto</span>
+                      <input name="price_usd_net" type="number" min="0" step="0.01" required />
+                    </label>
+
+                    <label>
+                      <span>Tax USA %</span>
+                      <input name="tax_usa_percent" type="number" min="0" step="0.01" value="0" required />
+                    </label>
+
+                    <label>
+                      <span>Costo viaje USD</span>
+                      <input name="travel_cost_usd" type="number" min="0" step="0.01" value="0" required />
+                    </label>
+
+                    <label>
+                      <span>Envio casillero USD</span>
+                      <input name="locker_shipping_usd" type="number" min="0" step="0.01" value="0" required />
+                    </label>
+
+                    <label>
+                      <span>Costos locales COP</span>
+                      <input name="local_costs_cop" type="number" min="0" step="1" value="0" required />
+                    </label>
+                  </div>
+
+                  <label class="full-width">
+                    <span>Notas del producto</span>
+                    <textarea
+                      name="notes"
+                      rows="3"
+                      placeholder="Capacidad, color, proveedor, version o consideraciones."
+                    ></textarea>
+                  </label>
+
+                  <div class="actions">
+                    <button type="submit" class="primary">Guardar producto</button>
+                  </div>
+                </form>
+
+                <div id="products-list" class="catalog-empty">
+                  <p>Aun no hay productos guardados.</p>
+                </div>
+              </section>
+            </section>
+          </section>
+
+          <section id="compras" class="module-page" data-module-page="compras">
+            <header class="module-page-header">
+              <p class="module-page-kicker">Operacion de compra</p>
+              <h2>Compras y seguimiento</h2>
+              <p>
+                Convierte una cotizacion confirmada en compra y sigue el pedido por estados hasta
+                cerrar el ciclo completo.
+              </p>
+            </header>
+
+            <section class="panel purchases-panel">
+              <div class="panel-header">
+                <h2>Seguimiento operativo</h2>
+                <p>Solo veras aqui las compras activas para trabajar el dia a dia.</p>
+              </div>
+              <div id="orders-list" class="catalog-empty">
+                <p>Aun no hay compras abiertas.</p>
+              </div>
+            </section>
+          </section>
+
+          <section id="gastos" class="module-page" data-module-page="gastos">
+            <header class="module-page-header">
+              <p class="module-page-kicker">Finanzas</p>
+              <h2>Gastos del negocio</h2>
+              <p>
+                Registra viajes, envios, bolsas, publicidad, marca y cualquier otro gasto real del
+                negocio.
+              </p>
+            </header>
+
+            <section class="catalog-layout expenses-layout">
+              <section class="panel catalog-panel">
+                <div class="panel-header">
+                  <h2>Registrar gasto</h2>
+                  <p>Todo gasto que registres aqui alimenta el dashboard gerencial.</p>
+                </div>
+
+                <form id="expense-form" class="catalog-form">
+                  <div class="field-grid">
+                    <label>
+                      <span>Fecha del gasto</span>
+                      <input name="expense_date" type="date" required />
+                    </label>
+
+                    <label>
+                      <span>Categoria</span>
+                      <select id="expense-category" name="category_key" required>
+                        <option value="">Selecciona una categoria</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      <span>Concepto</span>
+                      <input name="concept" type="text" placeholder="Ej. Hotel, pasaje, campana" required />
+                    </label>
+
+                    <label>
+                      <span>Valor COP</span>
+                      <input name="amount_cop" type="number" min="1" step="1" placeholder="Ej. 250000" required />
+                    </label>
+                  </div>
+
+                  <label class="full-width">
+                    <span>Notas</span>
+                    <textarea
+                      name="notes"
+                      rows="3"
+                      placeholder="Proveedor, motivo del gasto o contexto importante."
+                    ></textarea>
+                  </label>
+
+                  <div class="actions">
+                    <button type="submit" class="primary">Registrar gasto</button>
+                  </div>
+                </form>
+              </section>
+
+              <section class="panel catalog-panel">
+                <div class="panel-header">
+                  <h2>Ultimos gastos</h2>
+                  <p>Control rapido del dinero que va saliendo del negocio.</p>
+                </div>
+                <div id="expenses-list" class="catalog-empty">
+                  <p>Aun no hay gastos registrados.</p>
+                </div>
+              </section>
+            </section>
+          </section>
+
+          <section id="administracion" class="module-page" data-module-page="administracion">
+            <header class="module-page-header">
+              <p class="module-page-kicker">Configuracion</p>
+              <h2>Administracion de estados</h2>
+              <p>
+                Crea nuevos pasos del flujo y ordenalos para que la operacion avance de forma
+                secuencial.
+              </p>
+            </header>
+
+            <section class="catalog-layout admin-layout">
+              <section class="panel catalog-panel">
+                <div class="panel-header">
+                  <h2>Nuevo estado</h2>
+                  <p>Crea nuevos pasos del flujo y ubicalos en el orden correcto.</p>
+                </div>
+
+                <form id="order-status-form" class="catalog-form">
+                  <div class="field-grid">
+                    <label>
+                      <span>Nombre del estado</span>
+                      <input name="label" type="text" placeholder="Ej. Listo para entrega" required />
+                    </label>
+
+                    <label>
+                      <span>Ubicar despues de</span>
+                      <select id="order-status-insert-after" name="insert_after_key">
+                        <option value="">Agregar al final del flujo</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <label class="full-width">
+                    <span>Descripcion</span>
+                    <textarea
+                      name="description"
+                      rows="3"
+                      placeholder="Explica que significa este estado dentro de la operacion."
+                    ></textarea>
+                  </label>
+
+                  <div class="actions">
+                    <button type="submit" class="primary">Crear estado</button>
+                  </div>
+                </form>
+              </section>
+
+              <section class="panel catalog-panel">
+                <div class="panel-header">
+                  <h2>Flujo activo</h2>
+                  <p>Estos son los pasos secuenciales que hoy usa la operacion.</p>
+                </div>
+                <div id="order-statuses-list" class="catalog-empty">
+                  <p>Aun no hay estados configurados.</p>
+                </div>
+              </section>
+            </section>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

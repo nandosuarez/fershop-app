@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ingreso | Portal comercial</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="login-shell">
+      <section class="panel login-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Acceso multiempresa</p>
+            <h1>Ingresa a tu operacion</h1>
+          </div>
+        </div>
+
+        <p class="login-note">
+          Cada usuario entra con su cuenta y solo ve la informacion, el logo y los
+          modulos de su propia empresa.
+        </p>
+
+        <form id="login-form" class="login-form">
+          <label>
+            <span>Usuario</span>
+            <input name="username" type="text" autocomplete="username" required />
+          </label>
+
+          <label>
+            <span>Contrasena</span>
+            <input name="password" type="password" autocomplete="current-password" required />
+          </label>
+
+          <div class="actions">
+            <button type="submit" class="primary">Entrar</button>
+          </div>
+        </form>
+
+        <p id="login-status" class="login-status">Ingresa tus credenciales para continuar.</p>
+      </section>
+    </main>
+
+    <script src="/static/login.js" defer></script>
+  </body>
+</html>
