@@ -7,6 +7,7 @@ const productSelect = document.getElementById("product-select");
 const clientSelect = document.getElementById("client-select");
 const addProductButton = document.getElementById("add-product-button");
 const addQuoteItemButton = document.getElementById("add-quote-item-button");
+const createOrderButton = document.getElementById("create-order-button");
 const quoteLineItemsContainer = document.getElementById("quote-line-items");
 const quoteLiveSummaryContainer = document.getElementById("quote-live-summary");
 const quoteModeBadge = document.getElementById("quote-mode-badge");
@@ -40,6 +41,12 @@ const moduleLinks = Array.from(document.querySelectorAll("[data-module-link]"));
 const expenseForm = document.getElementById("expense-form");
 const expenseCategorySelect = document.getElementById("expense-category");
 const expensesListContainer = document.getElementById("expenses-list");
+const inventoryPurchaseForm = document.getElementById("inventory-purchase-form");
+const inventoryPurchaseProductSelect = document.getElementById("inventory-purchase-product-select");
+const addInventoryPurchaseItemButton = document.getElementById("add-inventory-purchase-item-button");
+const saveInventoryPurchaseButton = document.getElementById("save-inventory-purchase-button");
+const inventoryPurchaseDraftContainer = document.getElementById("inventory-purchase-draft");
+const inventoryPurchasesListContainer = document.getElementById("inventory-purchases-list");
 const orderStatusForm = document.getElementById("order-status-form");
 const orderStatusesListContainer = document.getElementById("order-statuses-list");
 const orderStatusInsertAfterSelect = document.getElementById("order-status-insert-after");
@@ -47,6 +54,10 @@ const productCategoryForm = document.getElementById("product-category-form");
 const productStoreForm = document.getElementById("product-store-form");
 const productCategoriesListContainer = document.getElementById("product-categories-list");
 const productStoresListContainer = document.getElementById("product-stores-list");
+const whatsappSettingsForm = document.getElementById("whatsapp-settings-form");
+const whatsappTemplateForm = document.getElementById("whatsapp-template-form");
+const whatsappTriggerSelect = document.getElementById("whatsapp-trigger-select");
+const whatsappTemplatesListContainer = document.getElementById("whatsapp-templates-list");
 const productCategoryOptions = document.getElementById("product-categories-options");
 const productStoreOptions = document.getElementById("product-stores-options");
 const productCategoryInput = document.getElementById("product-category-input");
@@ -70,6 +81,7 @@ const heroCardCopy = document.querySelector(".hero-card p");
 const currentUserLabel = document.querySelector("[data-current-user]");
 const logoutButton = document.getElementById("logout-button");
 const purchaseTypeHelper = document.getElementById("purchase-type-helper");
+const inventorySaleHelper = document.getElementById("inventory-sale-helper");
 
 const state = {
   session: null,
@@ -84,8 +96,12 @@ const state = {
   pendingPriorities: [],
   orders: [],
   expenses: [],
+  inventoryPurchases: [],
   expenseCategories: [],
   orderStatuses: [],
+  whatsappSettings: null,
+  whatsappTemplates: [],
+  whatsappTriggers: [],
   dashboardPeriod: "daily",
   dashboard: null,
   followup: null,
@@ -96,7 +112,9 @@ const state = {
   pendingQuoteSeedId: null,
   quoteCalculationTimer: 0,
   quoteCalculationRequestId: 0,
+  quoteHistory: [],
   quoteLineItems: [],
+  inventoryPurchaseLineItems: [],
   editingQuoteId: null,
   editingQuoteItemIndex: null,
 };
@@ -107,6 +125,7 @@ const quoteElements = quoteForm.elements;
 const QUOTE_AUTO_CALC_FIELDS = new Set([
   "purchase_type",
   "quantity",
+  "uses_inventory_stock",
   "price_usd_net",
   "tax_usa_percent",
   "travel_cost_usd",
@@ -234,6 +253,7 @@ const MODULE_ALIASES = {
   historial: "comercial",
   clientes: "comercial",
   productos: "comercial",
+  abastecimiento: "abastecimiento",
   compras: "compras",
   gastos: "gastos",
   administracion: "administracion",
@@ -491,6 +511,28 @@ function findProductBySearchValue(value) {
   );
 }
 
+function clearInventoryPurchaseProductSelection() {
+  if (!inventoryPurchaseForm) {
+    return;
+  }
+  inventoryPurchaseForm.elements.namedItem("product_id").value = "";
+  inventoryPurchaseForm.elements.namedItem("product_name").value = "";
+  if (inventoryPurchaseProductSelect) {
+    inventoryPurchaseProductSelect.value = "";
+  }
+}
+
+function applyProductToInventoryPurchaseSelection(product) {
+  if (!inventoryPurchaseForm || !product) {
+    return;
+  }
+  inventoryPurchaseForm.elements.namedItem("product_id").value = String(product.id || "");
+  inventoryPurchaseForm.elements.namedItem("product_name").value = String(product.name || "");
+  if (inventoryPurchaseProductSelect) {
+    inventoryPurchaseProductSelect.value = productSearchLabel(product);
+  }
+}
+
 function invalidateQuoteCalculation() {
   if (state.quoteCalculationTimer) {
     window.clearTimeout(state.quoteCalculationTimer);
@@ -516,17 +558,26 @@ function clearProductFromQuote() {
   setQuoteField("category", "");
   setQuoteField("store", "");
   setQuoteField("quantity", 1);
+  setQuoteField("uses_inventory_stock", "");
+  const inventoryField = getQuoteField("uses_inventory_stock");
+  if (inventoryField) {
+    inventoryField.checked = false;
+  }
   if (productSelect) {
     productSelect.value = "";
   }
+  syncInventorySaleUi(null);
   renderQuoteLiveSummary();
 }
 
 function syncSaveButtonState() {
-  if (!saveButton) {
-    return;
+  const isReady = Boolean(state.quoteLineItems.length || state.lastResult);
+  if (saveButton) {
+    saveButton.disabled = !isReady;
   }
-  saveButton.disabled = !state.quoteLineItems.length && !state.lastResult;
+  if (createOrderButton) {
+    createOrderButton.disabled = !isReady;
+  }
 }
 
 function ensureQuoteClientSelection(payload) {
@@ -542,6 +593,12 @@ function setQuoteItemEditorState(index = null) {
       state.editingQuoteItemIndex === null
         ? "Agregar producto a la cotizacion"
         : "Actualizar producto en la cotizacion";
+  }
+  if (createOrderButton) {
+    createOrderButton.textContent =
+      state.editingQuoteId || state.editingQuoteItemIndex !== null
+        ? "Actualizar y crear compra"
+        : "Crear compra directa";
   }
   renderQuoteLiveSummary();
 }
@@ -559,6 +616,10 @@ function loadProductIntoCalculator(product) {
   setQuoteField("category", product.category || "");
   setQuoteField("store", product.store || "");
   setQuoteField("quantity", 1);
+  const inventoryField = getQuoteField("uses_inventory_stock");
+  if (inventoryField) {
+    inventoryField.checked = false;
+  }
   setQuoteField("price_usd_net", Number(product.price_usd_net || 0).toFixed(2));
   setQuoteField("tax_usa_percent", Number(product.tax_usa_percent || 0).toFixed(2));
   setQuoteField("locker_shipping_usd", Number(product.locker_shipping_usd || 0).toFixed(2));
@@ -568,6 +629,7 @@ function loadProductIntoCalculator(product) {
   if (!quoteElements.namedItem("notes").value.trim() && product.notes) {
     setQuoteField("notes", product.notes);
   }
+  syncInventorySaleUi(product);
   renderQuoteLiveSummary();
   scheduleQuoteCalculation({ immediate: true });
 }
@@ -628,12 +690,81 @@ function normalizeStoredQuoteItem(item) {
     store: String(item.store || input.store || lineItem?.store || "").trim(),
     quantity: Math.max(1, quantity || 1),
     purchase_type: String(item.purchase_type || input.purchase_type || "online").trim().toLowerCase(),
+    uses_inventory_stock: Boolean(
+      item.uses_inventory_stock ?? input.uses_inventory_stock ?? lineItem?.uses_inventory_stock
+    ),
     input,
     result,
     sale_price_cop: Number(item.sale_price_cop || finalData.sale_price_cop || 0),
     advance_cop: Number(item.advance_cop || finalData.advance_cop || 0),
     profit_cop: Number(item.profit_cop || finalData.profit_cop || 0),
     real_cost_cop: Number(item.real_cost_cop || costsData.real_total_cost_cop || 0),
+  };
+}
+
+function getQuoteItemsForPurchaseAdjustment(rawQuoteItems) {
+  return (rawQuoteItems || [])
+    .map((item) => normalizeStoredQuoteItem(item))
+    .filter(Boolean);
+}
+
+function collectOrderCreationInputs({
+  quoteItems,
+  salePriceCop,
+  quotedAdvanceCop,
+  sourceLabel = "compra",
+}) {
+  const rawAdvance = window.prompt(
+    `Antes de confirmar la ${sourceLabel}, indica cuanto pago realmente el cliente como anticipo en COP.\n\nValor total: ${formatCop(
+      salePriceCop
+    )}\nAnticipo cotizado: ${formatCop(quotedAdvanceCop)}`,
+    String(Math.round(quotedAdvanceCop || 0))
+  );
+
+  if (rawAdvance === null) {
+    return null;
+  }
+
+  const advancePaidCop = parseCurrencyInput(rawAdvance);
+  if (advancePaidCop === null) {
+    throw new Error("Debes ingresar un valor numerico valido para el anticipo real.");
+  }
+
+  const actualPurchasePrices = [];
+  for (const [index, item] of quoteItems.entries()) {
+    if (item.uses_inventory_stock) {
+      continue;
+    }
+    const quotedPriceUsdNet = Number(item.input?.price_usd_net || 0);
+    const rawPrice = window.prompt(
+      `Confirma el precio real de compra en USD neto para ${item.product_name}.\n\nCantidad: ${item.quantity}\nPrecio cotizado: ${formatUsd(
+        quotedPriceUsdNet
+      )}\n\nSi no hubo descuento, deja el mismo valor.`,
+      formatUsdPromptValue(quotedPriceUsdNet)
+    );
+
+    if (rawPrice === null) {
+      return null;
+    }
+
+    const actualPriceUsdNet = parseUsdInput(rawPrice);
+    if (actualPriceUsdNet === null || actualPriceUsdNet <= 0) {
+      throw new Error(
+        `Debes ingresar un precio real valido en USD neto para ${item.product_name}.`
+      );
+    }
+
+    actualPurchasePrices.push({
+      quote_item_index: index,
+      product_id: item.product_id,
+      product_name: item.product_name,
+      price_usd_net: actualPriceUsdNet,
+    });
+  }
+
+  return {
+    advancePaidCop,
+    actualPurchasePrices,
   };
 }
 
@@ -830,6 +961,18 @@ function getPurchaseType() {
   return String(getQuoteField("purchase_type")?.value || "online").trim().toLowerCase() || "online";
 }
 
+function getCurrentQuoteProduct() {
+  const productId = String(getQuoteField("product_id")?.value || "").trim();
+  if (!productId) {
+    return null;
+  }
+  return state.products.find((item) => String(item.id) === productId) || null;
+}
+
+function getCurrentInventoryUnitCost(product = getCurrentQuoteProduct()) {
+  return Number(product?.inventory_unit_cost_cop || 0);
+}
+
 function syncPurchaseTypeUi() {
   const purchaseType = getPurchaseType();
   const isTravel = purchaseType === "travel";
@@ -848,6 +991,52 @@ function syncPurchaseTypeUi() {
       ? "Modo viaje: puedes sumar costo de viaje, gastos locales y tambien envio/casillero si una parte viene por esa via. En compras definiras si el producto viaja por casillero o por maleta."
       : "Modo online: se usa envio/casillero. El costo de viaje y los gastos locales no entran al calculo.";
   }
+}
+
+function syncInventorySaleUi(product = getCurrentQuoteProduct()) {
+  const inventoryField = getQuoteField("uses_inventory_stock");
+  if (!inventoryField) {
+    return;
+  }
+
+  const inventoryEnabled = Boolean(product?.inventory_enabled);
+  const currentStock = Number(product?.current_stock || 0);
+  if (!inventoryEnabled) {
+    inventoryField.checked = false;
+  }
+  inventoryField.disabled = !inventoryEnabled || currentStock <= 0;
+
+  if (!inventorySaleHelper) {
+    return;
+  }
+
+  if (!product) {
+    inventorySaleHelper.textContent =
+      "Activa esta opcion solo cuando el producto ya esta disponible en tienda para entrega inmediata.";
+    return;
+  }
+
+  if (!inventoryEnabled) {
+    inventorySaleHelper.textContent =
+      "Este producto no tiene inventario de tienda activo. Puedes venderlo por importacion normal.";
+    return;
+  }
+
+  if (currentStock <= 0) {
+    inventorySaleHelper.textContent =
+      "Este producto maneja inventario, pero hoy no tiene unidades disponibles para salida inmediata.";
+    return;
+  }
+
+  const inventoryUnitCost = getCurrentInventoryUnitCost(product);
+  if (inventoryUnitCost <= 0) {
+    inventorySaleHelper.textContent =
+      "Este producto tiene stock, pero aun no tiene costo promedio registrado. Usa Abastecimiento para cargar el costo real antes de venderlo desde inventario.";
+    return;
+  }
+
+  inventorySaleHelper.textContent =
+    `Hay ${currentStock} unidad${currentStock === 1 ? "" : "es"} disponible${currentStock === 1 ? "" : "s"} en tienda. Costo promedio actual: ${formatCop(inventoryUnitCost)}.`;
 }
 
 function shouldAutoCalculateQuote(target) {
@@ -991,6 +1180,40 @@ function parseCurrencyInput(value) {
   return Number.isFinite(amount) ? amount : null;
 }
 
+function parseUsdInput(value) {
+  let normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  normalized = normalized.replace(/\$/g, "").replace(/\s/g, "");
+  if (normalized.includes(",") && normalized.includes(".")) {
+    if (normalized.lastIndexOf(",") > normalized.lastIndexOf(".")) {
+      normalized = normalized.replace(/\./g, "").replace(",", ".");
+    } else {
+      normalized = normalized.replace(/,/g, "");
+    }
+  } else if (normalized.includes(",")) {
+    normalized = normalized.replace(",", ".");
+  }
+
+  normalized = normalized.replace(/[^0-9.-]/g, "");
+  if (!normalized) {
+    return null;
+  }
+
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function formatUsdPromptValue(value) {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount)) {
+    return "0.00";
+  }
+  return amount.toFixed(2);
+}
+
 function setQuoteField(name, value) {
   const field = quoteElements.namedItem(name);
   if (field) {
@@ -1007,6 +1230,7 @@ function readQuotePayload() {
     category: item.category || "",
     store: item.store || "",
     quantity: Number(item.quantity || 1),
+    uses_inventory_stock: Boolean(item.uses_inventory_stock),
     unit_price_usd_net: Number(item.unit_price_usd_net || 0),
     unit_tax_usa_percent: Number(item.unit_tax_usa_percent || 0),
     unit_locker_shipping_usd: Number(item.unit_locker_shipping_usd || 0),
@@ -1017,6 +1241,7 @@ function readQuotePayload() {
     product_name: buildQuoteProductSummary(state.quoteLineItems),
     client_name: String(data.get("client_name") || "").trim(),
     purchase_type: String(data.get("purchase_type") || "online").trim().toLowerCase() || "online",
+    uses_inventory_stock: data.get("uses_inventory_stock") === "on",
     notes: String(data.get("notes") || "").trim(),
     client_quote_items_text: String(data.get("client_quote_items_text") || "").trim(),
     line_items: lineItems,
@@ -1042,6 +1267,8 @@ function readClientPayload() {
     city: String(data.get("city") || "").trim(),
     address: String(data.get("address") || "").trim(),
     neighborhood: String(data.get("neighborhood") || "").trim(),
+    whatsapp_phone: String(data.get("whatsapp_phone") || "").trim(),
+    whatsapp_opt_in: data.get("whatsapp_opt_in") === "on",
     preferred_contact_channel: String(data.get("preferred_contact_channel") || "").trim(),
     preferred_payment_method: String(data.get("preferred_payment_method") || "").trim(),
     interests: String(data.get("interests") || "").trim(),
@@ -1056,6 +1283,8 @@ function readProductPayload() {
     reference: String(data.get("reference") || "").trim(),
     category: String(data.get("category") || "").trim(),
     store: String(data.get("store") || "").trim(),
+    inventory_enabled: data.get("inventory_enabled") === "on",
+    initial_stock_quantity: Number(data.get("initial_stock_quantity") || 0),
     price_usd_net: Number(data.get("price_usd_net") || 0),
     tax_usa_percent: Number(data.get("tax_usa_percent") || 0),
     locker_shipping_usd: Number(data.get("locker_shipping_usd") || 0),
@@ -1095,12 +1324,137 @@ function readExpensePayload() {
   };
 }
 
+function readInventoryPurchaseItemPayload() {
+  if (!inventoryPurchaseForm) {
+    throw new Error("El formulario de abastecimiento no esta disponible.");
+  }
+
+  const data = new FormData(inventoryPurchaseForm);
+  const hiddenProductId = toNumberOrNull(data.get("product_id"));
+  const selectedProduct =
+    state.products.find((item) => item.id === hiddenProductId) ||
+    findProductBySearchValue(inventoryPurchaseProductSelect?.value || "");
+
+  if (!selectedProduct) {
+    throw new Error("Selecciona un producto guardado para este abastecimiento.");
+  }
+
+  const quantity = Number(data.get("item_quantity") || 0);
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    throw new Error("La cantidad del abastecimiento debe ser mayor a cero.");
+  }
+
+  const unitCostCop = Number(data.get("item_unit_cost_cop") || 0);
+  if (!Number.isFinite(unitCostCop) || unitCostCop <= 0) {
+    throw new Error("El costo unitario del abastecimiento debe ser mayor a cero.");
+  }
+
+  return {
+    product_id: Number(selectedProduct.id),
+    product_name: String(selectedProduct.name || "").trim() || "Producto sin nombre",
+    quantity: Math.round(quantity),
+    unit_cost_cop: unitCostCop,
+    line_total_cop: Math.round(quantity) * unitCostCop,
+    notes: String(data.get("item_notes") || "").trim(),
+  };
+}
+
+function resetInventoryPurchaseItemEditor() {
+  if (!inventoryPurchaseForm) {
+    return;
+  }
+  clearInventoryPurchaseProductSelection();
+  inventoryPurchaseForm.elements.namedItem("item_quantity").value = 1;
+  inventoryPurchaseForm.elements.namedItem("item_unit_cost_cop").value = "";
+  inventoryPurchaseForm.elements.namedItem("item_notes").value = "";
+}
+
+function addInventoryPurchaseDraftItem() {
+  const item = readInventoryPurchaseItemPayload();
+  const matchingItem = state.inventoryPurchaseLineItems.find(
+    (existingItem) =>
+      Number(existingItem.product_id) === Number(item.product_id) &&
+      Number(existingItem.unit_cost_cop) === Number(item.unit_cost_cop) &&
+      String(existingItem.notes || "") === String(item.notes || "")
+  );
+
+  if (matchingItem) {
+    matchingItem.quantity += item.quantity;
+    matchingItem.line_total_cop = matchingItem.quantity * matchingItem.unit_cost_cop;
+  } else {
+    state.inventoryPurchaseLineItems = [...state.inventoryPurchaseLineItems, item];
+  }
+
+  renderInventoryPurchaseDraft();
+  resetInventoryPurchaseItemEditor();
+  return item;
+}
+
+function readInventoryPurchasePayload() {
+  if (!inventoryPurchaseForm) {
+    throw new Error("El formulario de abastecimiento no esta disponible.");
+  }
+
+  const data = new FormData(inventoryPurchaseForm);
+  const purchaseDate = String(data.get("purchase_date") || "").trim();
+  const supplierName = String(data.get("supplier_name") || "").trim();
+  const notes = String(data.get("notes") || "").trim();
+
+  if (!purchaseDate) {
+    throw new Error("La fecha del abastecimiento es obligatoria.");
+  }
+  if (!supplierName) {
+    throw new Error("Debes indicar el proveedor, tienda u origen del abastecimiento.");
+  }
+  if (!state.inventoryPurchaseLineItems.length) {
+    throw new Error("Agrega al menos un producto antes de registrar el abastecimiento.");
+  }
+
+  return {
+    purchase_date: purchaseDate,
+    supplier_name: supplierName,
+    notes,
+    items: state.inventoryPurchaseLineItems.map((item) => ({
+      product_id: Number(item.product_id),
+      quantity: Number(item.quantity),
+      unit_cost_cop: Number(item.unit_cost_cop),
+      notes: String(item.notes || "").trim(),
+    })),
+  };
+}
+
 function readOrderStatusPayload() {
   const data = new FormData(orderStatusForm);
   return {
     label: String(data.get("label") || "").trim(),
     description: String(data.get("description") || "").trim(),
     insert_after_key: String(data.get("insert_after_key") || "").trim(),
+  };
+}
+
+function readWhatsAppSettingsPayload() {
+  const data = new FormData(whatsappSettingsForm);
+  return {
+    twilio_account_sid: String(data.get("twilio_account_sid") || "").trim(),
+    twilio_auth_token: String(data.get("twilio_auth_token") || "").trim(),
+    whatsapp_sender: String(data.get("whatsapp_sender") || "").trim(),
+    messaging_service_sid: String(data.get("messaging_service_sid") || "").trim(),
+    status_callback_url: String(data.get("status_callback_url") || "").trim(),
+    default_country_code: String(data.get("default_country_code") || "").trim() || "+57",
+    auto_send_enabled: data.get("auto_send_enabled") === "on",
+  };
+}
+
+function readWhatsAppTemplatePayload() {
+  const data = new FormData(whatsappTemplateForm);
+  return {
+    trigger_key: String(data.get("trigger_key") || "").trim(),
+    label: String(data.get("label") || "").trim(),
+    content_sid: String(data.get("content_sid") || "").trim(),
+    content_variables_json: String(data.get("content_variables_json") || "").trim(),
+    body_text: String(data.get("body_text") || "").trim(),
+    is_active: data.get("is_active") === "on",
+    auto_send_enabled: data.get("auto_send_enabled") === "on",
   };
 }
 
@@ -1468,6 +1822,8 @@ function renderClients(items) {
           <div class="catalog-card-meta">
             <span>${escapeHtml(client.phone || "Sin teléfono")}</span>
             <span>${escapeHtml(client.email || "Sin email")}</span>
+            ${client.whatsapp_phone_masked ? `<span>WhatsApp: ${escapeHtml(client.whatsapp_phone_masked)}</span>` : ""}
+            ${client.whatsapp_opt_in ? "<span>WhatsApp autorizado</span>" : ""}
             ${client.preferred_contact_channel ? `<span>${escapeHtml(client.preferred_contact_channel)}</span>` : ""}
             ${client.preferred_payment_method ? `<span>${escapeHtml(client.preferred_payment_method)}</span>` : ""}
             ${client.neighborhood ? `<span>${escapeHtml(client.neighborhood)}</span>` : ""}
@@ -1519,6 +1875,11 @@ function renderProducts(items) {
             <span>${escapeHtml(product.category || "Sin categoria")}</span>
             <span>${escapeHtml(product.store || "Sin tienda")}</span>
             <span>Casillero: ${formatUsd(product.locker_shipping_usd)}</span>
+            <span>${
+              product.inventory_enabled
+                ? `Inventario: ${Number(product.current_stock || 0)}`
+                : "Sin inventario de tienda"
+            }</span>
           </div>
           ${product.notes ? `<p class="catalog-card-note">${escapeHtml(product.notes)}</p>` : ""}
         </article>
@@ -1678,6 +2039,82 @@ function renderNamedCatalogList(container, items, emptyMessage) {
     .join("");
 }
 
+function renderWhatsAppSettings(settings) {
+  if (!whatsappSettingsForm) {
+    return;
+  }
+
+  const form = whatsappSettingsForm.elements;
+  form.namedItem("twilio_account_sid").value = settings?.twilio_account_sid || "";
+  form.namedItem("twilio_auth_token").value = settings?.twilio_auth_token || "";
+  form.namedItem("whatsapp_sender").value = settings?.whatsapp_sender || "";
+  form.namedItem("messaging_service_sid").value = settings?.messaging_service_sid || "";
+  form.namedItem("status_callback_url").value = settings?.status_callback_url || "";
+  form.namedItem("default_country_code").value = settings?.default_country_code || "+57";
+  form.namedItem("auto_send_enabled").checked = Boolean(settings?.auto_send_enabled);
+}
+
+function renderWhatsAppTriggerOptions(items) {
+  if (!whatsappTriggerSelect) {
+    return;
+  }
+
+  const currentValue = whatsappTriggerSelect.value;
+  const options = ['<option value="">Selecciona un disparador</option>'];
+  (items || []).forEach((item) => {
+    options.push(`<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)}</option>`);
+  });
+  whatsappTriggerSelect.innerHTML = options.join("");
+  if ((items || []).some((item) => item.key === currentValue)) {
+    whatsappTriggerSelect.value = currentValue;
+  }
+}
+
+function renderWhatsAppTemplates(items) {
+  if (!whatsappTemplatesListContainer) {
+    return;
+  }
+
+  if (!items.length) {
+    whatsappTemplatesListContainer.className = "catalog-empty";
+    whatsappTemplatesListContainer.innerHTML = "<p>Aun no hay plantillas de WhatsApp cargadas.</p>";
+    return;
+  }
+
+  whatsappTemplatesListContainer.className = "catalog-list compact-list";
+  whatsappTemplatesListContainer.innerHTML = items
+    .map(
+      (item) => `
+        <article class="catalog-card compact-card">
+          <div class="catalog-card-top">
+            <div>
+              <h3>${escapeHtml(item.label)}</h3>
+              <p>${escapeHtml(item.trigger_key)}</p>
+            </div>
+            <div class="catalog-card-actions">
+              <span class="catalog-chip">${item.is_active ? "Activa" : "Inactiva"}</span>
+              <span class="catalog-chip">${item.auto_send_enabled ? "Auto" : "Manual"}</span>
+            </div>
+          </div>
+          ${item.content_sid ? `<p class="catalog-card-note"><strong>Content SID:</strong> ${escapeHtml(item.content_sid)}</p>` : ""}
+          ${item.body_text ? `<p class="catalog-card-note">${escapeHtml(item.body_text)}</p>` : ""}
+        </article>
+      `
+    )
+    .join("");
+}
+
+function getOrderWhatsAppTrigger(order) {
+  return `order_status:${order.status_key}`;
+}
+
+function getOrderWhatsAppButtonLabel(order) {
+  if (order.status_key === "client_notified" && Number(order.balance_due_cop || 0) > 0) {
+    return "Enviar cobro WhatsApp";
+  }
+  return "Enviar WhatsApp";
+}
+
 function renderClientDetail(detail) {
   if (!clientDetailContainer) {
     return;
@@ -1726,6 +2163,11 @@ function renderClientDetail(detail) {
       ${makeMetricCard("Utilidad", formatCop(summary.gross_profit_cop), "Ganancia bruta generada")}
       ${makeMetricCard("Ticket promedio", formatCop(summary.average_ticket_cop), "Promedio por compra cerrada")}
       ${makeMetricCard("Conversion", formatPercent(summary.conversion_rate_percent), "Compras frente a cotizaciones")}
+      ${makeMetricCard(
+        "Inventario",
+        String(summary.current_stock || 0),
+        summary.inventory_enabled ? "Unidades disponibles hoy en tienda" : "Producto sin stock inmediato"
+      )}
     </div>
 
     <div class="detail-grid client-detail-grid">
@@ -1871,6 +2313,8 @@ function renderProductDetailLegacy(detail) {
   const topClients = detail.top_clients || [];
   const recentQuotes = detail.recent_quotes || [];
   const recentOrders = detail.recent_orders || [];
+  const inventoryMovements = detail.inventory_movements || [];
+  const currentStock = Number(product.current_stock || 0);
 
   productDetailContainer.className = "client-detail-layout";
   productDetailContainer.innerHTML = `
@@ -1899,6 +2343,13 @@ function renderProductDetailLegacy(detail) {
       ${makeMetricCard("Utilidad", formatCop(summary.gross_profit_cop), "Ganancia bruta que ha generado")}
       ${makeMetricCard("Venta promedio", formatCop(summary.average_sale_price_cop), "Promedio por compra cerrada")}
       ${makeMetricCard("Conversion", formatPercent(summary.conversion_rate_percent), "Compras frente a cotizaciones")}
+      ${makeMetricCard(
+        "Inventario",
+        String(summary.current_stock || 0),
+        summary.inventory_enabled ? "Unidades disponibles hoy en tienda" : "Producto sin stock inmediato"
+      )}
+      ${makeMetricCard("Costo promedio", formatCop(summary.inventory_unit_cost_cop), "Costo actual por unidad en inventario")}
+      ${makeMetricCard("Valor del stock", formatCop(summary.current_stock_value_cop), "Capital hoy invertido en esta referencia")}
     </div>
 
     <div class="detail-grid client-detail-grid">
@@ -1982,6 +2433,62 @@ function renderProductDetailLegacy(detail) {
             : '<p class="catalog-card-note">Aun no hay compras registradas para este producto.</p>'
         }
       </section>
+
+      <section class="detail-panel">
+        <h3>Inventario de tienda</h3>
+        <form class="catalog-form" data-product-inventory-form="${product.id}">
+          <div class="field-grid">
+            <label>
+              <span>Movimiento</span>
+              <select name="movement_type">
+                <option value="stock_in">Entrada</option>
+                <option value="stock_out">Salida manual</option>
+                <option value="set_stock">Ajustar stock final</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Cantidad</span>
+              <input name="quantity" type="number" min="0" step="1" value="1" required />
+            </label>
+          </div>
+
+          <label class="full-width">
+            <span>Nota del movimiento</span>
+            <input
+              name="note"
+              type="text"
+              placeholder="Ej. Compra para tienda, ajuste por conteo, salida por vitrina"
+            />
+          </label>
+
+          <div class="actions">
+            <button type="submit" class="secondary">Registrar movimiento</button>
+          </div>
+        </form>
+
+        ${
+          inventoryMovements.length
+            ? inventoryMovements
+                .map(
+                  (item) => `
+                    <article class="detail-list-card">
+                      <div>
+                        <strong>${escapeHtml(item.movement_label)}</strong>
+                        <p>${escapeHtml(formatStoredDate(item.created_at))}</p>
+                      </div>
+                      <span>${item.quantity_delta > 0 ? "+" : ""}${Number(item.quantity_delta || 0)}</span>
+                      <small>
+                        Stock despues: ${Number(item.quantity_after || 0)}
+                        ${item.note ? ` | ${escapeHtml(item.note)}` : ""}
+                      </small>
+                    </article>
+                  `
+                )
+                .join("")
+            : '<p class="catalog-card-note">Aun no hay movimientos de inventario para este producto.</p>'
+        }
+      </section>
     </div>
   `;
 }
@@ -2007,6 +2514,8 @@ function renderProductDetail(detail) {
   const topClients = detail.top_clients || [];
   const recentQuotes = detail.recent_quotes || [];
   const recentOrders = detail.recent_orders || [];
+  const inventoryMovements = detail.inventory_movements || [];
+  const currentStock = Number(product.current_stock || 0);
 
   productDetailContainer.className = "client-detail-layout";
   productDetailContainer.innerHTML = `
@@ -2035,6 +2544,11 @@ function renderProductDetail(detail) {
       ${makeMetricCard("Utilidad", formatCop(summary.gross_profit_cop), "Ganancia bruta que ha generado")}
       ${makeMetricCard("Venta promedio", formatCop(summary.average_sale_price_cop), "Promedio por compra cerrada")}
       ${makeMetricCard("Conversion", formatPercent(summary.conversion_rate_percent), "Compras frente a cotizaciones")}
+      ${makeMetricCard(
+        "Inventario",
+        String(summary.current_stock || 0),
+        summary.inventory_enabled ? "Unidades disponibles hoy en tienda" : "Producto sin stock inmediato"
+      )}
     </div>
 
     <div class="detail-grid client-detail-grid">
@@ -2045,6 +2559,14 @@ function renderProductDetail(detail) {
             ["Referencia", product.reference || "No registrada"],
             ["Categoria", product.category || "No registrada"],
             ["Tienda", product.store || "No registrada"],
+            [
+              "Inventario tienda",
+              product.inventory_enabled
+                ? `${currentStock} unidad${currentStock === 1 ? "" : "es"}`
+                : "No activo",
+            ],
+            ["Costo promedio inventario", formatCop(product.inventory_unit_cost_cop)],
+            ["Valor actual del stock", formatCop(product.current_stock_value_cop)],
             ["Envio casillero", formatUsd(product.locker_shipping_usd)],
             ["Ultima cotizacion", formatStoredDate(summary.last_quote_at)],
             ["Ultima compra", formatStoredDate(summary.last_order_at)],
@@ -2120,6 +2642,62 @@ function renderProductDetail(detail) {
             : '<p class="catalog-card-note">Aun no hay compras registradas para este producto.</p>'
         }
       </section>
+
+      <section class="detail-panel">
+        <h3>Inventario de tienda</h3>
+        <form class="catalog-form" data-product-inventory-form="${product.id}">
+          <div class="field-grid">
+            <label>
+              <span>Movimiento</span>
+              <select name="movement_type">
+                <option value="stock_in">Entrada</option>
+                <option value="stock_out">Salida manual</option>
+                <option value="set_stock">Ajustar stock final</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Cantidad</span>
+              <input name="quantity" type="number" min="0" step="1" value="1" required />
+            </label>
+          </div>
+
+          <label class="full-width">
+            <span>Nota del movimiento</span>
+            <input
+              name="note"
+              type="text"
+              placeholder="Ej. Compra para tienda, ajuste por conteo, salida por vitrina"
+            />
+          </label>
+
+          <div class="actions">
+            <button type="submit" class="secondary">Registrar movimiento</button>
+          </div>
+        </form>
+
+        ${
+          inventoryMovements.length
+            ? inventoryMovements
+                .map(
+                  (item) => `
+                    <article class="detail-list-card">
+                      <div>
+                        <strong>${escapeHtml(item.movement_label)}</strong>
+                        <p>${escapeHtml(formatStoredDate(item.created_at))}</p>
+                      </div>
+                      <span>${item.quantity_delta > 0 ? "+" : ""}${Number(item.quantity_delta || 0)}</span>
+                      <small>
+                        Stock despues: ${Number(item.quantity_after || 0)}
+                        ${item.note ? ` | ${escapeHtml(item.note)}` : ""}
+                      </small>
+                    </article>
+                  `
+                )
+                .join("")
+            : '<p class="catalog-card-note">Aun no hay movimientos de inventario para este producto.</p>'
+        }
+      </section>
     </div>
   `;
 }
@@ -2187,8 +2765,9 @@ function renderDashboard(summary) {
       ${makeMetricCard("Pendiente del periodo", formatCop(metrics.period_balance_due_cop), "Saldo aun abierto de estas compras")}
       ${makeMetricCard("Cartera por cobrar", formatCop(metrics.accounts_receivable_cop), "Solo compras notificadas y pendientes de segundo pago")}
       ${makeMetricCard("Utilidad bruta", formatCop(metrics.gross_profit_cop), "Antes de descontar gastos")}
-      ${makeMetricCard("Gastos", formatCop(metrics.expenses_total_cop), "Salida real de dinero")}
-      ${makeMetricCard("Utilidad neta", formatCop(metrics.net_profit_cop), "Bruta menos gastos")}
+      ${makeMetricCard("Inversion inventario", formatCop(metrics.inventory_investment_cop), "Dinero usado para abastecer stock durante el periodo")}
+      ${makeMetricCard("Gastos operativos", formatCop(metrics.expenses_total_cop), "Publicidad, viaje, transporte y otros gastos del negocio")}
+      ${makeMetricCard("Utilidad neta", formatCop(metrics.net_profit_cop), "Utilidad bruta menos gastos operativos")}
       ${makeMetricCard("Compras abiertas", String(metrics.open_orders_count || 0), "Seguimientos que siguen activos")}
     </div>
 
@@ -2282,6 +2861,118 @@ function renderExpenses(items) {
             ${item.notes ? `<small>${escapeHtml(item.notes)}</small>` : ""}
           </div>
           <span>${formatCop(item.amount_cop)}</span>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function renderInventoryPurchaseDraft() {
+  if (!inventoryPurchaseDraftContainer) {
+    return;
+  }
+
+  if (!state.inventoryPurchaseLineItems.length) {
+    inventoryPurchaseDraftContainer.className = "catalog-empty";
+    inventoryPurchaseDraftContainer.innerHTML =
+      "<p>Aun no has agregado productos para esta compra de inventario.</p>";
+    return;
+  }
+
+  const totalUnits = state.inventoryPurchaseLineItems.reduce(
+    (sum, item) => sum + Number(item.quantity || 0),
+    0
+  );
+  const totalAmount = state.inventoryPurchaseLineItems.reduce(
+    (sum, item) => sum + Number(item.line_total_cop || 0),
+    0
+  );
+
+  inventoryPurchaseDraftContainer.className = "inventory-purchase-draft";
+  inventoryPurchaseDraftContainer.innerHTML = `
+    <section class="quote-live-summary">
+      <div class="quote-live-summary-grid">
+        ${makeMetricCard("Referencias", String(state.inventoryPurchaseLineItems.length), "Productos agregados a esta reposicion")}
+        ${makeMetricCard("Unidades", String(totalUnits), "Stock que entrara a la tienda")}
+        ${makeMetricCard("Inversion estimada", formatCop(totalAmount), "Dinero que saldra para convertirse en costo de inventario")}
+      </div>
+    </section>
+    <div class="quote-line-items">
+      ${state.inventoryPurchaseLineItems
+        .map(
+          (item, index) => `
+            <article class="quote-line-card inventory-purchase-line-card">
+              <div class="quote-line-meta">
+                <div>
+                  <strong>${escapeHtml(item.product_name)}</strong>
+                  <p class="catalog-card-note">
+                    ${escapeHtml(String(item.quantity))} unidad(es) · ${formatCop(item.unit_cost_cop)} c/u
+                  </p>
+                  ${item.notes ? `<small>${escapeHtml(item.notes)}</small>` : ""}
+                </div>
+                <div class="quote-line-actions">
+                  <span class="catalog-chip">${formatCop(item.line_total_cop)}</span>
+                  <button type="button" class="secondary" data-inventory-purchase-remove="${index}">
+                    Quitar
+                  </button>
+                </div>
+              </div>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderInventoryPurchases(items) {
+  if (!inventoryPurchasesListContainer) {
+    return;
+  }
+
+  if (!items.length) {
+    inventoryPurchasesListContainer.className = "catalog-empty";
+    inventoryPurchasesListContainer.innerHTML = "<p>Aun no hay abastecimientos registrados.</p>";
+    return;
+  }
+
+  inventoryPurchasesListContainer.className = "catalog-list";
+  inventoryPurchasesListContainer.innerHTML = items
+    .map(
+      (item) => `
+        <article class="catalog-card inventory-purchase-card">
+          <div class="catalog-card-top">
+            <div>
+              <h3>${escapeHtml(item.supplier_name)}</h3>
+              <p>${escapeHtml(formatStoredDate(item.purchase_date))} · Abastecimiento #${item.id}</p>
+            </div>
+            <div class="catalog-card-actions">
+              <span class="catalog-chip">${formatCop(item.total_amount_cop)}</span>
+            </div>
+          </div>
+          <div class="catalog-card-meta">
+            <span>${escapeHtml(String(item.items_count || 0))} referencia(s)</span>
+            <span>${escapeHtml(String(item.total_units || 0))} unidad(es)</span>
+            <span>Entrada a inventario</span>
+          </div>
+          <div class="inventory-purchase-item-list">
+            ${(item.items || [])
+              .map(
+                (line) => `
+                  <article class="detail-list-card">
+                    <span>${escapeHtml(line.product_name)}</span>
+                    <p>
+                      ${escapeHtml(String(line.quantity))} x ${formatCop(line.unit_cost_cop)} = ${formatCop(
+                        line.line_total_cop
+                      )}
+                    </p>
+                    ${line.notes ? `<small>${escapeHtml(line.notes)}</small>` : ""}
+                  </article>
+                `
+              )
+              .join("")}
+          </div>
+          ${item.notes ? `<p class="catalog-card-note">${escapeHtml(item.notes)}</p>` : ""}
         </article>
       `
     )
@@ -2896,6 +3587,21 @@ function renderOrders(items) {
 
           <div class="order-status-update">
             <div class="order-status-summary">
+              <strong>WhatsApp</strong>
+              <p>Envia esta actualizacion al cliente con el estado actual.</p>
+            </div>
+            <button
+              class="secondary"
+              type="button"
+              data-send-order-whatsapp="${order.id}"
+              data-order-whatsapp-trigger="${escapeHtml(getOrderWhatsAppTrigger(order))}"
+            >
+              ${escapeHtml(getOrderWhatsAppButtonLabel(order))}
+            </button>
+          </div>
+
+          <div class="order-status-update">
+            <div class="order-status-summary">
               <strong>Estado actual</strong>
               <p>${escapeHtml(order.status_label)}</p>
             </div>
@@ -3092,6 +3798,11 @@ function ensureQuoteSelection(payload) {
   if (!payload.product_id || !payload.product_name) {
     throw new Error("Selecciona un producto guardado del catalogo.");
   }
+  if (payload.uses_inventory_stock && Number(payload.inventory_unit_cost_cop || 0) <= 0) {
+    throw new Error(
+      "Este producto aun no tiene costo promedio de inventario. Registra primero el abastecimiento real."
+    );
+  }
 }
 
 function normalizeStoredQuoteItem(item) {
@@ -3176,6 +3887,7 @@ function renderQuoteLineItems() {
             <div class="quote-line-meta">
               <span>${escapeHtml(item.purchase_type === "travel" ? "En viaje" : "Online")}</span>
               <span>${item.quantity} unidad${item.quantity === 1 ? "" : "es"}</span>
+              ${item.uses_inventory_stock ? "<span>Salida de inventario</span>" : ""}
               <span>${formatCop(item.sale_price_cop)} venta</span>
               <span>${formatCop(item.advance_cop)} anticipo</span>
             </div>
@@ -3225,6 +3937,9 @@ function resetQuoteEditingState() {
     cancelEditButton.hidden = true;
   }
   saveButton.textContent = "Guardar cotizacion";
+  if (createOrderButton) {
+    createOrderButton.textContent = "Crear compra directa";
+  }
 }
 
 function loadQuoteItemIntoCalculator(index) {
@@ -3242,6 +3957,10 @@ function loadQuoteItemIntoCalculator(index) {
   setQuoteField("store", input.store || item.store || "");
   setQuoteField("quantity", input.quantity || item.quantity || 1);
   setQuoteField("purchase_type", input.purchase_type || item.purchase_type || "online");
+  const inventoryField = getQuoteField("uses_inventory_stock");
+  if (inventoryField) {
+    inventoryField.checked = Boolean(input.uses_inventory_stock || item.uses_inventory_stock);
+  }
   setQuoteField("price_usd_net", input.price_usd_net || 0);
   setQuoteField("tax_usa_percent", input.tax_usa_percent || 0);
   setQuoteField("travel_cost_usd", input.travel_cost_usd || 0);
@@ -3256,6 +3975,9 @@ function loadQuoteItemIntoCalculator(index) {
     const product = state.products.find((entry) => String(entry.id) === String(input.product_id));
     productSelect.value = product ? productSearchLabel(product) : item.product_name || "";
   }
+  syncInventorySaleUi(
+    state.products.find((entry) => String(entry.id) === String(input.product_id)) || null
+  );
   syncPurchaseTypeUi();
   if (item.result) {
     state.lastPayload = input;
@@ -3274,8 +3996,25 @@ function createQuoteItemFromCurrentCalculation() {
     throw new Error("Primero calcula el producto actual antes de agregarlo a la cotizacion.");
   }
 
+  const snapshotInput = JSON.parse(JSON.stringify(state.lastPayload));
+  const quantity = Number(snapshotInput.quantity || 1);
+  if (snapshotInput.uses_inventory_stock) {
+    const currentProduct = state.products.find(
+      (item) => String(item.id) === String(snapshotInput.product_id)
+    );
+    if (!currentProduct || !currentProduct.inventory_enabled) {
+      throw new Error("Este producto no tiene inventario de tienda activo.");
+    }
+    const availableStock = Number(currentProduct.current_stock || 0);
+    if (availableStock < quantity) {
+      throw new Error(
+        `No hay suficiente inventario para este producto. Disponible: ${availableStock}.`
+      );
+    }
+  }
+
   return normalizeStoredQuoteItem({
-    input: JSON.parse(JSON.stringify(state.lastPayload)),
+    input: snapshotInput,
     result: JSON.parse(JSON.stringify(state.lastResult)),
   });
 }
@@ -3416,6 +4155,10 @@ function applyQuoteRecordToForm(record) {
 
 function readQuotePayload() {
   const data = new FormData(quoteForm);
+  const currentProduct = state.products.find(
+    (item) => String(item.id) === String(data.get("product_id") || "").trim()
+  );
+  const usesInventoryStock = data.get("uses_inventory_stock") === "on";
   return {
     pending_request_id: toNumberOrNull(data.get("pending_request_id")),
     product_id: toNumberOrNull(data.get("product_id")),
@@ -3427,6 +4170,10 @@ function readQuotePayload() {
     store: String(data.get("store") || "").trim(),
     quantity: Number(data.get("quantity") || 1),
     purchase_type: String(data.get("purchase_type") || "online").trim().toLowerCase() || "online",
+    uses_inventory_stock: usesInventoryStock,
+    inventory_unit_cost_cop: usesInventoryStock
+      ? Number(currentProduct?.inventory_unit_cost_cop || 0)
+      : 0,
     notes: String(data.get("notes") || "").trim(),
     client_quote_items_text: String(data.get("client_quote_items_text") || "").trim(),
     price_usd_net: Number(data.get("price_usd_net") || 0),
@@ -3445,7 +4192,7 @@ function readQuotePayload() {
 function readQuoteSavePayload() {
   const currentPayload = readQuotePayload();
   const quoteItems = state.quoteLineItems.length
-    ? state.quoteLineItems.map((item) => ({
+      ? state.quoteLineItems.map((item) => ({
         product_id: item.product_id,
         product_name: item.product_name,
         reference: item.reference || "",
@@ -3453,6 +4200,9 @@ function readQuoteSavePayload() {
         store: item.store || "",
         quantity: Number(item.quantity || 1),
         purchase_type: item.purchase_type || item.input?.purchase_type || "online",
+        uses_inventory_stock: Boolean(
+          item.uses_inventory_stock ?? item.input?.uses_inventory_stock
+        ),
         input: item.input || {},
         result: item.result || null,
       }))
@@ -3475,6 +4225,39 @@ function ensureQuoteCanBeSaved(payload) {
   if (!Array.isArray(payload.quote_items) || !payload.quote_items.length) {
     throw new Error("Agrega al menos un producto calculado a la cotizacion.");
   }
+}
+
+function summarizeQuoteItemsForTotals(items) {
+  return (items || []).reduce(
+    (summary, item) => {
+      const itemResult = item?.result?.final || {};
+      summary.salePriceCop += Number(item.sale_price_cop || itemResult.sale_price_cop || 0);
+      summary.advanceCop += Number(item.advance_cop || itemResult.advance_cop || 0);
+      return summary;
+    },
+    { salePriceCop: 0, advanceCop: 0 }
+  );
+}
+
+async function persistQuoteRecord() {
+  const payload = readQuoteSavePayload();
+  const comesFromPending = Boolean(payload.pending_request_id);
+  ensureQuoteCanBeSaved(payload);
+
+  const updatedProduct = await syncCurrentProductPricingToCatalog();
+  const targetUrl = state.editingQuoteId
+    ? `/api/quotes/${state.editingQuoteId}/update`
+    : "/api/quotes";
+  const response = await requestJson(targetUrl, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  return {
+    quote: response.item,
+    comesFromPending,
+    updatedProduct,
+  };
 }
 
 async function calculateQuoteFromForm({ manual = false } = {}) {
@@ -3559,8 +4342,10 @@ async function requestJsonLegacy(url, options = {}) {
 async function loadHistory() {
   try {
     const payload = await requestJson("/api/quotes");
-    renderHistory(payload.items || []);
+    state.quoteHistory = payload.items || [];
+    renderHistory(state.quoteHistory);
   } catch (error) {
+    state.quoteHistory = [];
     historyContainer.className = "history-empty";
     historyContainer.innerHTML = `<p>${error.message}</p>`;
   }
@@ -3598,6 +4383,7 @@ async function loadCatalog() {
       "Aun no hay tiendas creadas."
     );
     autocompleteControllers.forEach((controller) => controller.refresh());
+    syncInventorySaleUi();
   } catch (error) {
     clientsListContainer.className = "catalog-empty";
     productsListContainer.className = "catalog-empty";
@@ -3687,6 +4473,21 @@ async function loadExpenses() {
   }
 }
 
+async function loadInventoryPurchases() {
+  if (!inventoryPurchasesListContainer) {
+    return;
+  }
+
+  try {
+    const payload = await requestJson("/api/inventory-purchases");
+    state.inventoryPurchases = payload.items || [];
+    renderInventoryPurchases(state.inventoryPurchases);
+  } catch (error) {
+    inventoryPurchasesListContainer.className = "catalog-empty";
+    inventoryPurchasesListContainer.innerHTML = `<p>${error.message}</p>`;
+  }
+}
+
 async function loadOrders() {
   try {
     const [statusesResponse, ordersResponse] = await Promise.all([
@@ -3713,6 +4514,59 @@ async function loadOrders() {
     ordersListContainer.innerHTML = `<p>${error.message}</p>`;
     orderStatusesListContainer.className = "catalog-empty";
     orderStatusesListContainer.innerHTML = `<p>${error.message}</p>`;
+  }
+}
+
+function syncWhatsAppTemplateFormFromTrigger(triggerKey) {
+  if (!whatsappTemplateForm) {
+    return;
+  }
+
+  const trigger = String(triggerKey || "").trim();
+  const template = state.whatsappTemplates.find((item) => item.trigger_key === trigger);
+  const triggerOption = state.whatsappTriggers.find((item) => item.key === trigger);
+  const form = whatsappTemplateForm.elements;
+
+  form.namedItem("trigger_key").value = trigger;
+  form.namedItem("label").value = template?.label || triggerOption?.label || "";
+  form.namedItem("content_sid").value = template?.content_sid || "";
+  form.namedItem("content_variables_json").value = template?.content_variables_json || "";
+  form.namedItem("body_text").value = template?.body_text || "";
+  form.namedItem("is_active").checked = template ? Boolean(template.is_active) : true;
+  form.namedItem("auto_send_enabled").checked = template ? Boolean(template.auto_send_enabled) : false;
+}
+
+async function loadWhatsAppAdmin() {
+  if (!whatsappSettingsForm || !whatsappTemplateForm) {
+    return;
+  }
+
+  try {
+    const [settingsPayload, templatesPayload] = await Promise.all([
+      requestJson("/api/whatsapp/settings"),
+      requestJson("/api/whatsapp/templates"),
+    ]);
+
+    state.whatsappSettings = settingsPayload.item || null;
+    state.whatsappTemplates = templatesPayload.items || [];
+    state.whatsappTriggers = templatesPayload.triggers || [];
+
+    renderWhatsAppSettings(state.whatsappSettings);
+    renderWhatsAppTriggerOptions(state.whatsappTriggers);
+    renderWhatsAppTemplates(state.whatsappTemplates);
+
+    if (whatsappTriggerSelect && state.whatsappTriggers.length) {
+      const currentTrigger = whatsappTriggerSelect.value || state.whatsappTriggers[0].key;
+      syncWhatsAppTemplateFormFromTrigger(currentTrigger);
+    }
+  } catch (error) {
+    state.whatsappTemplates = [];
+    state.whatsappTriggers = [];
+    renderWhatsAppTemplates([]);
+    if (whatsappTemplatesListContainer) {
+      whatsappTemplatesListContainer.className = "catalog-empty";
+      whatsappTemplatesListContainer.innerHTML = `<p>${error.message}</p>`;
+    }
   }
 }
 
@@ -3759,38 +4613,22 @@ saveButton.addEventListener("click", async () => {
     return;
   }
 
-  const payload = readQuoteSavePayload();
-  const comesFromPending = Boolean(payload.pending_request_id);
-  try {
-    ensureQuoteCanBeSaved(payload);
-  } catch (error) {
-    statusMessage.textContent = error.message;
-    return;
-  }
-
   saveButton.disabled = true;
   statusMessage.textContent = state.editingQuoteId
     ? "Actualizando cotizacion..."
     : "Guardando cotizacion...";
 
   try {
-    const updatedProduct = await syncCurrentProductPricingToCatalog();
-    const targetUrl = state.editingQuoteId
-      ? `/api/quotes/${state.editingQuoteId}/update`
-      : "/api/quotes";
-    const response = await requestJson(targetUrl, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    const { quote, comesFromPending, updatedProduct } = await persistQuoteRecord();
     statusMessage.textContent = state.editingQuoteId
-      ? `Cotizacion #${response.item.id} actualizada${updatedProduct ? " y producto sincronizado." : "."}`
+      ? `Cotizacion #${quote.id} actualizada${updatedProduct ? " y producto sincronizado." : "."}`
       : updatedProduct
         ? "Cotizacion guardada y producto sincronizado en el catalogo."
         : "Cotizacion guardada en la base de datos local.";
     if (comesFromPending) {
       statusMessage.textContent = state.editingQuoteId
-        ? `Cotizacion #${response.item.id} actualizada y vinculada al pendiente comercial.`
-        : `Cotizacion #${response.item.id} creada desde el pendiente comercial.`;
+        ? `Cotizacion #${quote.id} actualizada y vinculada al pendiente comercial.`
+        : `Cotizacion #${quote.id} creada desde el pendiente comercial.`;
     }
     await Promise.all([loadHistory(), loadPendingRequests(), loadFollowup()]);
     await loadCatalog();
@@ -3802,6 +4640,78 @@ saveButton.addEventListener("click", async () => {
     syncSaveButtonState();
   }
 });
+
+if (createOrderButton) {
+  createOrderButton.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!state.lastResult && !state.quoteLineItems.length) {
+      statusMessage.textContent = "Calcula o agrega al menos un producto antes de crear la compra.";
+      return;
+    }
+
+    let quoteDraft;
+    try {
+      quoteDraft = readQuoteSavePayload();
+      ensureQuoteCanBeSaved(quoteDraft);
+    } catch (error) {
+      statusMessage.textContent = error.message;
+      return;
+    }
+
+    const totals = summarizeQuoteItemsForTotals(quoteDraft.quote_items);
+    let orderInputs;
+    try {
+      orderInputs = collectOrderCreationInputs({
+        quoteItems: getQuoteItemsForPurchaseAdjustment(quoteDraft.quote_items),
+        salePriceCop: totals.salePriceCop,
+        quotedAdvanceCop: totals.advanceCop,
+        sourceLabel: "compra",
+      });
+    } catch (error) {
+      statusMessage.textContent = error.message;
+      return;
+    }
+
+    if (!orderInputs) {
+      statusMessage.textContent = "Creacion de compra cancelada.";
+      return;
+    }
+
+    createOrderButton.disabled = true;
+    saveButton.disabled = true;
+    statusMessage.textContent = state.editingQuoteId
+      ? "Actualizando cotizacion y creando compra..."
+      : "Creando compra directa...";
+
+    try {
+      const { quote } = await persistQuoteRecord();
+      statusMessage.textContent = "Cotizacion lista. Creando compra directa...";
+      const payload = await requestJson("/api/orders/from-quote", {
+        method: "POST",
+        body: JSON.stringify({
+          quote_id: Number(quote.id),
+          advance_paid_cop: orderInputs.advancePaidCop,
+          actual_purchase_prices: orderInputs.actualPurchasePrices,
+        }),
+      });
+      await Promise.all([loadHistory(), loadOrders(), loadDashboard(), loadFollowup()]);
+      await loadCatalog();
+      await refreshActiveClientDetail();
+      await refreshActiveProductDetail();
+      statusMessage.textContent = payload.existing
+        ? "Esta cotizacion ya estaba convertida en compra."
+        : "Compra creada desde el modulo comercial con anticipo y precio real confirmados.";
+      window.location.hash = "compras";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    } finally {
+      createOrderButton.disabled = false;
+      syncSaveButtonState();
+    }
+  });
+}
 
 clientForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -3878,6 +4788,82 @@ if (pendingForm) {
   });
 }
 
+if (inventoryPurchaseProductSelect) {
+  inventoryPurchaseProductSelect.addEventListener("change", () => {
+    const product = findProductBySearchValue(inventoryPurchaseProductSelect.value);
+    if (product) {
+      applyProductToInventoryPurchaseSelection(product);
+      statusMessage.textContent = "Producto aplicado al abastecimiento.";
+      return;
+    }
+    clearInventoryPurchaseProductSelection();
+  });
+}
+
+if (addInventoryPurchaseItemButton) {
+  addInventoryPurchaseItemButton.addEventListener("click", () => {
+    try {
+      const item = addInventoryPurchaseDraftItem();
+      statusMessage.textContent = `${item.product_name} agregado al abastecimiento.`;
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+  });
+}
+
+if (inventoryPurchaseDraftContainer) {
+  inventoryPurchaseDraftContainer.addEventListener("click", (event) => {
+    const removeButton = event.target.closest("[data-inventory-purchase-remove]");
+    if (!removeButton) {
+      return;
+    }
+
+    const index = Number(removeButton.getAttribute("data-inventory-purchase-remove"));
+    if (Number.isNaN(index)) {
+      return;
+    }
+
+    state.inventoryPurchaseLineItems = state.inventoryPurchaseLineItems.filter(
+      (_, itemIndex) => itemIndex !== index
+    );
+    renderInventoryPurchaseDraft();
+    statusMessage.textContent = "Producto retirado del abastecimiento.";
+  });
+}
+
+if (saveInventoryPurchaseButton) {
+  saveInventoryPurchaseButton.addEventListener("click", async () => {
+    try {
+      const payload = readInventoryPurchasePayload();
+      saveInventoryPurchaseButton.disabled = true;
+      statusMessage.textContent = "Registrando abastecimiento...";
+      const response = await requestJson("/api/inventory-purchases", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      inventoryPurchaseForm.reset();
+      inventoryPurchaseForm.elements.namedItem("purchase_date").value = toDateInputValue(new Date());
+      inventoryPurchaseForm.elements.namedItem("item_quantity").value = 1;
+      state.inventoryPurchaseLineItems = [];
+      clearInventoryPurchaseProductSelection();
+      renderInventoryPurchaseDraft();
+      await Promise.all([
+        loadInventoryPurchases(),
+        loadCatalog(),
+        loadExpenses(),
+        loadDashboard(),
+      ]);
+      await refreshActiveProductDetail();
+      statusMessage.textContent = `Abastecimiento #${response.item.id} registrado y reflejado como salida de dinero.`;
+      window.location.hash = "abastecimiento";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    } finally {
+      saveInventoryPurchaseButton.disabled = false;
+    }
+  });
+}
+
 expenseForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
@@ -3907,7 +4893,7 @@ orderStatusForm.addEventListener("submit", async (event) => {
       body: JSON.stringify(payload),
     });
     orderStatusForm.reset();
-    await loadOrders();
+    await Promise.all([loadOrders(), loadWhatsAppAdmin()]);
     statusMessage.textContent = "Estado creado y agregado al flujo secuencial.";
     window.location.hash = "administracion";
   } catch (error) {
@@ -3956,6 +4942,51 @@ if (productStoreForm) {
     } catch (error) {
       statusMessage.textContent = error.message;
     }
+  });
+}
+
+if (whatsappSettingsForm) {
+  whatsappSettingsForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    try {
+      const payload = readWhatsAppSettingsPayload();
+      await requestJson("/api/whatsapp/settings", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      await loadWhatsAppAdmin();
+      statusMessage.textContent = "Configuracion de WhatsApp guardada.";
+      window.location.hash = "administracion";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+  });
+}
+
+if (whatsappTemplateForm) {
+  whatsappTemplateForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    try {
+      const payload = readWhatsAppTemplatePayload();
+      await requestJson("/api/whatsapp/templates", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      await loadWhatsAppAdmin();
+      syncWhatsAppTemplateFormFromTrigger(payload.trigger_key);
+      statusMessage.textContent = "Plantilla de WhatsApp guardada.";
+      window.location.hash = "administracion";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+  });
+}
+
+if (whatsappTriggerSelect) {
+  whatsappTriggerSelect.addEventListener("change", () => {
+    syncWhatsAppTemplateFormFromTrigger(whatsappTriggerSelect.value);
   });
 }
 
@@ -4093,6 +5124,63 @@ historyContainer.addEventListener("click", async (event) => {
 
     const quoteTotal = Number(createOrderButton.getAttribute("data-quote-total") || 0);
     const quotedAdvance = Number(createOrderButton.getAttribute("data-quoted-advance") || 0);
+    const guidedQuoteRecord = state.quoteHistory.find((item) => String(item.id) === String(quoteId));
+    const guidedQuoteItems = getQuoteItemsForPurchaseAdjustment(
+      guidedQuoteRecord?.input?.quote_items && guidedQuoteRecord.input.quote_items.length
+        ? guidedQuoteRecord.input.quote_items
+        : guidedQuoteRecord
+          ? [{ input: guidedQuoteRecord.input, result: guidedQuoteRecord.result }]
+          : []
+    );
+    let guidedOrderInputs;
+    try {
+      guidedOrderInputs = collectOrderCreationInputs({
+        quoteItems: guidedQuoteItems,
+        salePriceCop: quoteTotal,
+        quotedAdvanceCop: quotedAdvance,
+        sourceLabel: "compra",
+      });
+    } catch (error) {
+      statusMessage.textContent = error.message;
+      return;
+    }
+
+    if (!guidedOrderInputs) {
+      statusMessage.textContent = "CreaciÃ³n de compra cancelada.";
+      return;
+    }
+
+    const guidedOriginalText = createOrderButton.textContent;
+    createOrderButton.disabled = true;
+    createOrderButton.textContent = "Creando compra...";
+
+    try {
+      const payload = await requestJson("/api/orders/from-quote", {
+        method: "POST",
+        body: JSON.stringify({
+          quote_id: Number(quoteId),
+          advance_paid_cop: guidedOrderInputs.advancePaidCop,
+          actual_purchase_prices: guidedOrderInputs.actualPurchasePrices,
+        }),
+      });
+      await Promise.all([loadHistory(), loadOrders(), loadDashboard(), loadFollowup()]);
+      await refreshActiveClientDetail();
+      await refreshActiveProductDetail();
+      statusMessage.textContent = payload.existing
+        ? "Esta cotizaciÃ³n ya estaba convertida en compra."
+        : "Compra creada con anticipo y precio real de compra confirmados.";
+      window.location.hash = "compras";
+    } catch (error) {
+      createOrderButton.textContent = "Error al crear";
+      statusMessage.textContent = error.message;
+      window.setTimeout(() => {
+        createOrderButton.disabled = false;
+        createOrderButton.textContent = guidedOriginalText;
+      }, 1400);
+      return;
+    }
+    return;
+
     const defaultAdvanceText = String(Math.round(quotedAdvance));
     const rawAdvance = window.prompt(
       `Antes de confirmar la compra, indica cuánto pagó realmente el cliente como anticipo en COP.\n\nValor total: ${formatCop(
@@ -4304,6 +5392,38 @@ if (dashboardProductsContainer) {
   });
 
 ordersListContainer.addEventListener("click", async (event) => {
+  const sendWhatsAppButton = event.target.closest("[data-send-order-whatsapp]");
+  if (sendWhatsAppButton) {
+    const orderId = sendWhatsAppButton.getAttribute("data-send-order-whatsapp");
+    const triggerKey = sendWhatsAppButton.getAttribute("data-order-whatsapp-trigger");
+    if (!orderId) {
+      return;
+    }
+
+    const originalText = sendWhatsAppButton.textContent;
+    sendWhatsAppButton.disabled = true;
+    sendWhatsAppButton.textContent = "Enviando...";
+
+    try {
+      const payload = await requestJson(`/api/orders/${orderId}/whatsapp`, {
+        method: "POST",
+        body: JSON.stringify({
+          trigger_key: triggerKey,
+        }),
+      });
+      statusMessage.textContent =
+        payload?.item?.status === "failed"
+          ? payload.item.error_message || "La notificacion de WhatsApp fallo."
+          : "Notificacion de WhatsApp enviada.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    } finally {
+      sendWhatsAppButton.disabled = false;
+      sendWhatsAppButton.textContent = originalText;
+    }
+    return;
+  }
+
   const travelTransportButton = event.target.closest("[data-save-travel-transport]");
   if (travelTransportButton) {
     const orderId = travelTransportButton.getAttribute("data-save-travel-transport");
@@ -4479,6 +5599,36 @@ if (productDetailContainer) {
     statusMessage.textContent = "Producto cargado desde su ficha comercial.";
     window.location.hash = "cotizacion";
   });
+
+  productDetailContainer.addEventListener("submit", async (event) => {
+    const form = event.target.closest("[data-product-inventory-form]");
+    if (!form) {
+      return;
+    }
+
+    event.preventDefault();
+    const productId = form.getAttribute("data-product-inventory-form");
+    if (!productId) {
+      statusMessage.textContent = "No fue posible identificar el producto para el inventario.";
+      return;
+    }
+
+    const formData = new FormData(form);
+    try {
+      await requestJson(`/api/products/${encodeURIComponent(productId)}/inventory`, {
+        method: "POST",
+        body: JSON.stringify({
+          movement_type: String(formData.get("movement_type") || "").trim(),
+          quantity: Number(formData.get("quantity") || 0),
+          note: String(formData.get("note") || "").trim(),
+        }),
+      });
+      await Promise.all([loadCatalog(), loadProductDetail(productId, { shouldScroll: false })]);
+      statusMessage.textContent = "Movimiento de inventario registrado.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+  });
 }
 
 if (cancelEditButton) {
@@ -4583,6 +5733,16 @@ function setupAutocomplete() {
       },
       emptyMessage: "No hay productos con esas letras",
     }),
+    createAutocompleteController(inventoryPurchaseProductSelect, {
+      getItems: () => state.products,
+      getLabel: productSearchLabel,
+      getSearchText: productSearchLabel,
+      onSelect: (product) => {
+        applyProductToInventoryPurchaseSelection(product);
+        statusMessage.textContent = "Producto aplicado al abastecimiento.";
+      },
+      emptyMessage: "No hay productos con esas letras",
+    }),
     createAutocompleteController(productCategoryInput, {
       getItems: () => state.productCategories,
       getLabel: (item) => item.name,
@@ -4674,17 +5834,24 @@ async function initApp() {
   resetQuoteEditingState();
   renderQuoteLineItems();
   renderQuoteLiveSummary();
+  renderInventoryPurchaseDraft();
   setupAutocomplete();
   await loadSession();
   state.dashboardPeriod = dashboardPeriodSelect.value || "daily";
   if (expenseForm) {
     expenseForm.elements.namedItem("expense_date").value = toDateInputValue(new Date());
   }
+  if (inventoryPurchaseForm) {
+    inventoryPurchaseForm.elements.namedItem("purchase_date").value = toDateInputValue(new Date());
+    inventoryPurchaseForm.elements.namedItem("item_quantity").value = 1;
+  }
   await Promise.all([
     loadCatalog(),
     loadHistory(),
     loadPendingRequests(),
+    loadInventoryPurchases(),
     loadOrders(),
+    loadWhatsAppAdmin(),
     loadDashboard(),
     loadFollowup(),
     loadExpenses(),

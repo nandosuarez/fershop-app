@@ -36,6 +36,8 @@ class ClientInput:
     city: str = ""
     address: str = ""
     neighborhood: str = ""
+    whatsapp_phone: str = ""
+    whatsapp_opt_in: bool = False
     preferred_contact_channel: str = ""
     preferred_payment_method: str = ""
     interests: str = ""
@@ -54,6 +56,8 @@ class ClientInput:
             city=str(payload.get("city", "")).strip(),
             address=str(payload.get("address", "")).strip(),
             neighborhood=str(payload.get("neighborhood", "")).strip(),
+            whatsapp_phone=str(payload.get("whatsapp_phone", "")).strip(),
+            whatsapp_opt_in=bool(payload.get("whatsapp_opt_in")),
             preferred_contact_channel=str(payload.get("preferred_contact_channel", "")).strip(),
             preferred_payment_method=str(payload.get("preferred_payment_method", "")).strip(),
             interests=str(payload.get("interests", "")).strip(),
@@ -70,6 +74,8 @@ class ProductInput:
     reference: str = ""
     category: str = ""
     store: str = ""
+    inventory_enabled: bool = False
+    initial_stock_quantity: int = 0
     price_usd_net: float = 0.0
     tax_usa_percent: float = 0.0
     locker_shipping_usd: float = 0.0
@@ -86,6 +92,13 @@ class ProductInput:
             reference=str(payload.get("reference", "")).strip(),
             category=str(payload.get("category", "")).strip(),
             store=str(payload.get("store", "")).strip(),
+            inventory_enabled=bool(payload.get("inventory_enabled")),
+            initial_stock_quantity=_to_int(
+                payload.get("initial_stock_quantity"),
+                "initial_stock_quantity",
+                required=False,
+            )
+            or 0,
             price_usd_net=_to_float(payload.get("price_usd_net"), "price_usd_net") or 0.0,
             tax_usa_percent=_to_float(payload.get("tax_usa_percent"), "tax_usa_percent") or 0.0,
             locker_shipping_usd=_to_float(
@@ -101,6 +114,8 @@ class ProductInput:
         for field_name in ("price_usd_net", "tax_usa_percent", "locker_shipping_usd"):
             if getattr(self, field_name) < 0:
                 raise ValueError(f"El campo '{field_name}' no puede ser negativo.")
+        if self.initial_stock_quantity < 0:
+            raise ValueError("El stock inicial no puede ser negativo.")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

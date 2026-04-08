@@ -14,6 +14,7 @@ from fershop_calculadora.database import (
     save_client,
     save_expense,
     save_pending_request,
+    save_inventory_purchase,
     save_product,
     save_quote,
     update_order_status,
@@ -145,6 +146,51 @@ class DashboardTests(unittest.TestCase):
             result["final"]["profit_cop"] - expense["amount_cop"],
         )
         self.assertEqual(summary["expenses_by_category"][0]["category_key"], "advertising")
+
+    def test_dashboard_tracks_inventory_investment_separately_from_expenses(self) -> None:
+        today = datetime.now(timezone.utc).date().isoformat()
+        product = save_product(
+            {
+                "name": "Sueter para stock",
+                "reference": "SWT-STOCK",
+                "category": "Sueters",
+                "store": "FerShop tienda",
+                "inventory_enabled": False,
+                "initial_stock_quantity": 0,
+                "price_usd_net": 20,
+                "tax_usa_percent": 7,
+                "locker_shipping_usd": 3,
+                "notes": "",
+            }
+        )
+        purchase = save_inventory_purchase(
+            {
+                "purchase_date": today,
+                "supplier_name": "Compra inventario",
+                "items": [
+                    {
+                        "product_id": product["id"],
+                        "quantity": 2,
+                        "unit_cost_cop": 180000,
+                    }
+                ],
+            }
+        )
+        save_expense(
+            {
+                "expense_date": today,
+                "category_key": "advertising",
+                "concept": "Anuncio Instagram",
+                "amount_cop": 90000,
+                "notes": "",
+            }
+        )
+
+        summary = build_dashboard_summary(period_key="daily", reference_date=today)
+
+        self.assertAlmostEqual(summary["metrics"]["inventory_investment_cop"], purchase["total_amount_cop"])
+        self.assertAlmostEqual(summary["metrics"]["expenses_total_cop"], 90000)
+        self.assertEqual(summary["recent_expenses"][0]["category_key"], "advertising")
 
     def test_dashboard_exposes_rankings_by_client_and_product(self) -> None:
         today = datetime.now(timezone.utc).date().isoformat()

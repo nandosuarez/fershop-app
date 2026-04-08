@@ -605,6 +605,24 @@ label span {
   color: var(--ink-soft);
 }
 
+.checkbox-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 2px 4px;
+}
+
+.checkbox-field input[type="checkbox"] {
+  width: auto;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 0;
+}
+
+.checkbox-field span {
+  font-weight: 600;
+}
+
 input,
 select,
 textarea,
@@ -853,6 +871,10 @@ button:disabled {
   margin-top: 20px;
 }
 
+.inventory-purchase-layout {
+  align-items: start;
+}
+
 .purchases-panel {
   margin-top: 20px;
 }
@@ -959,6 +981,24 @@ button:disabled {
 
 .detail-list-card span {
   font-weight: 700;
+}
+
+.inventory-purchase-draft {
+  display: grid;
+  gap: 14px;
+}
+
+.inventory-purchase-card {
+  display: grid;
+  gap: 14px;
+}
+
+.inventory-purchase-item-list {
+  display: grid;
+}
+
+.inventory-purchase-line-card small {
+  color: var(--ink-soft);
 }
 
 .orders-list {

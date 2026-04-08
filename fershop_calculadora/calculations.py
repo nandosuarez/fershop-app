@@ -261,6 +261,8 @@ class QuoteLineItem:
     reference: str = ""
     category: str = ""
     store: str = ""
+    uses_inventory_stock: bool = False
+    inventory_unit_cost_cop: float = 0.0
     unit_price_usd_net: float = 0.0
     unit_tax_usa_percent: float = 0.0
     unit_locker_shipping_usd: float = 0.0
@@ -278,6 +280,11 @@ class QuoteLineItem:
             reference=_clean_text(payload.get("reference")),
             category=_clean_text(payload.get("category")),
             store=_clean_text(payload.get("store")),
+            uses_inventory_stock=bool(payload.get("uses_inventory_stock")),
+            inventory_unit_cost_cop=_to_float(
+                payload.get("inventory_unit_cost_cop"), "inventory_unit_cost_cop", required=False
+            )
+            or 0.0,
             unit_price_usd_net=_to_float(payload.get("unit_price_usd_net"), "unit_price_usd_net")
             or 0.0,
             unit_tax_usa_percent=_to_float(
@@ -300,6 +307,7 @@ class QuoteLineItem:
             "unit_price_usd_net",
             "unit_tax_usa_percent",
             "unit_locker_shipping_usd",
+            "inventory_unit_cost_cop",
         ):
             if getattr(self, field_name) < 0:
                 raise ValueError(f"El campo '{field_name}' no puede ser negativo.")
@@ -335,6 +343,8 @@ class QuoteInput:
     store: str = ""
     quantity: int = 1
     purchase_type: str = PURCHASE_TYPE_ONLINE
+    uses_inventory_stock: bool = False
+    inventory_unit_cost_cop: float = 0.0
     notes: str = ""
     client_quote_items_text: str = ""
     line_items: list[QuoteLineItem] = field(default_factory=list)
@@ -394,6 +404,11 @@ class QuoteInput:
             quantity=quantity,
             purchase_type=_clean_text(payload.get("purchase_type", PURCHASE_TYPE_ONLINE)).lower()
             or PURCHASE_TYPE_ONLINE,
+            uses_inventory_stock=bool(payload.get("uses_inventory_stock")),
+            inventory_unit_cost_cop=_to_float(
+                payload.get("inventory_unit_cost_cop"), "inventory_unit_cost_cop", required=False
+            )
+            or 0.0,
             notes=_clean_text(payload.get("notes")),
             client_quote_items_text=_clean_text(payload.get("client_quote_items_text")),
             line_items=line_items,
@@ -429,6 +444,7 @@ class QuoteInput:
             "local_costs_cop",
             "desired_margin_percent",
             "advance_percent",
+            "inventory_unit_cost_cop",
         )
         for field_name in numeric_fields:
             if getattr(self, field_name) < 0:
@@ -477,6 +493,8 @@ def _build_calculation_line_items(quote: QuoteInput) -> list[dict[str, Any]]:
                 "category": item.category,
                 "store": item.store,
                 "quantity": item.quantity,
+                "uses_inventory_stock": item.uses_inventory_stock,
+                "inventory_unit_cost_cop": item.inventory_unit_cost_cop,
                 "unit_price_usd_net": item.unit_price_usd_net,
                 "unit_tax_usa_percent": item.unit_tax_usa_percent,
                 "unit_locker_shipping_usd": item.unit_locker_shipping_usd,
@@ -492,6 +510,8 @@ def _build_calculation_line_items(quote: QuoteInput) -> list[dict[str, Any]]:
             "category": quote.category,
             "store": quote.store,
             "quantity": quote.quantity,
+            "uses_inventory_stock": quote.uses_inventory_stock,
+            "inventory_unit_cost_cop": quote.inventory_unit_cost_cop,
             "unit_price_usd_net": quote.price_usd_net,
             "unit_tax_usa_percent": quote.tax_usa_percent,
             "unit_locker_shipping_usd": quote.locker_shipping_usd,
@@ -508,23 +528,33 @@ def calculate_quote(quote: QuoteInput) -> dict[str, Any]:
     total_price_with_tax_usd = 0.0
     total_locker_shipping_usd = 0.0
     total_cost_basis_cop = 0.0
+    total_inventory_cost_cop = 0.0
 
     for raw_item in calculation_line_items:
         quantity = int(raw_item["quantity"] or 0)
         unit_price_usd_net = float(raw_item["unit_price_usd_net"] or 0)
         unit_tax_usa_percent = float(raw_item["unit_tax_usa_percent"] or 0)
         unit_locker_shipping_usd = float(raw_item["unit_locker_shipping_usd"] or 0)
+        inventory_unit_cost_cop = float(raw_item.get("inventory_unit_cost_cop") or 0)
+        uses_inventory_stock = bool(raw_item.get("uses_inventory_stock"))
+        uses_inventory_cost_basis = uses_inventory_stock and inventory_unit_cost_cop > 0
 
         line_price_usd_net = unit_price_usd_net * quantity
         line_tax_usd = line_price_usd_net * (unit_tax_usa_percent / 100)
         line_price_with_tax_usd = line_price_usd_net + line_tax_usd
         line_locker_shipping_usd = unit_locker_shipping_usd * quantity
 
-        line_cost_basis_usd = line_price_with_tax_usd + line_locker_shipping_usd
-
-        line_cost_basis_cop = line_cost_basis_usd * quote.exchange_rate_cop
-        total_price_with_tax_usd += line_price_with_tax_usd
-        total_locker_shipping_usd += line_locker_shipping_usd
+        line_import_cost_basis_usd = line_price_with_tax_usd + line_locker_shipping_usd
+        line_import_cost_basis_cop = line_import_cost_basis_usd * quote.exchange_rate_cop
+        line_cost_basis_usd = line_import_cost_basis_usd
+        line_cost_basis_cop = line_import_cost_basis_cop
+        if uses_inventory_cost_basis:
+            line_cost_basis_usd = 0.0
+            line_cost_basis_cop = inventory_unit_cost_cop * quantity
+            total_inventory_cost_cop += line_cost_basis_cop
+        else:
+            total_price_with_tax_usd += line_price_with_tax_usd
+            total_locker_shipping_usd += line_locker_shipping_usd
         total_cost_basis_cop += line_cost_basis_cop
 
         computed_line_items.append(
@@ -535,6 +565,9 @@ def calculate_quote(quote: QuoteInput) -> dict[str, Any]:
                 "category": raw_item["category"],
                 "store": raw_item["store"],
                 "quantity": quantity,
+                "uses_inventory_stock": uses_inventory_stock,
+                "uses_inventory_cost_basis": uses_inventory_cost_basis,
+                "inventory_unit_cost_cop": inventory_unit_cost_cop,
                 "unit_price_usd_net": unit_price_usd_net,
                 "unit_tax_usa_percent": unit_tax_usa_percent,
                 "unit_locker_shipping_usd": unit_locker_shipping_usd,
@@ -543,11 +576,20 @@ def calculate_quote(quote: QuoteInput) -> dict[str, Any]:
                 "line_price_with_tax_usd": line_price_with_tax_usd,
                 "line_locker_shipping_usd": line_locker_shipping_usd,
                 "line_cost_basis_usd": line_cost_basis_usd,
+                "line_import_cost_basis_cop": line_import_cost_basis_cop,
                 "line_cost_basis_cop": line_cost_basis_cop,
             }
         )
 
-    if quote.purchase_type == PURCHASE_TYPE_TRAVEL:
+    all_inventory_items = bool(computed_line_items) and all(
+        bool(item.get("uses_inventory_cost_basis")) for item in computed_line_items
+    )
+
+    if all_inventory_items:
+        applied_travel_cost_usd = 0.0
+        applied_locker_shipping_usd = 0.0
+        applied_local_costs_cop = 0.0
+    elif quote.purchase_type == PURCHASE_TYPE_TRAVEL:
         applied_travel_cost_usd = quote.travel_cost_usd
         applied_locker_shipping_usd = total_locker_shipping_usd
         applied_local_costs_cop = quote.local_costs_cop
@@ -561,7 +603,7 @@ def calculate_quote(quote: QuoteInput) -> dict[str, Any]:
     travel_cost_cop = applied_travel_cost_usd * quote.exchange_rate_cop
     locker_shipping_cop = applied_locker_shipping_usd * quote.exchange_rate_cop
     cost_in_cop = total_usd * quote.exchange_rate_cop
-    real_total_cost_cop = cost_in_cop + applied_local_costs_cop
+    real_total_cost_cop = cost_in_cop + applied_local_costs_cop + total_inventory_cost_cop
 
     suggested_sale_price_cop = real_total_cost_cop / (1 - desired_margin)
     suggested_profit_cop = suggested_sale_price_cop - real_total_cost_cop
@@ -609,6 +651,7 @@ def calculate_quote(quote: QuoteInput) -> dict[str, Any]:
             "locker_shipping_cop": locker_shipping_cop,
             "total_usd": total_usd,
             "cost_in_cop": cost_in_cop,
+            "inventory_cost_cop": total_inventory_cost_cop,
             "real_total_cost_cop": real_total_cost_cop,
         },
         "suggested": {
@@ -650,6 +693,7 @@ def build_quote_item_snapshot(quote: QuoteInput, result: dict[str, Any]) -> dict
         "store": quote.store,
         "quantity": quote.quantity,
         "purchase_type": quote.purchase_type,
+        "uses_inventory_stock": quote.uses_inventory_stock,
         "purchase_type_label": PURCHASE_TYPE_LABELS[quote.purchase_type],
         "input": quote.to_dict(),
         "result": result,

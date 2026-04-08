@@ -1,7 +1,7 @@
 import sqlite3
 import unittest
 
-from fershop_calculadora.calculations import QuoteInput, calculate_quote
+from fershop_calculadora.calculations import QuoteInput, calculate_quote, calculate_quote_bundle
 from fershop_calculadora.database import (
     create_order_status,
     create_order_from_quote,
@@ -198,6 +198,112 @@ class OrderPersistenceTests(unittest.TestCase):
         self.assertEqual(updated["status_key"], "quote_confirmed")
         self.assertEqual(updated["balance_due_cop"], order["balance_due_cop"] - 1000000)
         self.assertIn("Fecha reportada: 2026-04-07", updated["events"][-1]["note"])
+
+    def test_create_order_from_quote_can_override_real_purchase_price(self) -> None:
+        quote = QuoteInput.from_dict(
+            {
+                "product_name": "Bolso premium",
+                "client_name": "Andrea",
+                "price_usd_net": 100,
+                "tax_usa_percent": 0,
+                "travel_cost_usd": 0,
+                "locker_shipping_usd": 0,
+                "exchange_rate_cop": 4000,
+                "local_costs_cop": 0,
+                "desired_margin_percent": 25,
+                "advance_percent": 50,
+                "final_sale_price_cop": 700000,
+            }
+        )
+        result = calculate_quote(quote)
+        record = database.save_quote(quote.to_dict(), result)
+
+        order, existing = create_order_from_quote(
+            record["id"],
+            advance_paid_cop=350000,
+            actual_purchase_prices=[
+                {
+                    "product_name": "Bolso premium",
+                    "price_usd_net": 85,
+                }
+            ],
+        )
+
+        self.assertFalse(existing)
+        self.assertAlmostEqual(order["snapshot"]["result"]["costs"]["real_total_cost_cop"], 340000)
+        self.assertAlmostEqual(order["snapshot"]["result"]["final"]["profit_cop"], 360000)
+
+    def test_create_order_from_multi_product_quote_keeps_bundle_snapshot(self) -> None:
+        bundle_result = calculate_quote_bundle(
+            {
+                "client_name": "Andrea",
+                "quote_items": [
+                    {
+                        "product_name": "Sueter basico",
+                        "quantity": 3,
+                        "input": QuoteInput.from_dict(
+                            {
+                                "product_name": "Sueter basico",
+                                "client_name": "Andrea",
+                                "quantity": 3,
+                                "purchase_type": "travel",
+                                "price_usd_net": 20,
+                                "tax_usa_percent": 0,
+                                "travel_cost_usd": 5,
+                                "locker_shipping_usd": 2,
+                                "exchange_rate_cop": 4000,
+                                "local_costs_cop": 10000,
+                                "desired_margin_percent": 25,
+                                "advance_percent": 50,
+                            }
+                        ).to_dict(),
+                    },
+                    {
+                        "product_name": "Zapato",
+                        "quantity": 1,
+                        "input": QuoteInput.from_dict(
+                            {
+                                "product_name": "Zapato",
+                                "client_name": "Andrea",
+                                "quantity": 1,
+                                "purchase_type": "travel",
+                                "price_usd_net": 30,
+                                "tax_usa_percent": 0,
+                                "travel_cost_usd": 5,
+                                "locker_shipping_usd": 3,
+                                "exchange_rate_cop": 4000,
+                                "local_costs_cop": 12000,
+                                "desired_margin_percent": 25,
+                                "advance_percent": 50,
+                            }
+                        ).to_dict(),
+                    },
+                ],
+            }
+        )
+        record = database.save_quote(bundle_result["input"], bundle_result)
+
+        order, existing = create_order_from_quote(
+            record["id"],
+            advance_paid_cop=bundle_result["final"]["advance_cop"],
+            actual_purchase_prices=[
+                {
+                    "quote_item_index": 0,
+                    "product_name": "Sueter basico",
+                    "price_usd_net": 18,
+                },
+                {
+                    "quote_item_index": 1,
+                    "product_name": "Zapato",
+                    "price_usd_net": 28,
+                },
+            ],
+        )
+
+        self.assertFalse(existing)
+        self.assertEqual(order["status_key"], "quote_confirmed")
+        self.assertEqual(order["product_name"], "2 productos / 4 unidades")
+        self.assertEqual(len(order["snapshot"]["input"]["quote_items"]), 2)
 
     def test_travel_purchase_can_store_transport_route(self) -> None:
         quote = QuoteInput.from_dict(

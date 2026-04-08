@@ -22,6 +22,7 @@ from .database import (
     create_order_from_quote,
     create_session_for_user,
     delete_session,
+    get_company_whatsapp_settings,
     get_client_detail,
     get_pending_request,
     get_product_detail,
@@ -31,6 +32,7 @@ from .database import (
     list_clients,
     list_expense_categories,
     list_expenses,
+    list_inventory_purchases,
     list_orders,
     list_order_statuses,
     list_pending_requests,
@@ -38,17 +40,26 @@ from .database import (
     list_products,
     list_product_stores,
     list_quotes,
+    list_whatsapp_notifications,
+    list_whatsapp_templates,
+    maybe_auto_send_order_whatsapp_notification,
+    record_product_inventory_movement,
     register_second_payment,
+    save_company_whatsapp_settings,
     save_expense,
+    save_inventory_purchase,
     save_client,
     save_pending_request,
     save_product,
     save_quote,
+    save_whatsapp_template,
+    send_order_whatsapp_notification,
     update_pending_request_status,
     update_product_pricing,
     update_quote,
     update_order_status,
     update_order_travel_transport,
+    update_whatsapp_notification_status,
 )
 from .documents import build_quote_message, generate_quote_pdf
 from .orders import is_valid_order_status
@@ -339,6 +350,16 @@ class FerShopHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/api/inventory-purchases":
+            session = self._require_session()
+            if session is None:
+                return
+            self._send_json(
+                HTTPStatus.OK,
+                {"items": list_inventory_purchases(company_id=session["company"]["id"])},
+            )
+            return
+
         if parsed.path == "/api/order-statuses":
             session = self._require_session()
             if session is None:
@@ -346,6 +367,55 @@ class FerShopHandler(BaseHTTPRequestHandler):
             self._send_json(
                 HTTPStatus.OK,
                 {"items": list_order_statuses(company_id=session["company"]["id"])},
+            )
+            return
+
+        if parsed.path == "/api/whatsapp/settings":
+            session = self._require_session()
+            if session is None:
+                return
+            self._send_json(
+                HTTPStatus.OK,
+                {"item": get_company_whatsapp_settings(company_id=session["company"]["id"])},
+            )
+            return
+
+        if parsed.path == "/api/whatsapp/templates":
+            session = self._require_session()
+            if session is None:
+                return
+            self._send_json(
+                HTTPStatus.OK,
+                list_whatsapp_templates(company_id=session["company"]["id"]),
+            )
+            return
+
+        if parsed.path == "/api/whatsapp/notifications":
+            session = self._require_session()
+            if session is None:
+                return
+            params = parse_qs(parsed.query)
+            raw_limit = params.get("limit", ["30"])[0]
+            raw_order_id = params.get("order_id", [""])[0]
+            try:
+                limit = max(1, min(int(raw_limit), 100))
+            except ValueError:
+                limit = 30
+            order_id = None
+            if raw_order_id not in (None, ""):
+                try:
+                    order_id = int(raw_order_id)
+                except ValueError:
+                    order_id = None
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "items": list_whatsapp_notifications(
+                        limit=limit,
+                        order_id=order_id,
+                        company_id=session["company"]["id"],
+                    )
+                },
             )
             return
 
@@ -388,7 +458,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
         if order_route is not None:
             order_id, action = order_route
-            if action in {"status", "second-payment", "travel-transport"}:
+            if action in {"status", "second-payment", "travel-transport", "whatsapp"}:
                 self._send_json(
                     HTTPStatus.METHOD_NOT_ALLOWED,
                     {"error": "Usa POST para actualizar la compra."},
@@ -399,6 +469,21 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         try:
+            if self.path == "/api/whatsapp/twilio/status":
+                form_payload = self._read_form_data()
+                message_sid = str(form_payload.get("MessageSid", "")).strip()
+                message_status = str(form_payload.get("MessageStatus", "")).strip()
+                error_message = str(
+                    form_payload.get("ErrorMessage") or form_payload.get("SmsErrorMessage") or ""
+                ).strip()
+                update_whatsapp_notification_status(
+                    message_sid,
+                    message_status,
+                    error_message=error_message,
+                )
+                self._send_json(HTTPStatus.OK, {"ok": True})
+                return
+
             if self.path == "/api/login":
                 payload = self._read_json()
                 username = str(payload.get("username", "")).strip()
@@ -524,6 +609,22 @@ class FerShopHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.OK, {"item": item})
                 return
 
+            product_inventory_route = self._parse_product_inventory_route(self.path)
+            if product_inventory_route is not None:
+                payload = self._read_json()
+                movement_type = str(payload.get("movement_type", "")).strip()
+                quantity = payload.get("quantity")
+                note = str(payload.get("note", "")).strip()
+                record = record_product_inventory_movement(
+                    product_inventory_route,
+                    movement_type=movement_type,
+                    quantity=int(quantity),
+                    note=note,
+                    company_id=session["company"]["id"],
+                )
+                self._send_json(HTTPStatus.OK, record)
+                return
+
             if self.path == "/api/product-categories":
                 payload = self._read_json()
                 name = str(payload.get("name", "")).strip()
@@ -538,9 +639,36 @@ class FerShopHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.CREATED, {"item": record})
                 return
 
+            if self.path == "/api/whatsapp/settings":
+                payload = self._read_json()
+                record = save_company_whatsapp_settings(
+                    payload,
+                    company_id=session["company"]["id"],
+                )
+                self._send_json(HTTPStatus.OK, {"item": record})
+                return
+
+            if self.path == "/api/whatsapp/templates":
+                payload = self._read_json()
+                record = save_whatsapp_template(
+                    payload,
+                    company_id=session["company"]["id"],
+                )
+                self._send_json(HTTPStatus.OK, {"item": record})
+                return
+
             if self.path == "/api/expenses":
                 payload = self._read_json()
                 record = save_expense(payload, company_id=session["company"]["id"])
+                self._send_json(HTTPStatus.CREATED, {"item": record})
+                return
+
+            if self.path == "/api/inventory-purchases":
+                payload = self._read_json()
+                record = save_inventory_purchase(
+                    payload,
+                    company_id=session["company"]["id"],
+                )
                 self._send_json(HTTPStatus.CREATED, {"item": record})
                 return
 
@@ -574,13 +702,30 @@ class FerShopHandler(BaseHTTPRequestHandler):
                     except (TypeError, ValueError) as exc:
                         raise ValueError("El anticipo real debe ser numérico.") from exc
 
+                actual_purchase_prices = payload.get("actual_purchase_prices")
+                if actual_purchase_prices not in (None, "") and not isinstance(actual_purchase_prices, list):
+                    raise ValueError(
+                        "Los precios reales de compra deben enviarse como una lista valida."
+                    )
+
                 item, existing = create_order_from_quote(
                     quote_id,
                     advance_paid_cop=advance_paid_cop,
+                    actual_purchase_prices=actual_purchase_prices,
                     company_id=session["company"]["id"],
                 )
+                notification = None
+                if not existing:
+                    notification = maybe_auto_send_order_whatsapp_notification(
+                        item["id"],
+                        trigger_key="order_status:quote_confirmed",
+                        company_id=session["company"]["id"],
+                    )
                 status = HTTPStatus.OK if existing else HTTPStatus.CREATED
-                self._send_json(status, {"item": item, "existing": existing})
+                self._send_json(
+                    status,
+                    {"item": item, "existing": existing, "notification": notification},
+                )
                 return
 
             order_route = self._parse_order_route(self.path)
@@ -598,7 +743,15 @@ class FerShopHandler(BaseHTTPRequestHandler):
                         note,
                         company_id=session["company"]["id"],
                     )
-                    self._send_json(HTTPStatus.OK, {"item": item})
+                    notification = maybe_auto_send_order_whatsapp_notification(
+                        order_id,
+                        trigger_key=f"order_status:{status_key}",
+                        company_id=session["company"]["id"],
+                    )
+                    self._send_json(
+                        HTTPStatus.OK,
+                        {"item": item, "notification": notification},
+                    )
                     return
                 if action == "second-payment":
                     payload = self._read_json()
@@ -615,7 +768,15 @@ class FerShopHandler(BaseHTTPRequestHandler):
                         received_at=received_at,
                         company_id=session["company"]["id"],
                     )
-                    self._send_json(HTTPStatus.OK, {"item": item})
+                    notification = maybe_auto_send_order_whatsapp_notification(
+                        order_id,
+                        trigger_key="second_payment_registered",
+                        company_id=session["company"]["id"],
+                    )
+                    self._send_json(
+                        HTTPStatus.OK,
+                        {"item": item, "notification": notification},
+                    )
                     return
                 if action == "travel-transport":
                     payload = self._read_json()
@@ -626,6 +787,17 @@ class FerShopHandler(BaseHTTPRequestHandler):
                         company_id=session["company"]["id"],
                     )
                     self._send_json(HTTPStatus.OK, {"item": item})
+                    return
+                if action == "whatsapp":
+                    payload = self._read_json()
+                    trigger_key = str(payload.get("trigger_key", "")).strip() or None
+                    notification = send_order_whatsapp_notification(
+                        order_id,
+                        trigger_key=trigger_key,
+                        source="manual",
+                        company_id=session["company"]["id"],
+                    )
+                    self._send_json(HTTPStatus.OK, {"item": notification})
                     return
             pending_status_route = self._parse_pending_request_status_route(self.path)
             if pending_status_route is not None:
@@ -672,6 +844,20 @@ class FerShopHandler(BaseHTTPRequestHandler):
         except json.JSONDecodeError as exc:
             raise ValueError("El cuerpo de la petición no es JSON válido.") from exc
 
+    def _read_form_data(self) -> dict[str, str]:
+        raw_length = self.headers.get("Content-Length", "0")
+        try:
+            content_length = int(raw_length)
+        except ValueError as exc:
+            raise ValueError("Cabecera Content-Length invalida.") from exc
+
+        raw_body = self.rfile.read(content_length)
+        if not raw_body:
+            return {}
+
+        parsed = parse_qs(raw_body.decode("utf-8"), keep_blank_values=True)
+        return {key: values[-1] if values else "" for key, values in parsed.items()}
+
     def _parse_quote_route(self, path: str) -> tuple[int, str] | None:
         parts = [part for part in path.split("/") if part]
         if len(parts) != 4 or parts[0] != "api" or parts[1] != "quotes":
@@ -714,7 +900,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
         raw_id = parts[2]
         action = parts[3]
-        if action not in {"status", "second-payment", "travel-transport"}:
+        if action not in {"status", "second-payment", "travel-transport", "whatsapp"}:
             return None
 
         try:
@@ -745,6 +931,16 @@ class FerShopHandler(BaseHTTPRequestHandler):
     def _parse_product_update_route(self, path: str) -> int | None:
         parts = [part for part in path.split("/") if part]
         if len(parts) != 4 or parts[0] != "api" or parts[1] != "products" or parts[3] != "pricing":
+            return None
+
+        try:
+            return int(parts[2])
+        except ValueError:
+            return None
+
+    def _parse_product_inventory_route(self, path: str) -> int | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) != 4 or parts[0] != "api" or parts[1] != "products" or parts[3] != "inventory":
             return None
 
         try:

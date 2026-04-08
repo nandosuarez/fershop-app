@@ -4,6 +4,11 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 
+LEGACY_INVENTORY_RESTOCK_CATEGORY_KEY = "inventory_restock"
+LEGACY_EXPENSE_CATEGORY_LABELS = {
+    LEGACY_INVENTORY_RESTOCK_CATEGORY_KEY: "Abastecimiento de inventario",
+}
+
 EXPENSE_CATEGORIES = [
     {"key": "airfare", "label": "Pasajes"},
     {"key": "ground_transport", "label": "Transporte"},
@@ -31,6 +36,8 @@ def list_expense_categories() -> list[dict[str, str]]:
 
 def get_expense_category_label(category_key: str) -> str:
     clean_key = str(category_key or "").strip()
+    if clean_key in LEGACY_EXPENSE_CATEGORY_LABELS:
+        return LEGACY_EXPENSE_CATEGORY_LABELS[clean_key]
     for item in EXPENSE_CATEGORIES:
         if item["key"] == clean_key:
             return item["label"]

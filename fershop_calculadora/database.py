@@ -11,8 +11,10 @@ from pathlib import Path
 from typing import Any
 
 from .auth import build_session_expiry, generate_session_token, hash_password, verify_password
+from .calculations import QuoteInput, calculate_quote, calculate_quote_bundle
 from .db_runtime import CompatConnection, connect_postgres, get_database_url, is_postgres_enabled
 from .finance import (
+    LEGACY_INVENTORY_RESTOCK_CATEGORY_KEY,
     get_expense_category_label,
     get_period_bounds,
     is_date_in_range,
@@ -42,6 +44,16 @@ from .pending import (
     normalize_pending_priority,
     normalize_pending_status,
 )
+from .whatsapp import (
+    DEFAULT_WHATSAPP_COUNTRY_CODE,
+    build_whatsapp_trigger_catalog,
+    default_whatsapp_templates,
+    mask_whatsapp_phone,
+    normalize_whatsapp_phone,
+    render_content_variables,
+    render_template_text,
+    send_twilio_whatsapp_message,
+)
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -60,6 +72,17 @@ DEFAULT_ADMIN_PASSWORD = os.environ.get("FERSHOP_DEFAULT_ADMIN_PASSWORD", "FerSh
 CLOSED_ORDER_STATUS_KEY = "cycle_closed"
 _INIT_LOCK = threading.Lock()
 _INITIALIZED_TARGETS: dict[tuple[Any, ...], bool] = {}
+INVENTORY_MOVEMENT_STOCK_IN = "stock_in"
+INVENTORY_MOVEMENT_STOCK_OUT = "stock_out"
+INVENTORY_MOVEMENT_SALE_OUT = "sale_out"
+INVENTORY_MOVEMENT_SET_STOCK = "set_stock"
+INVENTORY_MOVEMENT_LABELS = {
+    INVENTORY_MOVEMENT_STOCK_IN: "Entrada de inventario",
+    INVENTORY_MOVEMENT_STOCK_OUT: "Salida manual",
+    INVENTORY_MOVEMENT_SALE_OUT: "Venta desde inventario",
+    INVENTORY_MOVEMENT_SET_STOCK: "Ajuste de stock",
+}
+INVENTORY_COST_EPSILON = 0.005
 
 
 def _cleanup_stale_files() -> None:
@@ -96,6 +119,12 @@ def _format_cop_plain(value: float) -> str:
     return f"${value:,.0f} COP".replace(",", ".")
 
 
+def _safe_ratio(numerator: float, denominator: float) -> float | None:
+    if denominator == 0:
+        return None
+    return numerator / denominator
+
+
 def _normalize_catalog_name(value: Any) -> str:
     raw_value = str(value or "").strip()
     if not raw_value:
@@ -103,6 +132,17 @@ def _normalize_catalog_name(value: Any) -> str:
     normalized = unicodedata.normalize("NFKD", raw_value)
     ascii_only = normalized.encode("ascii", "ignore").decode("ascii")
     return " ".join(ascii_only.casefold().split())
+
+
+def _to_bool_flag(value: Any) -> int:
+    if isinstance(value, str):
+        return 1 if value.strip().lower() in {"1", "true", "yes", "si", "on"} else 0
+    return 1 if bool(value) else 0
+
+
+def get_inventory_movement_label(movement_type: Any) -> str:
+    key = str(movement_type or "").strip().lower()
+    return INVENTORY_MOVEMENT_LABELS.get(key, key or "Movimiento")
 
 
 def _quote_input_line_items(input_data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -129,6 +169,10 @@ def _quote_input_line_items(input_data: dict[str, Any]) -> list[dict[str, Any]]:
                     "product_id": item.get("product_id") or item_input.get("product_id"),
                     "product_name": product_name,
                     "quantity": max(quantity, 1),
+                    "uses_inventory_stock": bool(
+                        item.get("uses_inventory_stock")
+                        or item_input.get("uses_inventory_stock")
+                    ),
                 }
             )
 
@@ -142,7 +186,8 @@ def _quote_input_line_items(input_data: dict[str, Any]) -> list[dict[str, Any]]:
         {
             "product_id": input_data.get("product_id"),
             "product_name": fallback_product_name,
-            "quantity": 1,
+            "quantity": max(int(input_data.get("quantity") or 1), 1),
+            "uses_inventory_stock": bool(input_data.get("uses_inventory_stock")),
         }
     ]
 
@@ -172,8 +217,17 @@ def _quote_result_line_items(record: dict[str, Any]) -> list[dict[str, Any]]:
                     "product_id": item.get("product_id"),
                     "product_name": product_name,
                     "quantity": max(quantity, 1),
+                    "uses_inventory_stock": bool(
+                        item.get("uses_inventory_stock")
+                        or item_final.get("uses_inventory_stock")
+                    ),
                     "sale_price_cop": float(
                         item.get("sale_price_cop") or item_final.get("sale_price_cop") or 0
+                    ),
+                    "real_cost_cop": float(
+                        item.get("real_cost_cop")
+                        or item_result.get("costs", {}).get("real_total_cost_cop")
+                        or 0
                     ),
                     "profit_cop": float(item.get("profit_cop") or item_final.get("profit_cop") or 0),
                 }
@@ -188,9 +242,159 @@ def _quote_result_line_items(record: dict[str, Any]) -> list[dict[str, Any]]:
 
     fallback_item = fallback_input_items[0]
     final_data = result_data.get("final", {})
+    costs_data = result_data.get("costs", {})
     fallback_item["sale_price_cop"] = float(final_data.get("sale_price_cop") or 0)
+    fallback_item["real_cost_cop"] = float(costs_data.get("real_total_cost_cop") or 0)
     fallback_item["profit_cop"] = float(final_data.get("profit_cop") or 0)
     return [fallback_item]
+
+
+def _normalize_actual_purchase_prices(
+    raw_items: Any,
+) -> list[dict[str, Any]]:
+    if raw_items in (None, ""):
+        return []
+    if not isinstance(raw_items, list):
+        raise ValueError("Los precios reales de compra deben enviarse como una lista valida.")
+
+    normalized_items: list[dict[str, Any]] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            raise ValueError("Cada precio real de compra debe tener un formato valido.")
+        try:
+            price_usd_net = float(raw_item.get("price_usd_net"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("El precio real de compra debe ser numerico.") from exc
+        if price_usd_net <= 0:
+            raise ValueError("El precio real de compra debe ser mayor a cero.")
+
+        quote_item_index = raw_item.get("quote_item_index")
+        if quote_item_index in (None, ""):
+            normalized_index = None
+        else:
+            try:
+                normalized_index = int(quote_item_index)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("El indice del producto ajustado no es valido.") from exc
+            if normalized_index < 0:
+                raise ValueError("El indice del producto ajustado no es valido.")
+
+        product_id = raw_item.get("product_id")
+        if product_id in (None, "", 0):
+            normalized_product_id = None
+        else:
+            try:
+                normalized_product_id = int(product_id)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("El producto ajustado no es valido.") from exc
+
+        normalized_items.append(
+            {
+                "quote_item_index": normalized_index,
+                "product_id": normalized_product_id,
+                "product_name": str(raw_item.get("product_name") or "").strip(),
+                "price_usd_net": price_usd_net,
+            }
+        )
+    return normalized_items
+
+
+def _apply_actual_purchase_prices_to_quote_record(
+    quote_record: dict[str, Any],
+    actual_purchase_prices: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    normalized_prices = _normalize_actual_purchase_prices(actual_purchase_prices)
+    if not normalized_prices:
+        return quote_record
+
+    updated_record = json.loads(json.dumps(quote_record, ensure_ascii=False))
+    input_data = updated_record.get("input", {})
+    quote_items = input_data.get("quote_items")
+
+    if isinstance(quote_items, list) and quote_items:
+        updated_quote_items = json.loads(json.dumps(quote_items, ensure_ascii=False))
+        used_indexes: set[int] = set()
+        for price_override in normalized_prices:
+            target_index = price_override.get("quote_item_index")
+            if target_index is not None and 0 <= target_index < len(updated_quote_items):
+                used_indexes.add(target_index)
+                target_item = updated_quote_items[target_index]
+            else:
+                target_item = None
+                for index, candidate in enumerate(updated_quote_items):
+                    if index in used_indexes:
+                        continue
+                    candidate_input = (
+                        candidate.get("input", {})
+                        if isinstance(candidate.get("input"), dict)
+                        else candidate
+                    )
+                    candidate_product_id = candidate.get("product_id") or candidate_input.get("product_id")
+                    if (
+                        price_override.get("product_id") is not None
+                        and candidate_product_id not in (None, "", 0)
+                        and str(candidate_product_id) == str(price_override["product_id"])
+                    ):
+                        target_item = candidate
+                        used_indexes.add(index)
+                        break
+                    candidate_name = str(
+                        candidate.get("product_name")
+                        or candidate_input.get("product_name")
+                        or ""
+                    ).strip()
+                    if (
+                        candidate_name
+                        and candidate_name.casefold()
+                        == str(price_override.get("product_name") or "").strip().casefold()
+                    ):
+                        target_item = candidate
+                        used_indexes.add(index)
+                        break
+            if target_item is None:
+                raise ValueError("No fue posible ubicar uno de los productos para aplicar el precio real.")
+
+            candidate_input = (
+                target_item.get("input", {})
+                if isinstance(target_item.get("input"), dict)
+                else target_item
+            )
+            candidate_input["price_usd_net"] = price_override["price_usd_net"]
+            if isinstance(target_item.get("input"), dict):
+                target_item["input"] = candidate_input
+            else:
+                target_item["price_usd_net"] = price_override["price_usd_net"]
+
+        recalculated = calculate_quote_bundle(
+            {
+                "pending_request_id": input_data.get("pending_request_id"),
+                "client_id": input_data.get("client_id"),
+                "client_name": input_data.get("client_name"),
+                "notes": input_data.get("notes"),
+                "client_quote_items_text": input_data.get("client_quote_items_text"),
+                "quote_items": updated_quote_items,
+            }
+        )
+        updated_record["input"] = recalculated["input"]
+        updated_record["result"] = recalculated
+        updated_record["client_name"] = recalculated.get("input", {}).get(
+            "client_name", updated_record.get("client_name", "")
+        )
+        updated_record["product_name"] = recalculated.get("input", {}).get(
+            "product_name", updated_record.get("product_name", "")
+        )
+        return updated_record
+
+    single_input = json.loads(json.dumps(input_data, ensure_ascii=False))
+    first_override = normalized_prices[0]
+    single_input["price_usd_net"] = first_override["price_usd_net"]
+    recalculated_quote = QuoteInput.from_dict(single_input)
+    recalculated_result = calculate_quote(recalculated_quote)
+    updated_record["input"] = recalculated_quote.to_dict()
+    updated_record["result"] = recalculated_result
+    updated_record["client_name"] = recalculated_quote.client_name
+    updated_record["product_name"] = recalculated_quote.product_name
+    return updated_record
 
 
 def _ensure_table_columns(
@@ -386,6 +590,190 @@ def _ensure_default_company_and_admin(
     }
 
 
+def _serialize_whatsapp_settings_row(row: sqlite3.Row | None) -> dict[str, Any]:
+    if row is None:
+        return {
+            "company_id": None,
+            "updated_at": "",
+            "twilio_account_sid": "",
+            "twilio_auth_token": "",
+            "whatsapp_sender": "",
+            "messaging_service_sid": "",
+            "status_callback_url": "",
+            "default_country_code": DEFAULT_WHATSAPP_COUNTRY_CODE,
+            "auto_send_enabled": False,
+            "is_configured": False,
+        }
+    return {
+        "company_id": row["company_id"],
+        "updated_at": row["updated_at"],
+        "twilio_account_sid": row["twilio_account_sid"],
+        "twilio_auth_token": row["twilio_auth_token"],
+        "whatsapp_sender": row["whatsapp_sender"],
+        "messaging_service_sid": row["messaging_service_sid"],
+        "status_callback_url": row["status_callback_url"],
+        "default_country_code": row["default_country_code"] or DEFAULT_WHATSAPP_COUNTRY_CODE,
+        "auto_send_enabled": bool(row["auto_send_enabled"]),
+        "is_configured": bool(row["twilio_account_sid"] and row["twilio_auth_token"]),
+    }
+
+
+def _ensure_company_whatsapp_settings(
+    connection: sqlite3.Connection | CompatConnection,
+    company_id: int,
+) -> dict[str, Any]:
+    connection.row_factory = sqlite3.Row
+    row = connection.execute(
+        """
+        SELECT
+            company_id,
+            updated_at,
+            twilio_account_sid,
+            twilio_auth_token,
+            whatsapp_sender,
+            messaging_service_sid,
+            status_callback_url,
+            default_country_code,
+            auto_send_enabled
+        FROM company_whatsapp_settings
+        WHERE company_id = ?
+        """,
+        (company_id,),
+    ).fetchone()
+    if row is not None:
+        return _serialize_whatsapp_settings_row(row)
+
+    created_at = datetime.now(timezone.utc).isoformat()
+    connection.execute(
+        """
+        INSERT INTO company_whatsapp_settings (
+            company_id,
+            updated_at,
+            twilio_account_sid,
+            twilio_auth_token,
+            whatsapp_sender,
+            messaging_service_sid,
+            status_callback_url,
+            default_country_code,
+            auto_send_enabled
+        )
+        VALUES (?, ?, '', '', '', '', '', ?, 0)
+        """,
+        (company_id, created_at, DEFAULT_WHATSAPP_COUNTRY_CODE),
+    )
+    row = connection.execute(
+        """
+        SELECT
+            company_id,
+            updated_at,
+            twilio_account_sid,
+            twilio_auth_token,
+            whatsapp_sender,
+            messaging_service_sid,
+            status_callback_url,
+            default_country_code,
+            auto_send_enabled
+        FROM company_whatsapp_settings
+        WHERE company_id = ?
+        """,
+        (company_id,),
+    ).fetchone()
+    return _serialize_whatsapp_settings_row(row)
+
+
+def _serialize_whatsapp_template_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "company_id": row["company_id"],
+        "trigger_key": row["trigger_key"],
+        "label": row["label"],
+        "body_text": row["body_text"],
+        "content_sid": row["content_sid"],
+        "content_variables_json": row["content_variables_json"],
+        "is_active": bool(row["is_active"]),
+        "auto_send_enabled": bool(row["auto_send_enabled"]),
+    }
+
+
+def _seed_default_whatsapp_templates(
+    connection: sqlite3.Connection | CompatConnection,
+    company_id: int,
+) -> None:
+    connection.row_factory = sqlite3.Row
+    existing_rows = connection.execute(
+        """
+        SELECT trigger_key
+        FROM whatsapp_templates
+        WHERE company_id = ?
+        """,
+        (company_id,),
+    ).fetchall()
+    existing_keys = {str(row["trigger_key"]) for row in existing_rows}
+    statuses = _list_status_rows(connection, company_id=company_id, include_inactive=False)
+    now = datetime.now(timezone.utc).isoformat()
+    for template in default_whatsapp_templates(statuses):
+        if template["trigger_key"] in existing_keys:
+            continue
+        connection.execute(
+            """
+            INSERT INTO whatsapp_templates (
+                created_at,
+                updated_at,
+                company_id,
+                trigger_key,
+                label,
+                body_text,
+                content_sid,
+                content_variables_json,
+                is_active,
+                auto_send_enabled
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                now,
+                now,
+                company_id,
+                template["trigger_key"],
+                template["label"],
+                template["body_text"],
+                template["content_sid"],
+                template["content_variables_json"],
+                1 if template["is_active"] else 0,
+                1 if template["auto_send_enabled"] else 0,
+            ),
+        )
+
+
+def _serialize_whatsapp_notification_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "company_id": row["company_id"],
+        "order_id": row["order_id"],
+        "quote_id": row["quote_id"],
+        "client_id": row["client_id"],
+        "trigger_key": row["trigger_key"],
+        "template_id": row["template_id"],
+        "template_label": row["template_label"],
+        "recipient_phone": row["recipient_phone"],
+        "recipient_phone_masked": mask_whatsapp_phone(row["recipient_phone"]),
+        "message_text": row["message_text"],
+        "provider": row["provider"],
+        "external_message_id": row["external_message_id"],
+        "status": row["status"],
+        "error_message": row["error_message"],
+        "source": row["source"],
+        "sent_at": row["sent_at"],
+        "delivered_at": row["delivered_at"],
+        "read_at": row["read_at"],
+        "failed_at": row["failed_at"],
+    }
+
+
 def _ensure_product_dimension_value(
     connection: sqlite3.Connection | CompatConnection,
     table_name: str,
@@ -530,6 +918,42 @@ def _serialize_expense_row(row: sqlite3.Row) -> dict[str, Any]:
         "concept": row["concept"],
         "amount_cop": row["amount_cop"],
         "notes": row["notes"],
+    }
+
+
+def _serialize_inventory_purchase_item_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "created_at": row["created_at"],
+        "company_id": row["company_id"],
+        "purchase_id": row["purchase_id"],
+        "product_id": row["product_id"],
+        "product_name": row["product_name"],
+        "quantity": int(row["quantity"] or 0),
+        "unit_cost_cop": float(row["unit_cost_cop"] or 0),
+        "line_total_cop": float(row["line_total_cop"] or 0),
+        "notes": row["notes"],
+    }
+
+
+def _serialize_inventory_purchase_row(
+    row: sqlite3.Row,
+    items: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    normalized_items = list(items or [])
+    return {
+        "id": row["id"],
+        "created_at": row["created_at"],
+        "company_id": row["company_id"],
+        "purchase_date": row["purchase_date"],
+        "supplier_name": row["supplier_name"],
+        "total_amount_cop": float(row["total_amount_cop"] or 0),
+        "cash_out_cop": float(row["total_amount_cop"] or 0),
+        "expense_id": row["expense_id"],
+        "notes": row["notes"],
+        "items_count": len(normalized_items),
+        "total_units": sum(int(item.get("quantity") or 0) for item in normalized_items),
+        "items": normalized_items,
     }
 
 
@@ -873,6 +1297,9 @@ def init_db(skip_defaults: bool = False) -> None:
                     city TEXT NOT NULL,
                     address TEXT NOT NULL DEFAULT '',
                     neighborhood TEXT NOT NULL DEFAULT '',
+                    whatsapp_phone TEXT NOT NULL DEFAULT '',
+                    whatsapp_opt_in INTEGER NOT NULL DEFAULT 0,
+                    whatsapp_opt_in_at TEXT NOT NULL DEFAULT '',
                     preferred_contact_channel TEXT NOT NULL DEFAULT '',
                     preferred_payment_method TEXT NOT NULL DEFAULT '',
                     interests TEXT NOT NULL DEFAULT '',
@@ -887,10 +1314,74 @@ def init_db(skip_defaults: bool = False) -> None:
                     "company_id": "INTEGER NOT NULL DEFAULT 1",
                     "address": "TEXT NOT NULL DEFAULT ''",
                     "neighborhood": "TEXT NOT NULL DEFAULT ''",
+                    "whatsapp_phone": "TEXT NOT NULL DEFAULT ''",
+                    "whatsapp_opt_in": "INTEGER NOT NULL DEFAULT 0",
+                    "whatsapp_opt_in_at": "TEXT NOT NULL DEFAULT ''",
                     "preferred_contact_channel": "TEXT NOT NULL DEFAULT ''",
                     "preferred_payment_method": "TEXT NOT NULL DEFAULT ''",
                     "interests": "TEXT NOT NULL DEFAULT ''",
                 },
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS company_whatsapp_settings (
+                    company_id INTEGER PRIMARY KEY,
+                    updated_at TEXT NOT NULL,
+                    twilio_account_sid TEXT NOT NULL DEFAULT '',
+                    twilio_auth_token TEXT NOT NULL DEFAULT '',
+                    whatsapp_sender TEXT NOT NULL DEFAULT '',
+                    messaging_service_sid TEXT NOT NULL DEFAULT '',
+                    status_callback_url TEXT NOT NULL DEFAULT '',
+                    default_country_code TEXT NOT NULL DEFAULT '+57',
+                    auto_send_enabled INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS whatsapp_templates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    company_id INTEGER NOT NULL DEFAULT 1,
+                    trigger_key TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    body_text TEXT NOT NULL DEFAULT '',
+                    content_sid TEXT NOT NULL DEFAULT '',
+                    content_variables_json TEXT NOT NULL DEFAULT '',
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    auto_send_enabled INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE(company_id, trigger_key)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS whatsapp_notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    company_id INTEGER NOT NULL DEFAULT 1,
+                    order_id INTEGER,
+                    quote_id INTEGER,
+                    client_id INTEGER,
+                    trigger_key TEXT NOT NULL DEFAULT '',
+                    template_id INTEGER,
+                    template_label TEXT NOT NULL DEFAULT '',
+                    recipient_phone TEXT NOT NULL DEFAULT '',
+                    message_text TEXT NOT NULL DEFAULT '',
+                    provider TEXT NOT NULL DEFAULT 'twilio',
+                    external_message_id TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'queued',
+                    error_message TEXT NOT NULL DEFAULT '',
+                    source TEXT NOT NULL DEFAULT '',
+                    sent_at TEXT NOT NULL DEFAULT '',
+                    delivered_at TEXT NOT NULL DEFAULT '',
+                    read_at TEXT NOT NULL DEFAULT '',
+                    failed_at TEXT NOT NULL DEFAULT '',
+                    response_json TEXT NOT NULL DEFAULT ''
+                )
+                """
             )
             connection.execute(
                 """
@@ -902,6 +1393,10 @@ def init_db(skip_defaults: bool = False) -> None:
                     reference TEXT NOT NULL,
                     category TEXT NOT NULL DEFAULT '',
                     store TEXT NOT NULL DEFAULT '',
+                    inventory_enabled INTEGER NOT NULL DEFAULT 0,
+                    current_stock INTEGER NOT NULL DEFAULT 0,
+                    inventory_unit_cost_cop REAL NOT NULL DEFAULT 0,
+                    current_stock_value_cop REAL NOT NULL DEFAULT 0,
                     price_usd_net REAL NOT NULL,
                     tax_usa_percent REAL NOT NULL,
                     locker_shipping_usd REAL NOT NULL,
@@ -916,6 +1411,10 @@ def init_db(skip_defaults: bool = False) -> None:
                     "company_id": "INTEGER NOT NULL DEFAULT 1",
                     "category": "TEXT NOT NULL DEFAULT ''",
                     "store": "TEXT NOT NULL DEFAULT ''",
+                    "inventory_enabled": "INTEGER NOT NULL DEFAULT 0",
+                    "current_stock": "INTEGER NOT NULL DEFAULT 0",
+                    "inventory_unit_cost_cop": "REAL NOT NULL DEFAULT 0",
+                    "current_stock_value_cop": "REAL NOT NULL DEFAULT 0",
                 },
             )
             connection.execute(
@@ -1044,6 +1543,36 @@ def init_db(skip_defaults: bool = False) -> None:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS inventory_movements (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    company_id INTEGER NOT NULL DEFAULT 1,
+                    product_id INTEGER NOT NULL,
+                    movement_type TEXT NOT NULL,
+                    quantity_delta INTEGER NOT NULL DEFAULT 0,
+                    quantity_after INTEGER NOT NULL DEFAULT 0,
+                    unit_cost_cop REAL NOT NULL DEFAULT 0,
+                    total_cost_delta_cop REAL NOT NULL DEFAULT 0,
+                    stock_value_after_cop REAL NOT NULL DEFAULT 0,
+                    note TEXT NOT NULL DEFAULT '',
+                    related_order_id INTEGER,
+                    source TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            _ensure_table_columns(
+                connection,
+                "inventory_movements",
+                {
+                    "company_id": "INTEGER NOT NULL DEFAULT 1",
+                    "unit_cost_cop": "REAL NOT NULL DEFAULT 0",
+                    "total_cost_delta_cop": "REAL NOT NULL DEFAULT 0",
+                    "stock_value_after_cop": "REAL NOT NULL DEFAULT 0",
+                    "source": "TEXT NOT NULL DEFAULT ''",
+                },
+            )
             _ensure_table_columns(
                 connection,
                 "orders",
@@ -1095,10 +1624,55 @@ def init_db(skip_defaults: bool = False) -> None:
                 """
             )
             connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS inventory_purchases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    company_id INTEGER NOT NULL DEFAULT 1,
+                    purchase_date TEXT NOT NULL,
+                    supplier_name TEXT NOT NULL,
+                    total_amount_cop REAL NOT NULL,
+                    expense_id INTEGER,
+                    notes TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS inventory_purchase_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    company_id INTEGER NOT NULL DEFAULT 1,
+                    purchase_id INTEGER NOT NULL,
+                    product_id INTEGER NOT NULL,
+                    product_name TEXT NOT NULL,
+                    quantity INTEGER NOT NULL DEFAULT 0,
+                    unit_cost_cop REAL NOT NULL DEFAULT 0,
+                    line_total_cop REAL NOT NULL DEFAULT 0,
+                    notes TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_clients_company_created ON clients (company_id, id DESC)"
             )
             connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_whatsapp_templates_company_trigger ON whatsapp_templates (company_id, trigger_key)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_whatsapp_notifications_company_order ON whatsapp_notifications (company_id, order_id, id DESC)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_whatsapp_notifications_sid ON whatsapp_notifications (external_message_id)"
+            )
+            connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_products_company_created ON products (company_id, id DESC)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_inventory_movements_company_product ON inventory_movements (company_id, product_id, id DESC)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_inventory_movements_company_order ON inventory_movements (company_id, related_order_id, id DESC)"
             )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_product_categories_company_name ON product_categories (company_id, name ASC)"
@@ -1127,6 +1701,15 @@ def init_db(skip_defaults: bool = False) -> None:
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_expenses_company_date ON expenses (company_id, expense_date DESC, id DESC)"
             )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_inventory_purchases_company_date ON inventory_purchases (company_id, purchase_date DESC, id DESC)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_inventory_purchase_items_company_purchase ON inventory_purchase_items (company_id, purchase_id, id ASC)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_inventory_purchase_items_company_product ON inventory_purchase_items (company_id, product_id, id DESC)"
+            )
 
             default_company_id = 1
             if not skip_defaults:
@@ -1134,6 +1717,8 @@ def init_db(skip_defaults: bool = False) -> None:
                 default_company_id = int(default_company["id"])
 
             _ensure_company_id_column(connection, "clients", default_company_id)
+            _ensure_company_id_column(connection, "whatsapp_templates", default_company_id)
+            _ensure_company_id_column(connection, "whatsapp_notifications", default_company_id)
             _ensure_company_id_column(connection, "products", default_company_id)
             _ensure_company_id_column(connection, "product_categories", default_company_id)
             _ensure_company_id_column(connection, "product_stores", default_company_id)
@@ -1142,9 +1727,14 @@ def init_db(skip_defaults: bool = False) -> None:
             _ensure_company_id_column(connection, "orders", default_company_id)
             _ensure_company_id_column(connection, "order_events", default_company_id)
             _ensure_company_id_column(connection, "payment_events", default_company_id)
+            _ensure_company_id_column(connection, "inventory_movements", default_company_id)
             _ensure_company_id_column(connection, "expenses", default_company_id)
+            _ensure_company_id_column(connection, "inventory_purchases", default_company_id)
+            _ensure_company_id_column(connection, "inventory_purchase_items", default_company_id)
             _seed_product_dimension_catalogs(connection)
             if not skip_defaults:
+                _ensure_company_whatsapp_settings(connection, default_company_id)
+                _seed_default_whatsapp_templates(connection, default_company_id)
                 _seed_default_order_statuses(connection, default_company_id=default_company_id)
                 _migrate_legacy_order_states(connection)
                 _backfill_payment_events(connection)
@@ -1194,6 +1784,60 @@ def get_company(company_id: int) -> dict[str, Any] | None:
     if row is None:
         return None
     return _serialize_company_row(row)
+
+
+def get_company_whatsapp_settings(company_id: int | None = None) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    with closing(_connect()) as connection:
+        settings = _ensure_company_whatsapp_settings(connection, company_id)
+        connection.commit()
+    return settings
+
+
+def save_company_whatsapp_settings(
+    settings_data: dict[str, Any], company_id: int | None = None
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    updated_at = datetime.now(timezone.utc).isoformat()
+
+    clean_default_country_code = str(
+        settings_data.get("default_country_code") or DEFAULT_WHATSAPP_COUNTRY_CODE
+    ).strip()
+    if clean_default_country_code and not clean_default_country_code.startswith("+"):
+        clean_default_country_code = f"+{clean_default_country_code}"
+
+    with closing(_connect()) as connection:
+        _ensure_company_whatsapp_settings(connection, company_id)
+        connection.execute(
+            """
+            UPDATE company_whatsapp_settings
+            SET updated_at = ?,
+                twilio_account_sid = ?,
+                twilio_auth_token = ?,
+                whatsapp_sender = ?,
+                messaging_service_sid = ?,
+                status_callback_url = ?,
+                default_country_code = ?,
+                auto_send_enabled = ?
+            WHERE company_id = ?
+            """,
+            (
+                updated_at,
+                str(settings_data.get("twilio_account_sid", "")).strip(),
+                str(settings_data.get("twilio_auth_token", "")).strip(),
+                str(settings_data.get("whatsapp_sender", "")).strip(),
+                str(settings_data.get("messaging_service_sid", "")).strip(),
+                str(settings_data.get("status_callback_url", "")).strip(),
+                clean_default_country_code or DEFAULT_WHATSAPP_COUNTRY_CODE,
+                _to_bool_flag(settings_data.get("auto_send_enabled")),
+                company_id,
+            ),
+        )
+        connection.commit()
+
+    return get_company_whatsapp_settings(company_id=company_id)
 
 
 def create_company_with_admin(
@@ -1268,6 +1912,8 @@ def create_company_with_admin(
             ),
         )
         _seed_default_order_statuses(connection, default_company_id=company_id)
+        _ensure_company_whatsapp_settings(connection, company_id)
+        _seed_default_whatsapp_templates(connection, company_id)
         user_id = _insert_and_get_id(
             connection,
             """
@@ -1883,6 +2529,11 @@ def save_client(client_data: dict[str, Any], company_id: int | None = None) -> d
     init_db()
     company_id = _normalize_company_id(company_id)
     created_at = datetime.now(timezone.utc).isoformat()
+    whatsapp_phone = normalize_whatsapp_phone(client_data.get("whatsapp_phone", ""))
+    whatsapp_opt_in = bool(client_data.get("whatsapp_opt_in")) and bool(whatsapp_phone)
+    if client_data.get("whatsapp_opt_in") and not whatsapp_phone:
+        raise ValueError("Debes registrar el WhatsApp del cliente para activar notificaciones.")
+    whatsapp_opt_in_at = created_at if whatsapp_opt_in else ""
 
     with closing(_connect()) as connection:
         client_id = _insert_and_get_id(
@@ -1897,12 +2548,15 @@ def save_client(client_data: dict[str, Any], company_id: int | None = None) -> d
                 city,
                 address,
                 neighborhood,
+                whatsapp_phone,
+                whatsapp_opt_in,
+                whatsapp_opt_in_at,
                 preferred_contact_channel,
                 preferred_payment_method,
                 interests,
                 notes
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 created_at,
@@ -1913,6 +2567,9 @@ def save_client(client_data: dict[str, Any], company_id: int | None = None) -> d
                 client_data.get("city", ""),
                 client_data.get("address", ""),
                 client_data.get("neighborhood", ""),
+                whatsapp_phone,
+                1 if whatsapp_opt_in else 0,
+                whatsapp_opt_in_at,
                 client_data.get("preferred_contact_channel", ""),
                 client_data.get("preferred_payment_method", ""),
                 client_data.get("interests", ""),
@@ -1931,6 +2588,10 @@ def save_client(client_data: dict[str, Any], company_id: int | None = None) -> d
         "city": client_data.get("city", ""),
         "address": client_data.get("address", ""),
         "neighborhood": client_data.get("neighborhood", ""),
+        "whatsapp_phone": whatsapp_phone,
+        "whatsapp_phone_masked": mask_whatsapp_phone(whatsapp_phone),
+        "whatsapp_opt_in": whatsapp_opt_in,
+        "whatsapp_opt_in_at": whatsapp_opt_in_at,
         "preferred_contact_channel": client_data.get("preferred_contact_channel", ""),
         "preferred_payment_method": client_data.get("preferred_payment_method", ""),
         "interests": client_data.get("interests", ""),
@@ -1955,6 +2616,9 @@ def list_clients(limit: int = 100, company_id: int | None = None) -> list[dict[s
                 city,
                 address,
                 neighborhood,
+                whatsapp_phone,
+                whatsapp_opt_in,
+                whatsapp_opt_in_at,
                 preferred_contact_channel,
                 preferred_payment_method,
                 interests,
@@ -1978,6 +2642,10 @@ def list_clients(limit: int = 100, company_id: int | None = None) -> list[dict[s
             "city": row["city"],
             "address": row["address"],
             "neighborhood": row["neighborhood"],
+            "whatsapp_phone": row["whatsapp_phone"],
+            "whatsapp_phone_masked": mask_whatsapp_phone(row["whatsapp_phone"]),
+            "whatsapp_opt_in": bool(row["whatsapp_opt_in"]),
+            "whatsapp_opt_in_at": row["whatsapp_opt_in_at"],
             "preferred_contact_channel": row["preferred_contact_channel"],
             "preferred_payment_method": row["preferred_payment_method"],
             "interests": row["interests"],
@@ -2013,6 +2681,9 @@ def get_client_detail(client_id: int, company_id: int | None = None) -> dict[str
                 city,
                 address,
                 neighborhood,
+                whatsapp_phone,
+                whatsapp_opt_in,
+                whatsapp_opt_in_at,
                 preferred_contact_channel,
                 preferred_payment_method,
                 interests,
@@ -2215,14 +2886,18 @@ def get_client_detail(client_id: int, company_id: int | None = None) -> dict[str
             "company_id": client_row["company_id"],
             "name": client_row["name"],
             "phone": client_row["phone"],
-            "email": client_row["email"],
-            "city": client_row["city"],
-            "address": client_row["address"],
-            "neighborhood": client_row["neighborhood"],
-            "preferred_contact_channel": client_row["preferred_contact_channel"],
-            "preferred_payment_method": client_row["preferred_payment_method"],
-            "interests": client_row["interests"],
-            "notes": client_row["notes"],
+                "email": client_row["email"],
+                "city": client_row["city"],
+                "address": client_row["address"],
+                "neighborhood": client_row["neighborhood"],
+                "whatsapp_phone": client_row["whatsapp_phone"],
+                "whatsapp_phone_masked": mask_whatsapp_phone(client_row["whatsapp_phone"]),
+                "whatsapp_opt_in": bool(client_row["whatsapp_opt_in"]),
+                "whatsapp_opt_in_at": client_row["whatsapp_opt_in_at"],
+                "preferred_contact_channel": client_row["preferred_contact_channel"],
+                "preferred_payment_method": client_row["preferred_payment_method"],
+                "interests": client_row["interests"],
+                "notes": client_row["notes"],
         },
         "summary": {
             "quotes_count": quotes_count,
@@ -2259,10 +2934,312 @@ def create_product_store(name: str, company_id: int | None = None) -> dict[str, 
     return _create_product_dimension_row("product_stores", name, company_id=company_id)
 
 
+def _serialize_inventory_movement_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "created_at": row["created_at"],
+        "company_id": row["company_id"],
+        "product_id": row["product_id"],
+        "movement_type": row["movement_type"],
+        "movement_label": get_inventory_movement_label(row["movement_type"]),
+        "quantity_delta": int(row["quantity_delta"] or 0),
+        "quantity_after": int(row["quantity_after"] or 0),
+        "unit_cost_cop": float(row["unit_cost_cop"] or 0),
+        "total_cost_delta_cop": float(row["total_cost_delta_cop"] or 0),
+        "stock_value_after_cop": float(row["stock_value_after_cop"] or 0),
+        "note": row["note"],
+        "related_order_id": row["related_order_id"],
+        "source": row["source"],
+    }
+
+
+def _get_product_row(
+    connection: sqlite3.Connection | CompatConnection,
+    *,
+    product_id: int,
+    company_id: int,
+) -> sqlite3.Row | None:
+    connection.row_factory = sqlite3.Row
+    return connection.execute(
+        """
+        SELECT
+            id,
+            created_at,
+            company_id,
+            name,
+            reference,
+            category,
+            store,
+            inventory_enabled,
+            current_stock,
+            inventory_unit_cost_cop,
+            current_stock_value_cop,
+            price_usd_net,
+            tax_usa_percent,
+            locker_shipping_usd,
+            notes
+        FROM products
+        WHERE id = ? AND company_id = ?
+        """,
+        (product_id, company_id),
+    ).fetchone()
+
+
+def _coerce_inventory_quantity(quantity: Any, *, field_name: str = "quantity") -> int:
+    try:
+        value = int(quantity)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("La cantidad de inventario debe ser un numero entero.") from exc
+    if value < 0:
+        raise ValueError(f"El campo '{field_name}' no puede ser negativo.")
+    return value
+
+
+def _record_inventory_movement(
+    connection: sqlite3.Connection | CompatConnection,
+    *,
+    product_id: int,
+    company_id: int,
+    movement_type: str,
+    quantity: int,
+    unit_cost_cop: float | None = None,
+    note: str = "",
+    related_order_id: int | None = None,
+    source: str = "manual",
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    clean_movement_type = str(movement_type or "").strip().lower()
+    if clean_movement_type not in INVENTORY_MOVEMENT_LABELS:
+        raise ValueError("El tipo de movimiento de inventario no es valido.")
+
+    clean_note = str(note or "").strip()
+    clean_source = str(source or "").strip() or "manual"
+    normalized_quantity = _coerce_inventory_quantity(quantity)
+
+    product_row = _get_product_row(connection, product_id=product_id, company_id=company_id)
+    if product_row is None:
+        raise ValueError("El producto no existe.")
+
+    current_stock = int(product_row["current_stock"] or 0)
+    inventory_enabled = bool(product_row["inventory_enabled"])
+    current_unit_cost_cop = float(product_row["inventory_unit_cost_cop"] or 0)
+    current_stock_value_cop = float(product_row["current_stock_value_cop"] or 0)
+    if current_stock_value_cop < INVENTORY_COST_EPSILON:
+        current_stock_value_cop = 0.0
+    if current_stock > 0 and current_unit_cost_cop <= 0 and current_stock_value_cop > 0:
+        current_unit_cost_cop = current_stock_value_cop / current_stock
+    normalized_unit_cost = None if unit_cost_cop in (None, "") else float(unit_cost_cop)
+    if normalized_unit_cost is not None and normalized_unit_cost < 0:
+        raise ValueError("El costo unitario del inventario no puede ser negativo.")
+
+    quantity_delta = 0
+    quantity_after = current_stock
+    effective_unit_cost_cop = 0.0
+    total_cost_delta_cop = 0.0
+    stock_value_after_cop = current_stock_value_cop
+
+    if clean_movement_type == INVENTORY_MOVEMENT_STOCK_IN:
+        if normalized_quantity <= 0:
+            raise ValueError("La entrada de inventario debe ser mayor a cero.")
+        quantity_delta = normalized_quantity
+        quantity_after = current_stock + normalized_quantity
+        inventory_enabled = True
+        effective_unit_cost_cop = (
+            float(normalized_unit_cost)
+            if normalized_unit_cost is not None
+            else float(current_unit_cost_cop or 0)
+        )
+        base_stock_value_cop = current_stock_value_cop
+        if current_stock > 0 and base_stock_value_cop <= 0 and effective_unit_cost_cop > 0:
+            base_stock_value_cop = current_stock * effective_unit_cost_cop
+        total_cost_delta_cop = effective_unit_cost_cop * normalized_quantity
+        stock_value_after_cop = base_stock_value_cop + total_cost_delta_cop
+    elif clean_movement_type in {INVENTORY_MOVEMENT_STOCK_OUT, INVENTORY_MOVEMENT_SALE_OUT}:
+        if not inventory_enabled:
+            raise ValueError("Este producto no tiene inventario de tienda habilitado.")
+        if normalized_quantity <= 0:
+            raise ValueError("La salida de inventario debe ser mayor a cero.")
+        quantity_delta = -normalized_quantity
+        quantity_after = current_stock - normalized_quantity
+        if quantity_after < 0:
+            raise ValueError(
+                f"No hay suficiente inventario para {product_row['name']}. Stock actual: {current_stock}."
+            )
+        effective_unit_cost_cop = float(current_unit_cost_cop or 0)
+        if effective_unit_cost_cop <= 0 and current_stock > 0 and current_stock_value_cop > 0:
+            effective_unit_cost_cop = current_stock_value_cop / current_stock
+        total_cost_delta_cop = -(effective_unit_cost_cop * normalized_quantity)
+        stock_value_after_cop = current_stock_value_cop + total_cost_delta_cop
+    else:
+        inventory_enabled = True
+        quantity_delta = normalized_quantity - current_stock
+        quantity_after = normalized_quantity
+        if quantity_delta > 0:
+            effective_unit_cost_cop = (
+                float(normalized_unit_cost)
+                if normalized_unit_cost is not None
+                else float(current_unit_cost_cop or 0)
+            )
+            base_stock_value_cop = current_stock_value_cop
+            if current_stock > 0 and base_stock_value_cop <= 0 and effective_unit_cost_cop > 0:
+                base_stock_value_cop = current_stock * effective_unit_cost_cop
+            total_cost_delta_cop = effective_unit_cost_cop * quantity_delta
+            stock_value_after_cop = base_stock_value_cop + total_cost_delta_cop
+        elif quantity_delta < 0:
+            effective_unit_cost_cop = float(current_unit_cost_cop or 0)
+            if effective_unit_cost_cop <= 0 and current_stock > 0 and current_stock_value_cop > 0:
+                effective_unit_cost_cop = current_stock_value_cop / current_stock
+            total_cost_delta_cop = effective_unit_cost_cop * quantity_delta
+            stock_value_after_cop = current_stock_value_cop + total_cost_delta_cop
+        else:
+            effective_unit_cost_cop = float(current_unit_cost_cop or 0)
+
+    if abs(stock_value_after_cop) < INVENTORY_COST_EPSILON:
+        stock_value_after_cop = 0.0
+    if stock_value_after_cop < -INVENTORY_COST_EPSILON:
+        raise ValueError("El valor del inventario no puede quedar negativo.")
+    if stock_value_after_cop < 0:
+        stock_value_after_cop = 0.0
+
+    average_unit_cost_cop = (
+        stock_value_after_cop / quantity_after
+        if quantity_after > 0 and stock_value_after_cop > 0
+        else 0.0
+    )
+
+    now = datetime.now(timezone.utc).isoformat()
+    connection.execute(
+        """
+        UPDATE products
+        SET inventory_enabled = ?,
+            current_stock = ?,
+            inventory_unit_cost_cop = ?,
+            current_stock_value_cop = ?
+        WHERE id = ? AND company_id = ?
+        """,
+        (
+            1 if inventory_enabled else 0,
+            quantity_after,
+            average_unit_cost_cop,
+            stock_value_after_cop,
+            product_id,
+            company_id,
+        ),
+    )
+    movement_id = _insert_and_get_id(
+        connection,
+        """
+        INSERT INTO inventory_movements (
+            created_at,
+            company_id,
+            product_id,
+            movement_type,
+            quantity_delta,
+            quantity_after,
+            unit_cost_cop,
+            total_cost_delta_cop,
+            stock_value_after_cop,
+            note,
+            related_order_id,
+            source
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            now,
+            company_id,
+            product_id,
+            clean_movement_type,
+            quantity_delta,
+            quantity_after,
+            effective_unit_cost_cop,
+            total_cost_delta_cop,
+            stock_value_after_cop,
+            clean_note,
+            related_order_id,
+            clean_source,
+        ),
+    )
+    movement_row = connection.execute(
+        """
+        SELECT
+            id,
+            created_at,
+            company_id,
+            product_id,
+            movement_type,
+            quantity_delta,
+            quantity_after,
+            unit_cost_cop,
+            total_cost_delta_cop,
+            stock_value_after_cop,
+            note,
+            related_order_id,
+            source
+        FROM inventory_movements
+        WHERE id = ?
+        """,
+        (movement_id,),
+    ).fetchone()
+    updated_product_row = _get_product_row(connection, product_id=product_id, company_id=company_id)
+    if updated_product_row is None:
+        raise ValueError("No fue posible cargar el producto actualizado.")
+    return _serialize_inventory_movement_row(movement_row), {
+        "id": updated_product_row["id"],
+        "created_at": updated_product_row["created_at"],
+        "company_id": updated_product_row["company_id"],
+        "name": updated_product_row["name"],
+        "reference": updated_product_row["reference"],
+        "category": updated_product_row["category"],
+        "store": updated_product_row["store"],
+        "inventory_enabled": bool(updated_product_row["inventory_enabled"]),
+        "current_stock": int(updated_product_row["current_stock"] or 0),
+        "inventory_unit_cost_cop": float(updated_product_row["inventory_unit_cost_cop"] or 0),
+        "current_stock_value_cop": float(updated_product_row["current_stock_value_cop"] or 0),
+        "price_usd_net": updated_product_row["price_usd_net"],
+        "tax_usa_percent": updated_product_row["tax_usa_percent"],
+        "locker_shipping_usd": updated_product_row["locker_shipping_usd"],
+        "notes": updated_product_row["notes"],
+    }
+
+
+def record_product_inventory_movement(
+    product_id: int,
+    *,
+    movement_type: str,
+    quantity: int,
+    unit_cost_cop: float | None = None,
+    note: str = "",
+    related_order_id: int | None = None,
+    source: str = "manual",
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    with closing(_connect()) as connection:
+        movement, product = _record_inventory_movement(
+            connection,
+            product_id=product_id,
+            company_id=company_id,
+            movement_type=movement_type,
+            quantity=quantity,
+            unit_cost_cop=unit_cost_cop,
+            note=note,
+            related_order_id=related_order_id,
+            source=source,
+        )
+        connection.commit()
+    return {"movement": movement, "product": product}
+
+
 def save_product(product_data: dict[str, Any], company_id: int | None = None) -> dict[str, Any]:
     init_db()
     company_id = _normalize_company_id(company_id)
     created_at = datetime.now(timezone.utc).isoformat()
+    initial_stock_quantity = _coerce_inventory_quantity(
+        product_data.get("initial_stock_quantity") or 0,
+        field_name="initial_stock_quantity",
+    )
+    inventory_enabled = bool(product_data.get("inventory_enabled")) or initial_stock_quantity > 0
 
     with closing(_connect()) as connection:
         product_columns = [
@@ -2290,6 +3267,15 @@ def save_product(product_data: dict[str, Any], company_id: int | None = None) ->
             product_data.get("notes", ""),
         ]
         existing_columns = _get_table_columns(connection, "products")
+        for column_name, default_value in (
+            ("inventory_enabled", 1 if inventory_enabled else 0),
+            ("current_stock", 0),
+            ("inventory_unit_cost_cop", 0),
+            ("current_stock_value_cop", 0),
+        ):
+            if column_name in existing_columns:
+                product_columns.append(column_name)
+                product_values.append(default_value)
         legacy_defaults = {
             "travel_cost_usd": 0,
             "local_costs_cop": 0,
@@ -2319,6 +3305,16 @@ def save_product(product_data: dict[str, Any], company_id: int | None = None) ->
             product_data.get("store", ""),
             company_id,
         )
+        if inventory_enabled and initial_stock_quantity > 0:
+            _record_inventory_movement(
+                connection,
+                product_id=product_id,
+                company_id=company_id,
+                movement_type=INVENTORY_MOVEMENT_STOCK_IN,
+                quantity=initial_stock_quantity,
+                note="Stock inicial registrado al crear el producto.",
+                source="product_create",
+            )
         connection.commit()
 
     return {
@@ -2329,6 +3325,10 @@ def save_product(product_data: dict[str, Any], company_id: int | None = None) ->
         "reference": product_data.get("reference", ""),
         "category": product_data.get("category", ""),
         "store": product_data.get("store", ""),
+        "inventory_enabled": inventory_enabled,
+        "current_stock": initial_stock_quantity if inventory_enabled else 0,
+        "inventory_unit_cost_cop": 0.0,
+        "current_stock_value_cop": 0.0,
         "price_usd_net": product_data.get("price_usd_net", 0),
         "tax_usa_percent": product_data.get("tax_usa_percent", 0),
         "locker_shipping_usd": product_data.get("locker_shipping_usd", 0),
@@ -2396,6 +3396,10 @@ def list_products(limit: int = 100, company_id: int | None = None) -> list[dict[
                 reference,
                 category,
                 store,
+                inventory_enabled,
+                current_stock,
+                inventory_unit_cost_cop,
+                current_stock_value_cop,
                 price_usd_net,
                 tax_usa_percent,
                 locker_shipping_usd,
@@ -2417,6 +3421,10 @@ def list_products(limit: int = 100, company_id: int | None = None) -> list[dict[
             "reference": row["reference"],
             "category": row["category"],
             "store": row["store"],
+            "inventory_enabled": bool(row["inventory_enabled"]),
+            "current_stock": int(row["current_stock"] or 0),
+            "inventory_unit_cost_cop": float(row["inventory_unit_cost_cop"] or 0),
+            "current_stock_value_cop": float(row["current_stock_value_cop"] or 0),
             "price_usd_net": row["price_usd_net"],
             "tax_usa_percent": row["tax_usa_percent"],
             "locker_shipping_usd": row["locker_shipping_usd"],
@@ -2464,6 +3472,10 @@ def get_product_detail(product_id: int, company_id: int | None = None) -> dict[s
                 reference,
                 category,
                 store,
+                inventory_enabled,
+                current_stock,
+                inventory_unit_cost_cop,
+                current_stock_value_cop,
                 price_usd_net,
                 tax_usa_percent,
                 locker_shipping_usd,
@@ -2509,6 +3521,29 @@ def get_product_detail(product_id: int, company_id: int | None = None) -> dict[s
             ORDER BY id DESC
             """,
             (company_id,),
+        ).fetchall()
+        inventory_rows = connection.execute(
+            """
+            SELECT
+                id,
+                created_at,
+                company_id,
+                product_id,
+                movement_type,
+                quantity_delta,
+                quantity_after,
+                unit_cost_cop,
+                total_cost_delta_cop,
+                stock_value_after_cop,
+                note,
+                related_order_id,
+                source
+            FROM inventory_movements
+            WHERE company_id = ? AND product_id = ?
+            ORDER BY id DESC
+            LIMIT 8
+            """,
+            (company_id, product_id),
         ).fetchall()
 
         orders_by_quote_id = {
@@ -2699,6 +3734,10 @@ def get_product_detail(product_id: int, company_id: int | None = None) -> dict[s
             "reference": product_row["reference"],
             "category": product_row["category"],
             "store": product_row["store"],
+            "inventory_enabled": bool(product_row["inventory_enabled"]),
+            "current_stock": int(product_row["current_stock"] or 0),
+            "inventory_unit_cost_cop": float(product_row["inventory_unit_cost_cop"] or 0),
+            "current_stock_value_cop": float(product_row["current_stock_value_cop"] or 0),
             "price_usd_net": product_row["price_usd_net"],
             "tax_usa_percent": product_row["tax_usa_percent"],
             "locker_shipping_usd": product_row["locker_shipping_usd"],
@@ -2716,15 +3755,68 @@ def get_product_detail(product_id: int, company_id: int | None = None) -> dict[s
             "conversion_rate_percent": conversion_rate_percent,
             "last_quote_at": last_quote_at,
             "last_order_at": last_order_at,
+            "current_stock": int(product_row["current_stock"] or 0),
+            "inventory_enabled": bool(product_row["inventory_enabled"]),
+            "inventory_unit_cost_cop": float(product_row["inventory_unit_cost_cop"] or 0),
+            "current_stock_value_cop": float(product_row["current_stock_value_cop"] or 0),
         },
         "top_clients": sorted_clients[:6],
         "recent_quotes": matching_quotes[:6],
         "recent_orders": recent_orders,
+        "inventory_movements": [_serialize_inventory_movement_row(row) for row in inventory_rows],
     }
 
 
 def list_expense_categories() -> list[dict[str, str]]:
     return _list_expense_categories()
+
+
+def _insert_expense_row(
+    connection: sqlite3.Connection | CompatConnection,
+    *,
+    company_id: int,
+    expense_date: str,
+    category_key: str,
+    concept: str,
+    amount_cop: float,
+    notes: str = "",
+    created_at: str | None = None,
+) -> dict[str, Any]:
+    expense_id = _insert_and_get_id(
+        connection,
+        """
+        INSERT INTO expenses (
+            created_at,
+            company_id,
+            expense_date,
+            category_key,
+            concept,
+            amount_cop,
+            notes
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            created_at or datetime.now(timezone.utc).isoformat(),
+            company_id,
+            expense_date,
+            category_key,
+            concept,
+            amount_cop,
+            notes,
+        ),
+    )
+    row = connection.execute(
+        """
+        SELECT id, created_at, company_id, expense_date, category_key, concept, amount_cop, notes
+        FROM expenses
+        WHERE id = ?
+        """,
+        (expense_id,),
+    ).fetchone()
+    if row is None:
+        raise RuntimeError("No fue posible cargar el gasto recien creado.")
+    return _serialize_expense_row(row)
 
 
 def save_expense(
@@ -2754,40 +3846,18 @@ def save_expense(
 
     with closing(_connect()) as connection:
         connection.row_factory = sqlite3.Row
-        expense_id = _insert_and_get_id(
+        item = _insert_expense_row(
             connection,
-            """
-            INSERT INTO expenses (
-                created_at,
-                company_id,
-                expense_date,
-                category_key,
-                concept,
-                amount_cop,
-                notes
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                created_at,
-                company_id,
-                expense_date,
-                category_key,
-                concept,
-                amount_cop,
-                notes,
-            ),
+            company_id=company_id,
+            expense_date=expense_date,
+            category_key=category_key,
+            concept=concept,
+            amount_cop=amount_cop,
+            notes=notes,
+            created_at=created_at,
         )
         connection.commit()
-        row = connection.execute(
-            """
-            SELECT id, created_at, company_id, expense_date, category_key, concept, amount_cop, notes
-            FROM expenses
-            WHERE id = ?
-            """,
-            (expense_id,),
-        ).fetchone()
-    return _serialize_expense_row(row)
+    return item
 
 
 def list_expenses(
@@ -2803,12 +3873,237 @@ def list_expenses(
             SELECT id, created_at, company_id, expense_date, category_key, concept, amount_cop, notes
             FROM expenses
             WHERE company_id = ?
+              AND category_key <> ?
             ORDER BY expense_date DESC, id DESC
+            LIMIT ?
+            """,
+            (company_id, LEGACY_INVENTORY_RESTOCK_CATEGORY_KEY, limit),
+        ).fetchall()
+    return [_serialize_expense_row(row) for row in rows]
+
+
+def save_inventory_purchase(
+    purchase_data: dict[str, Any],
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    created_at = datetime.now(timezone.utc).isoformat()
+    purchase_date = parse_business_date(
+        purchase_data.get("purchase_date"),
+        field_name="fecha del abastecimiento",
+    ).isoformat()
+    supplier_name = str(purchase_data.get("supplier_name", "")).strip()
+    if not supplier_name:
+        raise ValueError("El proveedor, tienda u origen del abastecimiento es obligatorio.")
+
+    notes = str(purchase_data.get("notes", "")).strip()
+    raw_items = purchase_data.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        raise ValueError("Debes agregar al menos un producto al abastecimiento.")
+
+    normalized_items: list[dict[str, Any]] = []
+    total_amount_cop = 0.0
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict):
+                raise ValueError("Cada producto del abastecimiento debe tener un formato valido.")
+
+            try:
+                product_id = int(raw_item.get("product_id") or 0)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Cada item del abastecimiento debe tener un producto valido.") from exc
+            if product_id <= 0:
+                raise ValueError("Cada item del abastecimiento debe tener un producto valido.")
+
+            product_row = _get_product_row(connection, product_id=product_id, company_id=company_id)
+            if product_row is None:
+                raise ValueError("Uno de los productos del abastecimiento ya no existe.")
+
+            quantity = _coerce_inventory_quantity(raw_item.get("quantity"), field_name="quantity")
+            if quantity <= 0:
+                raise ValueError("La cantidad de cada producto debe ser mayor a cero.")
+
+            try:
+                unit_cost_cop = float(raw_item.get("unit_cost_cop") or 0)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("El costo unitario del abastecimiento debe ser numerico.") from exc
+            if unit_cost_cop <= 0:
+                raise ValueError("El costo unitario del abastecimiento debe ser mayor a cero.")
+
+            item_notes = str(raw_item.get("notes", "")).strip()
+            line_total_cop = float(quantity) * unit_cost_cop
+            total_amount_cop += line_total_cop
+            normalized_items.append(
+                {
+                    "product_id": product_id,
+                    "product_name": str(product_row["name"] or "").strip() or "Producto sin nombre",
+                    "quantity": quantity,
+                    "unit_cost_cop": unit_cost_cop,
+                    "line_total_cop": line_total_cop,
+                    "notes": item_notes,
+                }
+            )
+
+        purchase_id = _insert_and_get_id(
+            connection,
+            """
+            INSERT INTO inventory_purchases (
+                created_at,
+                company_id,
+                purchase_date,
+                supplier_name,
+                total_amount_cop,
+                expense_id,
+                notes
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                created_at,
+                company_id,
+                purchase_date,
+                supplier_name,
+                total_amount_cop,
+                None,
+                notes,
+            ),
+        )
+
+        for item in normalized_items:
+            item_id = _insert_and_get_id(
+                connection,
+                """
+                INSERT INTO inventory_purchase_items (
+                    created_at,
+                    company_id,
+                    purchase_id,
+                    product_id,
+                    product_name,
+                    quantity,
+                    unit_cost_cop,
+                    line_total_cop,
+                    notes
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    created_at,
+                    company_id,
+                    purchase_id,
+                    item["product_id"],
+                    item["product_name"],
+                    item["quantity"],
+                    item["unit_cost_cop"],
+                    item["line_total_cop"],
+                    item["notes"],
+                ),
+            )
+            movement_note = (
+                f"Entrada por abastecimiento #{purchase_id} desde {supplier_name}."
+                if not item["notes"]
+                else f"Entrada por abastecimiento #{purchase_id}: {item['notes']}"
+            )
+            _record_inventory_movement(
+                connection,
+                product_id=item["product_id"],
+                company_id=company_id,
+                movement_type=INVENTORY_MOVEMENT_STOCK_IN,
+                quantity=item["quantity"],
+                unit_cost_cop=item["unit_cost_cop"],
+                note=movement_note,
+                source=f"inventory_purchase:{purchase_id}",
+            )
+            item["id"] = item_id
+            item["created_at"] = created_at
+            item["company_id"] = company_id
+            item["purchase_id"] = purchase_id
+
+        connection.commit()
+
+    return {
+        "id": purchase_id,
+        "created_at": created_at,
+        "company_id": company_id,
+        "purchase_date": purchase_date,
+        "supplier_name": supplier_name,
+        "total_amount_cop": total_amount_cop,
+        "cash_out_cop": total_amount_cop,
+        "expense_id": None,
+        "notes": notes,
+        "items_count": len(normalized_items),
+        "total_units": sum(int(item["quantity"]) for item in normalized_items),
+        "items": normalized_items,
+        "expense": None,
+    }
+
+
+def list_inventory_purchases(
+    limit: int = 40,
+    company_id: int | None = None,
+) -> list[dict[str, Any]]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        purchase_rows = connection.execute(
+            """
+            SELECT
+                id,
+                created_at,
+                company_id,
+                purchase_date,
+                supplier_name,
+                total_amount_cop,
+                expense_id,
+                notes
+            FROM inventory_purchases
+            WHERE company_id = ?
+            ORDER BY purchase_date DESC, id DESC
             LIMIT ?
             """,
             (company_id, limit),
         ).fetchall()
-    return [_serialize_expense_row(row) for row in rows]
+        if not purchase_rows:
+            return []
+
+        purchase_ids = [int(row["id"]) for row in purchase_rows]
+        placeholders = ", ".join("?" for _ in purchase_ids)
+        item_rows = connection.execute(
+            f"""
+            SELECT
+                id,
+                created_at,
+                company_id,
+                purchase_id,
+                product_id,
+                product_name,
+                quantity,
+                unit_cost_cop,
+                line_total_cop,
+                notes
+            FROM inventory_purchase_items
+            WHERE company_id = ? AND purchase_id IN ({placeholders})
+            ORDER BY purchase_id DESC, id ASC
+            """,
+            (company_id, *purchase_ids),
+        ).fetchall()
+
+    items_by_purchase_id: dict[int, list[dict[str, Any]]] = {}
+    for row in item_rows:
+        serialized = _serialize_inventory_purchase_item_row(row)
+        items_by_purchase_id.setdefault(int(serialized["purchase_id"]), []).append(serialized)
+
+    return [
+        _serialize_inventory_purchase_row(
+            row,
+            items=items_by_purchase_id.get(int(row["id"]), []),
+        )
+        for row in purchase_rows
+    ]
 
 
 def list_order_statuses(
@@ -2913,6 +4208,155 @@ def create_order_status(
             (status_id,),
         ).fetchone()
         return _serialize_status_row(row)
+
+
+def list_whatsapp_templates(company_id: int | None = None) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        _ensure_company_whatsapp_settings(connection, company_id)
+        _seed_default_whatsapp_templates(connection, company_id)
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                created_at,
+                updated_at,
+                company_id,
+                trigger_key,
+                label,
+                body_text,
+                content_sid,
+                content_variables_json,
+                is_active,
+                auto_send_enabled
+            FROM whatsapp_templates
+            WHERE company_id = ?
+            ORDER BY trigger_key ASC
+            """,
+            (company_id,),
+        ).fetchall()
+        statuses = _list_status_rows(connection, company_id=company_id, include_inactive=False)
+        connection.commit()
+
+    return {
+        "items": [_serialize_whatsapp_template_row(row) for row in rows],
+        "triggers": build_whatsapp_trigger_catalog(statuses),
+    }
+
+
+def save_whatsapp_template(
+    template_data: dict[str, Any],
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    trigger_key = str(template_data.get("trigger_key", "")).strip()
+    label = str(template_data.get("label", "")).strip()
+    body_text = str(template_data.get("body_text", "")).strip()
+    content_sid = str(template_data.get("content_sid", "")).strip()
+    content_variables_json = str(template_data.get("content_variables_json", "")).strip()
+
+    if not trigger_key:
+        raise ValueError("Debes seleccionar el disparador de WhatsApp.")
+    if not label:
+        raise ValueError("El nombre de la plantilla es obligatorio.")
+    if not body_text and not content_sid:
+        raise ValueError("Debes definir un cuerpo de mensaje o un Content SID.")
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        _ensure_company_whatsapp_settings(connection, company_id)
+        _seed_default_whatsapp_templates(connection, company_id)
+        existing = connection.execute(
+            """
+            SELECT id
+            FROM whatsapp_templates
+            WHERE company_id = ? AND trigger_key = ?
+            """,
+            (company_id, trigger_key),
+        ).fetchone()
+        if existing is None:
+            template_id = _insert_and_get_id(
+                connection,
+                """
+                INSERT INTO whatsapp_templates (
+                    created_at,
+                    updated_at,
+                    company_id,
+                    trigger_key,
+                    label,
+                    body_text,
+                    content_sid,
+                    content_variables_json,
+                    is_active,
+                    auto_send_enabled
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    now,
+                    now,
+                    company_id,
+                    trigger_key,
+                    label,
+                    body_text,
+                    content_sid,
+                    content_variables_json,
+                    _to_bool_flag(template_data.get("is_active", True)),
+                    _to_bool_flag(template_data.get("auto_send_enabled", False)),
+                ),
+            )
+        else:
+            template_id = int(existing["id"])
+            connection.execute(
+                """
+                UPDATE whatsapp_templates
+                SET updated_at = ?,
+                    label = ?,
+                    body_text = ?,
+                    content_sid = ?,
+                    content_variables_json = ?,
+                    is_active = ?,
+                    auto_send_enabled = ?
+                WHERE id = ? AND company_id = ?
+                """,
+                (
+                    now,
+                    label,
+                    body_text,
+                    content_sid,
+                    content_variables_json,
+                    _to_bool_flag(template_data.get("is_active", True)),
+                    _to_bool_flag(template_data.get("auto_send_enabled", False)),
+                    template_id,
+                    company_id,
+                ),
+            )
+        connection.commit()
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                created_at,
+                updated_at,
+                company_id,
+                trigger_key,
+                label,
+                body_text,
+                content_sid,
+                content_variables_json,
+                is_active,
+                auto_send_enabled
+            FROM whatsapp_templates
+            WHERE id = ? AND company_id = ?
+            """,
+            (template_id, company_id),
+        ).fetchone()
+    return _serialize_whatsapp_template_row(row)
 
 
 def list_quotes(limit: int = 15, company_id: int | None = None) -> list[dict[str, Any]]:
@@ -3064,9 +4508,164 @@ def _list_order_events(
     return grouped
 
 
+def _consume_inventory_for_quote_order(
+    connection: sqlite3.Connection | CompatConnection,
+    *,
+    quote_record: dict[str, Any],
+    order_id: int,
+    company_id: int,
+) -> list[dict[str, Any]]:
+    quote_input = quote_record.get("input", {})
+    consumed_items: list[dict[str, Any]] = []
+    for item in _quote_input_line_items(quote_input):
+        if not bool(item.get("uses_inventory_stock")):
+            continue
+
+        raw_product_id = item.get("product_id")
+        if raw_product_id in (None, "", 0):
+            raise ValueError(
+                f"No puedes descontar inventario para '{item.get('product_name', 'Producto')}' porque no esta ligado a un producto guardado."
+            )
+        try:
+            product_id = int(raw_product_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("El producto ligado al inventario no es valido.") from exc
+
+        quantity = _coerce_inventory_quantity(item.get("quantity") or 1)
+        movement, _ = _record_inventory_movement(
+            connection,
+            product_id=product_id,
+            company_id=company_id,
+            movement_type=INVENTORY_MOVEMENT_SALE_OUT,
+            quantity=quantity,
+            note=f"Salida por compra #{order_id} para {quote_record.get('client_name', 'cliente')}.",
+            related_order_id=order_id,
+            source="order",
+        )
+        consumed_items.append(
+            {
+                "product_id": product_id,
+                "product_name": str(item.get("product_name") or "").strip() or "Producto",
+                "quantity": quantity,
+                "unit_cost_cop": float(movement.get("unit_cost_cop") or 0),
+                "real_cost_cop": abs(float(movement.get("total_cost_delta_cop") or 0)),
+            }
+        )
+    return consumed_items
+
+
+def _inventory_snapshot_item_matches(
+    snapshot_item: dict[str, Any],
+    consumed_item: dict[str, Any],
+) -> bool:
+    snapshot_product_id = snapshot_item.get("product_id")
+    consumed_product_id = consumed_item.get("product_id")
+    if snapshot_product_id not in (None, "", 0) and consumed_product_id not in (None, "", 0):
+        return str(snapshot_product_id) == str(consumed_product_id)
+    return (
+        str(snapshot_item.get("product_name") or "").strip().casefold()
+        == str(consumed_item.get("product_name") or "").strip().casefold()
+    )
+
+
+def _consume_matching_inventory_snapshot_item(
+    remaining_items: list[dict[str, Any]],
+    snapshot_item: dict[str, Any],
+) -> dict[str, Any] | None:
+    for index, consumed_item in enumerate(remaining_items):
+        if _inventory_snapshot_item_matches(snapshot_item, consumed_item):
+            return remaining_items.pop(index)
+    return None
+
+
+def _recalculate_snapshot_profit(snapshot: dict[str, Any]) -> dict[str, Any]:
+    result_data = snapshot.setdefault("result", {})
+    costs_data = result_data.setdefault("costs", {})
+    final_data = result_data.setdefault("final", {})
+    line_items = result_data.get("line_items", [])
+    if not isinstance(line_items, list):
+        return snapshot
+
+    total_real_cost_cop = 0.0
+    total_sale_price_cop = 0.0
+    total_inventory_cost_cop = 0.0
+    for line_item in line_items:
+        total_real_cost_cop += float(line_item.get("real_cost_cop") or 0)
+        total_sale_price_cop += float(line_item.get("sale_price_cop") or 0)
+        if bool(line_item.get("uses_inventory_stock")):
+            total_inventory_cost_cop += float(line_item.get("real_cost_cop") or 0)
+
+    final_profit_cop = total_sale_price_cop - total_real_cost_cop
+    advance_cop = float(final_data.get("advance_cop") or 0)
+    own_capital_cop = total_real_cost_cop - advance_cop
+
+    costs_data["inventory_cost_cop"] = total_inventory_cost_cop
+    costs_data["real_total_cost_cop"] = total_real_cost_cop
+    final_data["sale_price_cop"] = total_sale_price_cop
+    final_data["profit_cop"] = final_profit_cop
+    final_data["margin_percent"] = (
+        1 - (total_real_cost_cop / total_sale_price_cop)
+        if total_sale_price_cop
+        else None
+    )
+    final_data["own_capital_cop"] = own_capital_cop
+    final_data["own_capital_percent"] = _safe_ratio(own_capital_cop, total_real_cost_cop)
+    final_data["markup_percent"] = _safe_ratio(final_profit_cop, total_real_cost_cop)
+    final_data["roi_percent"] = _safe_ratio(final_profit_cop, own_capital_cop)
+    return snapshot
+
+
+def _apply_inventory_costs_to_order_snapshot(
+    snapshot: dict[str, Any],
+    consumed_items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    adjusted_snapshot = json.loads(json.dumps(snapshot, ensure_ascii=False))
+    remaining_items = [dict(item) for item in consumed_items]
+    result_data = adjusted_snapshot.setdefault("result", {})
+
+    updated_result_line_items: list[dict[str, Any]] = []
+    for raw_line_item in result_data.get("line_items", []) if isinstance(result_data.get("line_items"), list) else []:
+        line_item = dict(raw_line_item)
+        if bool(line_item.get("uses_inventory_stock")):
+            consumed_item = _consume_matching_inventory_snapshot_item(remaining_items, line_item)
+            if consumed_item is not None:
+                real_cost_cop = float(consumed_item.get("real_cost_cop") or 0)
+                line_item["inventory_unit_cost_cop"] = float(consumed_item.get("unit_cost_cop") or 0)
+                line_item["real_cost_cop"] = real_cost_cop
+                line_item["profit_cop"] = float(line_item.get("sale_price_cop") or 0) - real_cost_cop
+        updated_result_line_items.append(line_item)
+    result_data["line_items"] = updated_result_line_items
+
+    quote_items = result_data.get("quote_items")
+    if isinstance(quote_items, list):
+        updated_quote_items: list[dict[str, Any]] = []
+        quote_item_remaining = [dict(item) for item in consumed_items]
+        for raw_quote_item in quote_items:
+            if not isinstance(raw_quote_item, dict):
+                updated_quote_items.append(raw_quote_item)
+                continue
+            quote_item = dict(raw_quote_item)
+            if bool(quote_item.get("uses_inventory_stock")):
+                consumed_item = _consume_matching_inventory_snapshot_item(quote_item_remaining, quote_item)
+                if consumed_item is not None:
+                    real_cost_cop = float(consumed_item.get("real_cost_cop") or 0)
+                    quote_item["inventory_unit_cost_cop"] = float(consumed_item.get("unit_cost_cop") or 0)
+                    quote_item["real_cost_cop"] = real_cost_cop
+                    quote_item["profit_cop"] = float(quote_item.get("sale_price_cop") or 0) - real_cost_cop
+                    if isinstance(quote_item.get("result"), dict):
+                        quote_item["result"].setdefault("costs", {})["real_total_cost_cop"] = real_cost_cop
+                        quote_item["result"].setdefault("costs", {})["inventory_cost_cop"] = real_cost_cop
+                        quote_item["result"].setdefault("final", {})["profit_cop"] = quote_item["profit_cop"]
+            updated_quote_items.append(quote_item)
+        result_data["quote_items"] = updated_quote_items
+
+    return _recalculate_snapshot_profit(adjusted_snapshot)
+
+
 def create_order_from_quote(
     quote_id: int,
     advance_paid_cop: float | None = None,
+    actual_purchase_prices: list[dict[str, Any]] | None = None,
     company_id: int | None = None,
 ) -> tuple[dict[str, Any], bool]:
     init_db()
@@ -3096,7 +4695,14 @@ def create_order_from_quote(
             ).get(existing["id"], [])
             return _serialize_order(existing, events, all_statuses, active_statuses), True
 
-        order_data = build_order_from_quote(quote_record, advance_paid_cop=advance_paid_cop)
+        effective_quote_record = _apply_actual_purchase_prices_to_quote_record(
+            quote_record,
+            actual_purchase_prices,
+        )
+        order_data = build_order_from_quote(
+            effective_quote_record,
+            advance_paid_cop=advance_paid_cop,
+        )
         created_at = datetime.now(timezone.utc).isoformat()
         order_id = _insert_and_get_id(
             connection,
@@ -3163,6 +4769,29 @@ def create_order_from_quote(
                 ),
             ),
         )
+        consumed_inventory_items = _consume_inventory_for_quote_order(
+            connection,
+            quote_record=effective_quote_record,
+            order_id=order_id,
+            company_id=company_id,
+        )
+        if consumed_inventory_items:
+            adjusted_snapshot = _apply_inventory_costs_to_order_snapshot(
+                order_data["snapshot"],
+                consumed_inventory_items,
+            )
+            connection.execute(
+                """
+                UPDATE orders
+                SET snapshot_json = ?
+                WHERE id = ? AND company_id = ?
+                """,
+                (
+                    json.dumps(adjusted_snapshot, ensure_ascii=False),
+                    order_id,
+                    company_id,
+                ),
+            )
         _record_payment_event(
             connection,
             company_id=company_id,
@@ -3182,6 +4811,520 @@ def create_order_from_quote(
             order_id, []
         )
         return _serialize_order(created, events, all_statuses, active_statuses), False
+
+
+def _get_client_whatsapp_row(
+    connection: sqlite3.Connection | CompatConnection,
+    client_id: int | None,
+    company_id: int,
+) -> sqlite3.Row | None:
+    if not client_id:
+        return None
+    connection.row_factory = sqlite3.Row
+    return connection.execute(
+        """
+        SELECT id, name, whatsapp_phone, whatsapp_opt_in, whatsapp_opt_in_at
+        FROM clients
+        WHERE id = ? AND company_id = ?
+        """,
+        (client_id, company_id),
+    ).fetchone()
+
+
+def _get_whatsapp_template_row(
+    connection: sqlite3.Connection | CompatConnection,
+    *,
+    company_id: int,
+    trigger_key: str,
+) -> sqlite3.Row | None:
+    connection.row_factory = sqlite3.Row
+    return connection.execute(
+        """
+        SELECT
+            id,
+            created_at,
+            updated_at,
+            company_id,
+            trigger_key,
+            label,
+            body_text,
+            content_sid,
+            content_variables_json,
+            is_active,
+            auto_send_enabled
+        FROM whatsapp_templates
+        WHERE company_id = ? AND trigger_key = ?
+        """,
+        (company_id, trigger_key),
+    ).fetchone()
+
+
+def _build_order_whatsapp_context(
+    order_record: dict[str, Any],
+    *,
+    client_row: sqlite3.Row | None,
+    company_row: sqlite3.Row,
+    trigger_key: str,
+) -> dict[str, Any]:
+    status_label = str(order_record.get("status_label") or "").strip()
+    if trigger_key == "second_payment_registered":
+        status_label = "Segundo pago registrado"
+
+    return {
+        "company_name": company_row["brand_name"] or company_row["name"],
+        "client_name": (
+            client_row["name"]
+            if client_row is not None and str(client_row["name"] or "").strip()
+            else order_record.get("client_name", "")
+        ),
+        "product_name": order_record.get("product_name", ""),
+        "status_label": status_label,
+        "sale_price_cop": _format_cop_plain(order_record.get("sale_price_cop") or 0),
+        "advance_paid_cop": _format_cop_plain(order_record.get("advance_paid_cop") or 0),
+        "balance_due_cop": _format_cop_plain(order_record.get("balance_due_cop") or 0),
+        "second_payment_amount_cop": _format_cop_plain(
+            order_record.get("second_payment_amount_cop") or 0
+        ),
+        "second_payment_received_at": order_record.get("second_payment_received_at") or "",
+        "travel_transport_label": order_record.get("travel_transport_label") or "",
+        "order_id": order_record.get("id"),
+        "quote_id": order_record.get("quote_id"),
+    }
+
+
+def _create_whatsapp_notification_record(
+    connection: sqlite3.Connection | CompatConnection,
+    *,
+    company_id: int,
+    order_id: int | None,
+    quote_id: int | None,
+    client_id: int | None,
+    trigger_key: str,
+    template_row: sqlite3.Row | None,
+    recipient_phone: str,
+    message_text: str,
+    source: str,
+) -> int:
+    now = datetime.now(timezone.utc).isoformat()
+    return _insert_and_get_id(
+        connection,
+        """
+        INSERT INTO whatsapp_notifications (
+            created_at,
+            updated_at,
+            company_id,
+            order_id,
+            quote_id,
+            client_id,
+            trigger_key,
+            template_id,
+            template_label,
+            recipient_phone,
+            message_text,
+            provider,
+            external_message_id,
+            status,
+            error_message,
+            source,
+            sent_at,
+            delivered_at,
+            read_at,
+            failed_at,
+            response_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'twilio', '', 'queued', '', ?, '', '', '', '', '')
+        """,
+        (
+            now,
+            now,
+            company_id,
+            order_id,
+            quote_id,
+            client_id,
+            trigger_key,
+            template_row["id"] if template_row is not None else None,
+            template_row["label"] if template_row is not None else "",
+            recipient_phone,
+            message_text,
+            source,
+        ),
+    )
+
+
+def _load_whatsapp_notification_row(
+    connection: sqlite3.Connection | CompatConnection,
+    notification_id: int,
+) -> sqlite3.Row | None:
+    connection.row_factory = sqlite3.Row
+    return connection.execute(
+        """
+        SELECT
+            id,
+            created_at,
+            updated_at,
+            company_id,
+            order_id,
+            quote_id,
+            client_id,
+            trigger_key,
+            template_id,
+            template_label,
+            recipient_phone,
+            message_text,
+            provider,
+            external_message_id,
+            status,
+            error_message,
+            source,
+            sent_at,
+            delivered_at,
+            read_at,
+            failed_at,
+            response_json
+        FROM whatsapp_notifications
+        WHERE id = ?
+        """,
+        (notification_id,),
+    ).fetchone()
+
+
+def send_order_whatsapp_notification(
+    order_id: int,
+    *,
+    trigger_key: str | None = None,
+    source: str = "manual",
+    company_id: int | None = None,
+    raise_errors: bool = True,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    clean_trigger_key = str(trigger_key or "").strip()
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        _ensure_company_whatsapp_settings(connection, company_id)
+        _seed_default_whatsapp_templates(connection, company_id)
+        order_row = connection.execute(
+            "SELECT * FROM orders WHERE id = ? AND company_id = ?",
+            (order_id, company_id),
+        ).fetchone()
+        if order_row is None:
+            raise ValueError("La compra no existe.")
+
+        settings_row = connection.execute(
+            """
+            SELECT
+                company_id,
+                updated_at,
+                twilio_account_sid,
+                twilio_auth_token,
+                whatsapp_sender,
+                messaging_service_sid,
+                status_callback_url,
+                default_country_code,
+                auto_send_enabled
+            FROM company_whatsapp_settings
+            WHERE company_id = ?
+            """,
+            (company_id,),
+        ).fetchone()
+        settings = _serialize_whatsapp_settings_row(settings_row)
+        if not settings["is_configured"]:
+            raise ValueError("Configura primero las credenciales de Twilio en Administracion.")
+
+        all_statuses = _list_status_rows(connection, company_id=company_id, include_inactive=True)
+        active_statuses = [status for status in all_statuses if status["is_active"]]
+        order_events = _list_order_events(connection, [order_id], all_statuses, company_id).get(order_id, [])
+        order_record = _serialize_order(order_row, order_events, all_statuses, active_statuses)
+
+        if not clean_trigger_key:
+            clean_trigger_key = f"order_status:{order_record['status_key']}"
+
+        template_row = _get_whatsapp_template_row(
+            connection,
+            company_id=company_id,
+            trigger_key=clean_trigger_key,
+        )
+        if template_row is None:
+            raise ValueError("No existe una plantilla de WhatsApp para este disparador.")
+        if not bool(template_row["is_active"]):
+            raise ValueError("La plantilla de WhatsApp elegida está inactiva.")
+
+        client_row = _get_client_whatsapp_row(connection, order_row["client_id"], company_id)
+        if client_row is None:
+            raise ValueError("Esta compra no tiene un cliente guardado para notificar por WhatsApp.")
+        if not bool(client_row["whatsapp_opt_in"]):
+            raise ValueError("El cliente no autorizó notificaciones por WhatsApp.")
+
+        company_row = connection.execute(
+            "SELECT id, name, brand_name FROM companies WHERE id = ?",
+            (company_id,),
+        ).fetchone()
+        context = _build_order_whatsapp_context(
+            order_record,
+            client_row=client_row,
+            company_row=company_row,
+            trigger_key=clean_trigger_key,
+        )
+        body_text = render_template_text(template_row["body_text"], context)
+        content_variables_json = render_content_variables(
+            template_row["content_variables_json"],
+            context,
+        )
+        recipient_phone = normalize_whatsapp_phone(
+            client_row["whatsapp_phone"],
+            settings["default_country_code"],
+        )
+
+        notification_id = _create_whatsapp_notification_record(
+            connection,
+            company_id=company_id,
+            order_id=order_id,
+            quote_id=order_row["quote_id"],
+            client_id=order_row["client_id"],
+            trigger_key=clean_trigger_key,
+            template_row=template_row,
+            recipient_phone=recipient_phone,
+            message_text=body_text,
+            source=source,
+        )
+
+        try:
+            send_result = send_twilio_whatsapp_message(
+                account_sid=settings["twilio_account_sid"],
+                auth_token=settings["twilio_auth_token"],
+                to_phone=recipient_phone,
+                sender_phone=settings["whatsapp_sender"],
+                messaging_service_sid=settings["messaging_service_sid"],
+                body_text=body_text,
+                content_sid=template_row["content_sid"],
+                content_variables_json=content_variables_json,
+                status_callback_url=settings["status_callback_url"],
+            )
+            now = datetime.now(timezone.utc).isoformat()
+            connection.execute(
+                """
+                UPDATE whatsapp_notifications
+                SET updated_at = ?,
+                    external_message_id = ?,
+                    status = ?,
+                    error_message = ?,
+                    sent_at = ?,
+                    response_json = ?
+                WHERE id = ?
+                """,
+                (
+                    now,
+                    str(send_result.get("sid") or "").strip(),
+                    str(send_result.get("status") or "sent").strip(),
+                    str(send_result.get("error_message") or "").strip(),
+                    now,
+                    json.dumps(send_result.get("raw") or {}, ensure_ascii=False),
+                    notification_id,
+                ),
+            )
+            connection.commit()
+        except Exception as exc:
+            now = datetime.now(timezone.utc).isoformat()
+            connection.execute(
+                """
+                UPDATE whatsapp_notifications
+                SET updated_at = ?,
+                    status = 'failed',
+                    error_message = ?,
+                    failed_at = ?
+                WHERE id = ?
+                """,
+                (
+                    now,
+                    str(exc),
+                    now,
+                    notification_id,
+                ),
+            )
+            connection.commit()
+            if raise_errors:
+                raise
+
+        row = _load_whatsapp_notification_row(connection, notification_id)
+        return _serialize_whatsapp_notification_row(row)
+
+
+def maybe_auto_send_order_whatsapp_notification(
+    order_id: int,
+    *,
+    trigger_key: str,
+    company_id: int | None = None,
+) -> dict[str, Any] | None:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        settings = _ensure_company_whatsapp_settings(connection, company_id)
+        if not settings["auto_send_enabled"] or not settings["is_configured"]:
+            connection.commit()
+            return None
+        template_row = _get_whatsapp_template_row(
+            connection,
+            company_id=company_id,
+            trigger_key=trigger_key,
+        )
+        connection.commit()
+
+    if template_row is None or not bool(template_row["is_active"]) or not bool(
+        template_row["auto_send_enabled"]
+    ):
+        return None
+
+    try:
+        return send_order_whatsapp_notification(
+            order_id,
+            trigger_key=trigger_key,
+            source="automatic",
+            company_id=company_id,
+            raise_errors=False,
+        )
+    except Exception:
+        return None
+
+
+def list_whatsapp_notifications(
+    limit: int = 50,
+    *,
+    order_id: int | None = None,
+    company_id: int | None = None,
+) -> list[dict[str, Any]]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    sql = """
+        SELECT
+            id,
+            created_at,
+            updated_at,
+            company_id,
+            order_id,
+            quote_id,
+            client_id,
+            trigger_key,
+            template_id,
+            template_label,
+            recipient_phone,
+            message_text,
+            provider,
+            external_message_id,
+            status,
+            error_message,
+            source,
+            sent_at,
+            delivered_at,
+            read_at,
+            failed_at,
+            response_json
+        FROM whatsapp_notifications
+        WHERE company_id = ?
+    """
+    params: list[Any] = [company_id]
+    if order_id is not None:
+        sql += " AND order_id = ?"
+        params.append(order_id)
+    sql += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(sql, tuple(params)).fetchall()
+    return [_serialize_whatsapp_notification_row(row) for row in rows]
+
+
+def update_whatsapp_notification_status(
+    message_sid: str,
+    message_status: str,
+    *,
+    error_message: str = "",
+) -> dict[str, Any] | None:
+    init_db()
+    clean_sid = str(message_sid or "").strip()
+    clean_status = str(message_status or "").strip().lower()
+    if not clean_sid:
+        return None
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                created_at,
+                updated_at,
+                company_id,
+                order_id,
+                quote_id,
+                client_id,
+                trigger_key,
+                template_id,
+                template_label,
+                recipient_phone,
+                message_text,
+                provider,
+                external_message_id,
+                status,
+                error_message,
+                source,
+                sent_at,
+                delivered_at,
+                read_at,
+                failed_at,
+                response_json
+            FROM whatsapp_notifications
+            WHERE external_message_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (clean_sid,),
+        ).fetchone()
+        if row is None:
+            return None
+
+        now = datetime.now(timezone.utc).isoformat()
+        delivered_at = row["delivered_at"]
+        read_at = row["read_at"]
+        failed_at = row["failed_at"]
+        sent_at = row["sent_at"] or now
+
+        if clean_status == "delivered" and not delivered_at:
+            delivered_at = now
+        if clean_status == "read" and not read_at:
+            read_at = now
+            if not delivered_at:
+                delivered_at = now
+        if clean_status in {"failed", "undelivered"} and not failed_at:
+            failed_at = now
+
+        connection.execute(
+            """
+            UPDATE whatsapp_notifications
+            SET updated_at = ?,
+                status = ?,
+                error_message = ?,
+                sent_at = ?,
+                delivered_at = ?,
+                read_at = ?,
+                failed_at = ?
+            WHERE id = ?
+            """,
+            (
+                now,
+                clean_status or row["status"],
+                str(error_message or row["error_message"] or "").strip(),
+                sent_at,
+                delivered_at,
+                read_at,
+                failed_at,
+                row["id"],
+            ),
+        )
+        connection.commit()
+        updated = _load_whatsapp_notification_row(connection, int(row["id"]))
+    return _serialize_whatsapp_notification_row(updated) if updated is not None else None
 
 
 def list_orders(
@@ -3524,6 +5667,15 @@ def build_dashboard_summary(
             """,
             (company_id,),
         ).fetchall()
+        inventory_purchase_rows = connection.execute(
+            """
+            SELECT id, created_at, company_id, purchase_date, supplier_name, total_amount_cop, expense_id, notes
+            FROM inventory_purchases
+            WHERE company_id = ?
+            ORDER BY purchase_date DESC, id DESC
+            """,
+            (company_id,),
+        ).fetchall()
 
     def _display_name(value: Any, fallback: str) -> str:
         clean_value = str(value or "").strip()
@@ -3720,10 +5872,25 @@ def build_dashboard_summary(
         ),
     )
 
+    operating_expense_rows = [
+        row
+        for row in expense_rows
+        if str(row["category_key"] or "").strip() != LEGACY_INVENTORY_RESTOCK_CATEGORY_KEY
+    ]
     period_expenses = [
-        row for row in expense_rows if is_date_in_range(row["expense_date"], start_date, end_date)
+        row
+        for row in operating_expense_rows
+        if is_date_in_range(row["expense_date"], start_date, end_date)
     ]
     expenses_total_cop = sum(float(row["amount_cop"] or 0) for row in period_expenses)
+    period_inventory_purchases = [
+        row
+        for row in inventory_purchase_rows
+        if is_date_in_range(row["purchase_date"], start_date, end_date)
+    ]
+    inventory_investment_cop = sum(
+        float(row["total_amount_cop"] or 0) for row in period_inventory_purchases
+    )
 
     expenses_by_category: dict[str, dict[str, Any]] = {}
     for row in period_expenses:
@@ -3754,6 +5921,7 @@ def build_dashboard_summary(
             "period_balance_due_cop": period_balance_due_cop,
             "accounts_receivable_cop": accounts_receivable_cop,
             "gross_profit_cop": gross_profit_cop,
+            "inventory_investment_cop": inventory_investment_cop,
             "expenses_total_cop": expenses_total_cop,
             "net_profit_cop": gross_profit_cop - expenses_total_cop,
         },
@@ -3766,7 +5934,11 @@ def build_dashboard_summary(
             "most_profitable": top_products_by_profit,
         },
         "expenses_by_category": sorted_expense_buckets,
-        "recent_expenses": [_serialize_expense_row(row) for row in expense_rows[:8]],
+        "recent_expenses": [_serialize_expense_row(row) for row in operating_expense_rows[:8]],
+        "recent_inventory_purchases": [
+            _serialize_inventory_purchase_row(row, [])
+            for row in inventory_purchase_rows[:8]
+        ],
     }
 
 

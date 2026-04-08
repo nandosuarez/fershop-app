@@ -74,6 +74,10 @@
 
           <div class="menu-group">
             <p class="menu-group-title">Operacion de compra</p>
+            <a class="module-link" data-module-link="abastecimiento" href="#abastecimiento">
+              <strong>Abastecimiento e inventario</strong>
+              <span>Compra stock para tienda y registra la salida real de dinero</span>
+            </a>
             <a class="module-link" data-module-link="compras" href="#compras">
               <strong>Compras y seguimiento</strong>
               <span>Controla cada pedido desde la confirmacion hasta el cierre</span>
@@ -329,6 +333,11 @@
                       <input name="quantity" type="number" min="1" step="1" value="1" required />
                     </label>
 
+                    <label class="checkbox-field quote-checkbox-field">
+                      <input name="uses_inventory_stock" type="checkbox" />
+                      <span>Sale de inventario de tienda</span>
+                    </label>
+
                     <label>
                       <span>Precio USD neto</span>
                       <input
@@ -412,6 +421,9 @@
                   <p id="purchase-type-helper" class="field-helper">
                     En modo online se usa el envio/casillero. En modo viaje se usan costo de viaje y gastos locales.
                   </p>
+                  <p id="inventory-sale-helper" class="field-helper">
+                    Activa esta opcion solo cuando el producto ya esta disponible en tienda para entrega inmediata.
+                  </p>
 
                   <label class="full-width">
                     <span>Productos para PDF / WhatsApp</span>
@@ -433,6 +445,7 @@
 
                   <div class="actions quote-actions-bar">
                     <button type="button" id="add-quote-item-button">Agregar producto a la cotizacion</button>
+                    <button type="button" id="create-order-button">Crear compra directa</button>
                     <button type="submit" class="secondary">Recalcular manual</button>
                     <button type="button" id="save-button" class="secondary" disabled>
                       Guardar cotizacion
@@ -529,6 +542,16 @@
                     </label>
 
                     <label>
+                      <span>WhatsApp</span>
+                      <input
+                        name="whatsapp_phone"
+                        type="text"
+                        placeholder="Ej. +573001234567 o 3001234567"
+                        autocomplete="off"
+                      />
+                    </label>
+
+                    <label>
                       <span>Canal preferido</span>
                       <input
                         name="preferred_contact_channel"
@@ -546,6 +569,11 @@
                       />
                     </label>
                   </div>
+
+                  <label class="checkbox-field">
+                    <input name="whatsapp_opt_in" type="checkbox" />
+                    <span>Autorizo notificaciones de compra por WhatsApp</span>
+                  </label>
 
                   <label class="full-width">
                     <span>Intereses del cliente</span>
@@ -624,6 +652,16 @@
                     <label>
                       <span>Envio casillero USD</span>
                       <input name="locker_shipping_usd" type="number" min="0" step="0.01" value="0" required />
+                    </label>
+
+                    <label class="checkbox-field">
+                      <input name="inventory_enabled" type="checkbox" />
+                      <span>Manejar inventario de tienda</span>
+                    </label>
+
+                    <label>
+                      <span>Stock inicial</span>
+                      <input name="initial_stock_quantity" type="number" min="0" step="1" value="0" />
                     </label>
                   </div>
 
@@ -790,6 +828,138 @@
 
                 <div id="pending-list" class="catalog-empty">
                   <p>Aun no hay pendientes comerciales registrados.</p>
+                </div>
+              </section>
+            </section>
+          </section>
+
+          <section id="abastecimiento" class="module-page" data-module-page="abastecimiento">
+            <header class="module-page-header">
+              <p class="module-page-kicker">Operacion de compra</p>
+              <h2>Abastecimiento e inventario</h2>
+              <p>
+                Registra compras para surtir la tienda, sube el stock disponible y deja trazada la
+                inversion real que paso a costo de inventario.
+              </p>
+            </header>
+
+            <section class="catalog-layout inventory-purchase-layout">
+              <section class="panel catalog-panel">
+                <div class="panel-header">
+                  <h2>Nuevo abastecimiento</h2>
+                  <p>Compra varios productos para inventario en un solo movimiento.</p>
+                </div>
+
+                <form id="inventory-purchase-form" class="catalog-form">
+                  <input name="product_id" type="hidden" />
+                  <input name="product_name" type="hidden" />
+
+                  <div class="field-grid">
+                    <label>
+                      <span>Fecha de compra</span>
+                      <input name="purchase_date" type="date" required />
+                    </label>
+
+                    <label>
+                      <span>Proveedor / tienda / origen</span>
+                      <input
+                        name="supplier_name"
+                        type="text"
+                        placeholder="Ej. Zara Aventura, Nike Orlando, compra en viaje"
+                        required
+                      />
+                    </label>
+                  </div>
+
+                  <section class="quote-items-panel">
+                    <div class="panel-header panel-header-inline">
+                      <div>
+                        <h3>Productos de este abastecimiento</h3>
+                        <p>Agrega uno a uno los productos que entran al inventario.</p>
+                      </div>
+                    </div>
+
+                    <div class="catalog-picker-row">
+                      <label>
+                        <span>Producto guardado</span>
+                        <input
+                          id="inventory-purchase-product-select"
+                          type="text"
+                          placeholder="Busca un producto del catalogo"
+                          autocomplete="off"
+                        />
+                      </label>
+
+                      <label>
+                        <span>Cantidad</span>
+                        <input name="item_quantity" type="number" min="1" step="1" value="1" required />
+                      </label>
+                    </div>
+
+                    <div class="field-grid">
+                      <label>
+                        <span>Costo unitario COP</span>
+                        <input
+                          name="item_unit_cost_cop"
+                          type="number"
+                          min="1"
+                          step="1"
+                          placeholder="Ej. 180000"
+                          required
+                        />
+                      </label>
+
+                      <label>
+                        <span>Nota del item</span>
+                        <input
+                          name="item_notes"
+                          type="text"
+                          placeholder="Opcional. Color, talla, lote o detalle"
+                        />
+                      </label>
+                    </div>
+
+                    <p class="field-helper">
+                      Si el producto todavia no existe, primero crealo en el modulo de productos y
+                      luego regresa a este abastecimiento.
+                    </p>
+
+                    <div class="actions">
+                      <button type="button" id="add-inventory-purchase-item-button">
+                        Agregar producto al abastecimiento
+                      </button>
+                    </div>
+
+                    <div id="inventory-purchase-draft" class="catalog-empty">
+                      <p>Aun no has agregado productos para esta compra de inventario.</p>
+                    </div>
+                  </section>
+
+                  <label class="full-width">
+                    <span>Notas del abastecimiento</span>
+                    <textarea
+                      name="notes"
+                      rows="3"
+                      placeholder="Factura, viaje, proveedor, observaciones o contexto del abastecimiento."
+                    ></textarea>
+                  </label>
+
+                  <div class="actions">
+                    <button type="button" id="save-inventory-purchase-button" class="primary">
+                      Registrar abastecimiento
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              <section class="panel catalog-panel">
+                <div class="panel-header">
+                  <h2>Ultimos abastecimientos</h2>
+                  <p>Desde aqui ves que entro a inventario y cuanto capital quedo invertido en stock.</p>
+                </div>
+
+                <div id="inventory-purchases-list" class="catalog-empty">
+                  <p>Aun no hay abastecimientos registrados.</p>
                 </div>
               </section>
             </section>
@@ -993,6 +1163,126 @@
 
                 <div id="product-stores-list" class="catalog-empty">
                   <p>Aun no hay tiendas creadas.</p>
+                </div>
+              </section>
+
+              <section class="panel catalog-panel">
+                <div class="panel-header">
+                  <h2>Configuracion de WhatsApp</h2>
+                  <p>Conecta Twilio por empresa y decide si las compras deben notificar automaticamente.</p>
+                </div>
+
+                <form id="whatsapp-settings-form" class="catalog-form">
+                  <div class="field-grid">
+                    <label>
+                      <span>Twilio Account SID</span>
+                      <input name="twilio_account_sid" type="text" placeholder="AC..." autocomplete="off" />
+                    </label>
+
+                    <label>
+                      <span>Twilio Auth Token</span>
+                      <input name="twilio_auth_token" type="password" placeholder="Token de Twilio" autocomplete="off" />
+                    </label>
+
+                    <label>
+                      <span>Remitente WhatsApp</span>
+                      <input name="whatsapp_sender" type="text" placeholder="Ej. +14155238886" autocomplete="off" />
+                    </label>
+
+                    <label>
+                      <span>Messaging Service SID</span>
+                      <input name="messaging_service_sid" type="text" placeholder="MG..." autocomplete="off" />
+                    </label>
+
+                    <label>
+                      <span>URL Status Callback</span>
+                      <input
+                        name="status_callback_url"
+                        type="url"
+                        placeholder="https://tu-app.onrender.com/api/whatsapp/twilio/status"
+                        autocomplete="off"
+                      />
+                    </label>
+
+                    <label>
+                      <span>Prefijo pais por defecto</span>
+                      <input name="default_country_code" type="text" value="+57" placeholder="+57" autocomplete="off" />
+                    </label>
+                  </div>
+
+                  <label class="checkbox-field">
+                    <input name="auto_send_enabled" type="checkbox" />
+                    <span>Enviar WhatsApp automaticamente cuando cambie el estado de la compra</span>
+                  </label>
+
+                  <div class="actions">
+                    <button type="submit" class="primary">Guardar configuracion</button>
+                  </div>
+                </form>
+              </section>
+
+              <section class="panel catalog-panel">
+                <div class="panel-header">
+                  <h2>Plantillas de WhatsApp</h2>
+                  <p>Define el texto por disparador y, si aplica, enlaza un Content SID aprobado por Meta.</p>
+                </div>
+
+                <form id="whatsapp-template-form" class="catalog-form">
+                  <div class="field-grid">
+                    <label>
+                      <span>Disparador</span>
+                      <select id="whatsapp-trigger-select" name="trigger_key" required>
+                        <option value="">Selecciona un disparador</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      <span>Nombre visible</span>
+                      <input name="label" type="text" placeholder="Ej. Cliente notificado" required />
+                    </label>
+
+                    <label>
+                      <span>Content SID</span>
+                      <input name="content_sid" type="text" placeholder="Opcional, ej. HX..." autocomplete="off" />
+                    </label>
+
+                    <label>
+                      <span>Variables Content JSON</span>
+                      <input
+                        name="content_variables_json"
+                        type="text"
+                        placeholder='Opcional, ej. {"1":"{{client_name}}"}'
+                        autocomplete="off"
+                      />
+                    </label>
+                  </div>
+
+                  <label class="full-width">
+                    <span>Texto base</span>
+                    <textarea
+                      name="body_text"
+                      rows="5"
+                      placeholder="Usa variables como {{client_name}}, {{product_name}}, {{status_label}}, {{balance_due_cop}}"
+                    ></textarea>
+                  </label>
+
+                  <label class="checkbox-field">
+                    <input name="is_active" type="checkbox" checked />
+                    <span>Plantilla activa</span>
+                  </label>
+
+                  <label class="checkbox-field">
+                    <input name="auto_send_enabled" type="checkbox" />
+                    <span>Permitir autoenvio con este disparador</span>
+                  </label>
+
+                  <div class="actions">
+                    <button type="submit" class="primary">Guardar plantilla</button>
+                  </div>
+                </form>
+
+                <div id="whatsapp-templates-list" class="catalog-empty">
+                  <p>Aun no hay plantillas de WhatsApp cargadas.</p>
                 </div>
               </section>
             </section>
