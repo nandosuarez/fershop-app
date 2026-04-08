@@ -117,6 +117,7 @@ const state = {
   inventoryPurchaseLineItems: [],
   editingQuoteId: null,
   editingQuoteItemIndex: null,
+  activeOrderId: null,
 };
 
 const autocompleteControllers = [];
@@ -4339,6 +4340,382 @@ async function requestJsonLegacy(url, options = {}) {
   return payload;
 }
 
+function formatOrderCode(orderId) {
+  const numericId = Number(orderId || 0);
+  if (!Number.isFinite(numericId) || numericId <= 0) {
+    return "COMPRA";
+  }
+  return `COMP-${String(Math.trunc(numericId)).padStart(4, "0")}`;
+}
+
+function renderHistory(items) {
+  const visibleItems = (items || []).filter((item) => !item.has_order);
+  if (!visibleItems.length) {
+    historyContainer.className = "history-empty";
+    historyContainer.innerHTML = "<p>No hay cotizaciones pendientes por pasar a compra.</p>";
+    return;
+  }
+
+  historyContainer.className = "history-table-wrap";
+  historyContainer.innerHTML = `
+    <table class="history-table">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Producto</th>
+          <th>Cliente</th>
+          <th>Costo real</th>
+          <th>Venta final</th>
+          <th>Ganancia</th>
+          <th>ROI</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${visibleItems
+          .map((item) => {
+            const finalData = item.result.final;
+            const costs = item.result.costs;
+            return `
+              <tr>
+                <td>${dateFormatter.format(new Date(item.created_at))}</td>
+                <td>${escapeHtml(item.product_name || "-")}</td>
+                <td>${escapeHtml(item.client_name || "-")}</td>
+                <td>${formatCop(costs.real_total_cost_cop)}</td>
+                <td>${formatCop(finalData.sale_price_cop)}</td>
+                <td>${formatCop(finalData.profit_cop)}</td>
+                <td>${formatPercent(finalData.roi_percent)}</td>
+                <td class="history-actions-cell">
+                  <button
+                    class="history-action-button history-action-button-secondary"
+                    type="button"
+                    data-edit-quote="${item.id}"
+                  >
+                    Editar
+                  </button>
+                  <a class="history-action-button" href="/api/quotes/${item.id}/pdf">Descargar PDF</a>
+                  <button class="history-action-button history-action-button-secondary" type="button" data-copy-quote="${item.id}">
+                    Copiar WhatsApp
+                  </button>
+                  <button
+                    class="history-action-button history-action-button-secondary"
+                    type="button"
+                    data-create-order="${item.id}"
+                    data-quote-total="${finalData.sale_price_cop}"
+                    data-quoted-advance="${finalData.advance_cop}"
+                  >
+                    Pasar a compra
+                  </button>
+                </td>
+              </tr>
+            `;
+          })
+          .join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function buildOrderPrimaryActionButton(order) {
+  const balanceDue = Number(order.balance_due_cop || 0);
+  const isTravelOrder = order.snapshot?.input?.purchase_type === "travel";
+  const routeUndecided = isTravelOrder && (order.travel_transport_type || "undecided") === "undecided";
+  const secondPaymentBlocked =
+    order.next_status_key === "second_payment_received" && balanceDue > 0;
+
+  if (order.status_key === "client_notified" && balanceDue > 0) {
+    return `
+      <button
+        class="history-action-button history-action-button-secondary orders-inline-action"
+        type="button"
+        data-manage-order="${order.id}"
+      >
+        Cobrar saldo
+      </button>
+    `;
+  }
+
+  if (routeUndecided) {
+    return `
+      <button
+        class="history-action-button history-action-button-secondary orders-inline-action"
+        type="button"
+        data-manage-order="${order.id}"
+      >
+        Definir ruta
+      </button>
+    `;
+  }
+
+  if (order.next_status_key) {
+    return `
+      <button
+        class="history-action-button history-action-button-secondary orders-inline-action"
+        type="button"
+        data-advance-order-status="${order.id}"
+        data-next-status-key="${escapeHtml(order.next_status_key)}"
+        ${secondPaymentBlocked ? "disabled" : ""}
+      >
+        ${escapeHtml(order.next_status_label || "Siguiente paso")}
+      </button>
+    `;
+  }
+
+  return '<span class="order-flow-complete">Sin accion</span>';
+}
+
+function renderOrderDetailPanel(order) {
+  const nextAction = describeOrderNextAction(order);
+  const secondPaymentBlocked =
+    order.next_status_key === "second_payment_received" && Number(order.balance_due_cop || 0) > 0;
+
+  return `
+    <div class="order-detail-shell">
+      <div class="order-card-top">
+        <div>
+          <h3>${escapeHtml(order.product_name)}</h3>
+          <p>${escapeHtml(order.client_name || "Cliente no registrado")} · Desde cotizacion #${order.quote_id}</p>
+        </div>
+        <span class="order-status-badge">${escapeHtml(order.status_label)}</span>
+      </div>
+
+      <div class="order-next-step-card">
+        <span>Proxima accion</span>
+        <strong>${escapeHtml(nextAction.title)}</strong>
+        <small>${escapeHtml(nextAction.detail)}</small>
+      </div>
+
+      <div class="order-metrics">
+        <span>Venta: ${formatCop(order.sale_price_cop)}</span>
+        <span>Anticipo cotizado: ${formatCop(order.quoted_advance_cop)}</span>
+        <span>Anticipo real: ${formatCop(order.advance_paid_cop)}</span>
+        <span>Segundo pago registrado: ${formatCop(order.second_payment_amount_cop)}</span>
+        <span>Fecha segundo pago: ${formatStoredDate(order.second_payment_received_at)}</span>
+        <span>Saldo: ${formatCop(order.balance_due_cop)}</span>
+        <span>Ultimo cambio: ${formatStoredDate(order.last_status_changed_at)}</span>
+        ${
+          order.snapshot?.input?.purchase_type === "travel"
+            ? `<span>Ruta viaje: ${escapeHtml(order.travel_transport_label || "Por definir")}</span>`
+            : ""
+        }
+      </div>
+
+      ${
+        order.snapshot?.input?.purchase_type === "travel"
+          ? `
+            <div class="order-payment-register">
+              <strong>Ruta del producto en viaje</strong>
+              <div class="order-payment-fields">
+                <label>
+                  <span>Como viaja</span>
+                  <select data-travel-transport-select="${order.id}">
+                    ${buildTravelTransportOptions(order.travel_transport_type || "undecided")}
+                  </select>
+                </label>
+                <button class="secondary" type="button" data-save-travel-transport="${order.id}">
+                  Guardar ruta
+                </button>
+              </div>
+            </div>
+          `
+          : ""
+      }
+
+      ${
+        Number(order.balance_due_cop || 0) > 0
+          ? `
+            <div class="order-payment-register">
+              <strong>Registrar segundo pago</strong>
+              <div class="order-payment-fields">
+                <label>
+                  <span>Valor recibido</span>
+                  <input
+                    type="text"
+                    inputmode="numeric"
+                    placeholder="Ej. 350000"
+                    value="${escapeHtml(String(Math.round(order.balance_due_cop || 0)))}"
+                    data-second-payment-amount="${order.id}"
+                  />
+                </label>
+                <label>
+                  <span>Fecha del pago</span>
+                  <input
+                    type="date"
+                    value="${escapeHtml(
+                      order.second_payment_received_at
+                        ? toDateInputValue(order.second_payment_received_at)
+                        : toDateInputValue(new Date())
+                    )}"
+                    data-second-payment-date="${order.id}"
+                  />
+                </label>
+                <button class="primary" type="button" data-register-second-payment="${order.id}">
+                  Registrar segundo pago
+                </button>
+              </div>
+            </div>
+          `
+          : `
+            <p class="order-payment-note">
+              ${
+                order.second_payment_amount_cop > 0
+                  ? `Saldo cubierto. Ultimo segundo pago registrado el ${escapeHtml(
+                      formatStoredDate(order.second_payment_received_at)
+                    )}.`
+                  : "No hay saldo pendiente por segundo pago."
+              }
+            </p>
+          `
+      }
+
+      <div class="order-status-update">
+        <div class="order-status-summary">
+          <strong>WhatsApp</strong>
+          <p>Envia esta actualizacion al cliente con el estado actual.</p>
+        </div>
+        <button
+          class="secondary"
+          type="button"
+          data-send-order-whatsapp="${order.id}"
+          data-order-whatsapp-trigger="${escapeHtml(getOrderWhatsAppTrigger(order))}"
+        >
+          ${escapeHtml(getOrderWhatsAppButtonLabel(order))}
+        </button>
+      </div>
+
+      <div class="order-status-update">
+        <div class="order-status-summary">
+          <strong>Estado actual</strong>
+          <p>${escapeHtml(order.status_label)}</p>
+        </div>
+        ${
+          order.next_status_key
+            ? `<button
+                class="secondary"
+                type="button"
+                data-advance-order-status="${order.id}"
+                data-next-status-key="${escapeHtml(order.next_status_key)}"
+                ${secondPaymentBlocked ? "disabled" : ""}
+              >
+                Avanzar a ${escapeHtml(order.next_status_label)}
+              </button>`
+            : `<span class="order-flow-complete">Flujo completado</span>`
+        }
+      </div>
+
+      <div class="order-events">
+        ${(order.events || [])
+          .map(
+            (event) => `
+              <article class="order-event">
+                <strong>${escapeHtml(event.status_label)}</strong>
+                <small>${dateFormatter.format(new Date(event.created_at))}</small>
+                ${event.note ? `<p>${escapeHtml(event.note)}</p>` : ""}
+              </article>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderOrders(items) {
+  const visibleItems = (items || []).filter((item) => item.status_key !== "cycle_closed");
+  if (!visibleItems.length) {
+    state.activeOrderId = null;
+    ordersListContainer.className = "catalog-empty";
+    ordersListContainer.innerHTML = "<p>Aun no hay compras abiertas.</p>";
+    return;
+  }
+
+  const pendingCollectionCount = visibleItems.filter(
+    (item) => item.status_key === "client_notified" && Number(item.balance_due_cop || 0) > 0
+  ).length;
+  const travelRoutePendingCount = visibleItems.filter(
+    (item) =>
+      item.snapshot?.input?.purchase_type === "travel" &&
+      (item.travel_transport_type || "undecided") === "undecided"
+  ).length;
+  const readyToAdvanceCount = visibleItems.filter(
+    (item) =>
+      item.next_status_key &&
+      !(item.next_status_key === "second_payment_received" && Number(item.balance_due_cop || 0) > 0)
+  ).length;
+  const activeSalesTotal = visibleItems.reduce((total, item) => total + Number(item.sale_price_cop || 0), 0);
+
+  if (state.activeOrderId && !visibleItems.some((item) => Number(item.id) === Number(state.activeOrderId))) {
+    state.activeOrderId = null;
+  }
+
+  ordersListContainer.className = "orders-list";
+  ordersListContainer.innerHTML = `
+    <section class="orders-board-summary">
+      ${makeMetricCard("Compras activas", String(visibleItems.length), "Pedidos abiertos que debes mover en operacion")}
+      ${makeMetricCard("Por cobrar", String(pendingCollectionCount), "Clientes notificados y pendientes de segundo pago")}
+      ${makeMetricCard("Ruta por definir", String(travelRoutePendingCount), "Compras en viaje que aun no tienen casillero o maleta")}
+      ${makeMetricCard("Listas para avanzar", String(readyToAdvanceCount), "Pedidos que ya pueden pasar al siguiente estado")}
+      ${makeMetricCard("Venta activa", formatCop(activeSalesTotal), "Valor comprometido en compras aun abiertas")}
+    </section>
+    <div class="orders-table-wrap">
+      <table class="orders-table">
+        <thead>
+          <tr>
+            <th>Codigo</th>
+            <th>Fecha</th>
+            <th>Compra</th>
+            <th>Cliente</th>
+            <th>Estado</th>
+            <th>Venta</th>
+            <th>Saldo</th>
+            <th>Accion</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${visibleItems
+            .map((order) => {
+              const isActive = Number(state.activeOrderId) === Number(order.id);
+              return `
+                <tr class="${isActive ? "orders-row-active" : ""}">
+                  <td>
+                    <button
+                      type="button"
+                      class="order-code-button"
+                      data-view-order="${order.id}"
+                    >
+                      ${escapeHtml(formatOrderCode(order.id))}
+                    </button>
+                  </td>
+                  <td>${escapeHtml(formatStoredDate(order.created_at))}</td>
+                  <td>${escapeHtml(order.product_name || "-")}</td>
+                  <td>${escapeHtml(order.client_name || "-")}</td>
+                  <td>${escapeHtml(order.status_label || "-")}</td>
+                  <td>${formatCop(order.sale_price_cop)}</td>
+                  <td>${formatCop(order.balance_due_cop)}</td>
+                  <td class="orders-primary-action-cell">
+                    ${buildOrderPrimaryActionButton(order)}
+                  </td>
+                </tr>
+                ${
+                  isActive
+                    ? `
+                      <tr class="orders-detail-row">
+                        <td colspan="8">
+                          ${renderOrderDetailPanel(order)}
+                        </td>
+                      </tr>
+                    `
+                    : ""
+                }
+              `;
+            })
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 async function loadHistory() {
   try {
     const payload = await requestJson("/api/quotes");
@@ -5392,6 +5769,29 @@ if (dashboardProductsContainer) {
   });
 
 ordersListContainer.addEventListener("click", async (event) => {
+  const viewOrderButton = event.target.closest("[data-view-order]");
+  if (viewOrderButton) {
+    const orderId = viewOrderButton.getAttribute("data-view-order");
+    if (!orderId) {
+      return;
+    }
+    state.activeOrderId =
+      Number(state.activeOrderId) === Number(orderId) ? null : Number(orderId);
+    renderOrders(state.orders);
+    return;
+  }
+
+  const manageOrderButton = event.target.closest("[data-manage-order]");
+  if (manageOrderButton) {
+    const orderId = manageOrderButton.getAttribute("data-manage-order");
+    if (!orderId) {
+      return;
+    }
+    state.activeOrderId = Number(orderId);
+    renderOrders(state.orders);
+    return;
+  }
+
   const sendWhatsAppButton = event.target.closest("[data-send-order-whatsapp]");
   if (sendWhatsAppButton) {
     const orderId = sendWhatsAppButton.getAttribute("data-send-order-whatsapp");

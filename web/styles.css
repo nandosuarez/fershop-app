@@ -1006,6 +1006,66 @@ button:disabled {
   gap: 18px;
 }
 
+.orders-table-wrap {
+  overflow-x: auto;
+  border-radius: 18px;
+}
+
+.orders-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.orders-table th,
+.orders-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(24, 38, 31, 0.08);
+  text-align: left;
+  vertical-align: top;
+}
+
+.orders-table th {
+  background: rgba(18, 17, 17, 0.06);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+}
+
+.orders-row-active td {
+  background: rgba(255, 250, 244, 0.92);
+}
+
+.orders-detail-row td {
+  padding: 0;
+  background: rgba(255, 250, 244, 0.96);
+}
+
+.orders-primary-action-cell {
+  min-width: 180px;
+}
+
+.orders-inline-action {
+  min-width: 160px;
+}
+
+.order-code-button {
+  border: 1px solid rgba(18, 17, 17, 0.12);
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--ink);
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.order-detail-shell {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
 .orders-board-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -1544,6 +1604,16 @@ button:disabled {
   .orders-board-summary,
   .orders-card-grid {
     grid-template-columns: 1fr;
+  }
+
+  .orders-table th,
+  .orders-table td {
+    padding: 12px;
+  }
+
+  .orders-inline-action,
+  .order-code-button {
+    width: 100%;
   }
 
   .hero h1 {
