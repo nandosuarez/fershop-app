@@ -1186,6 +1186,10 @@ button:disabled {
   margin-top: 20px;
 }
 
+.catalog-layout-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .inventory-purchase-layout {
   align-items: start;
 }
