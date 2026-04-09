@@ -779,6 +779,7 @@ def _ensure_product_dimension_value(
     table_name: str,
     name: str,
     company_id: int,
+    description: str = "",
 ) -> dict[str, Any] | None:
     clean_name = str(name or "").strip()
     normalized_name = _normalize_catalog_name(clean_name)
@@ -788,19 +789,14 @@ def _ensure_product_dimension_value(
     connection.row_factory = sqlite3.Row
     existing = connection.execute(
         f"""
-        SELECT id, created_at, company_id, name
+        SELECT id, created_at, company_id, name, description, is_active
         FROM {table_name}
         WHERE company_id = ? AND normalized_name = ?
         """,
         (company_id, normalized_name),
     ).fetchone()
     if existing is not None:
-        return {
-            "id": existing["id"],
-            "created_at": existing["created_at"],
-            "company_id": existing["company_id"],
-            "name": existing["name"],
-        }
+        return _serialize_dimension_row(existing)
 
     created_at = datetime.now(timezone.utc).isoformat()
     item_id = _insert_and_get_id(
@@ -810,15 +806,19 @@ def _ensure_product_dimension_value(
             created_at,
             company_id,
             name,
-            normalized_name
+            normalized_name,
+            description,
+            is_active
         )
-        VALUES (?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
             created_at,
             company_id,
             clean_name,
             normalized_name,
+            str(description or "").strip(),
+            1,
         ),
     )
     return {
@@ -826,6 +826,8 @@ def _ensure_product_dimension_value(
         "created_at": created_at,
         "company_id": company_id,
         "name": clean_name,
+        "description": str(description or "").strip(),
+        "is_active": True,
     }
 
 
@@ -852,46 +854,147 @@ def _list_product_dimension_rows(
     table_name: str,
     *,
     company_id: int | None = None,
+    include_inactive: bool = True,
 ) -> list[dict[str, Any]]:
     init_db()
     company_id = _normalize_company_id(company_id)
     with closing(_connect()) as connection:
         connection.row_factory = sqlite3.Row
-        rows = connection.execute(
-            f"""
-            SELECT id, created_at, company_id, name, normalized_name
+        sql = f"""
+            SELECT id, created_at, company_id, name, normalized_name, description, is_active
             FROM {table_name}
             WHERE company_id = ?
-            ORDER BY normalized_name ASC, id ASC
-            """,
-            (company_id,),
+        """
+        params: list[Any] = [company_id]
+        if not include_inactive:
+            sql += " AND is_active = 1"
+        sql += " ORDER BY is_active DESC, normalized_name ASC, id ASC"
+        rows = connection.execute(
+            sql,
+            tuple(params),
         ).fetchall()
 
-    return [
-        {
-            "id": row["id"],
-            "created_at": row["created_at"],
-            "company_id": row["company_id"],
-            "name": row["name"],
-        }
-        for row in rows
-    ]
+    return [_serialize_dimension_row(row) for row in rows]
 
 
 def _create_product_dimension_row(
     table_name: str,
     name: str,
     *,
+    description: str = "",
     company_id: int | None = None,
 ) -> dict[str, Any]:
     init_db()
     company_id = _normalize_company_id(company_id)
     with closing(_connect()) as connection:
-        record = _ensure_product_dimension_value(connection, table_name, name, company_id)
+        record = _ensure_product_dimension_value(
+            connection,
+            table_name,
+            name,
+            company_id,
+            description=description,
+        )
         connection.commit()
     if record is None:
         raise ValueError("Debes enviar un nombre valido.")
     return record
+
+
+def _get_product_dimension_row(
+    table_name: str,
+    item_id: int,
+    *,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            f"""
+            SELECT id, created_at, company_id, name, normalized_name, description, is_active
+            FROM {table_name}
+            WHERE id = ? AND company_id = ?
+            """,
+            (item_id, company_id),
+        ).fetchone()
+    if row is None:
+        raise ValueError("Elemento no encontrado.")
+    return _serialize_dimension_row(row)
+
+
+def _update_product_dimension_row(
+    table_name: str,
+    item_id: int,
+    *,
+    name: str,
+    description: str = "",
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    clean_name = str(name or "").strip()
+    normalized_name = _normalize_catalog_name(clean_name)
+    if not normalized_name:
+        raise ValueError("Debes enviar un nombre valido.")
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        existing = connection.execute(
+            f"""
+            SELECT id
+            FROM {table_name}
+            WHERE id = ? AND company_id = ?
+            """,
+            (item_id, company_id),
+        ).fetchone()
+        if existing is None:
+            raise ValueError("Elemento no encontrado.")
+
+        duplicate = connection.execute(
+            f"""
+            SELECT id
+            FROM {table_name}
+            WHERE company_id = ? AND normalized_name = ? AND id <> ?
+            """,
+            (company_id, normalized_name, item_id),
+        ).fetchone()
+        if duplicate is not None:
+            raise ValueError("Ya existe un registro con ese nombre.")
+
+        connection.execute(
+            f"""
+            UPDATE {table_name}
+            SET name = ?, normalized_name = ?, description = ?
+            WHERE id = ? AND company_id = ?
+            """,
+            (clean_name, normalized_name, str(description or "").strip(), item_id, company_id),
+        )
+        connection.commit()
+
+    return _get_product_dimension_row(table_name, item_id, company_id=company_id)
+
+
+def _set_product_dimension_active(
+    table_name: str,
+    item_id: int,
+    *,
+    is_active: bool,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    with closing(_connect()) as connection:
+        connection.execute(
+            f"""
+            UPDATE {table_name}
+            SET is_active = ?
+            WHERE id = ? AND company_id = ?
+            """,
+            (_to_bool_flag(is_active), item_id, company_id),
+        )
+        connection.commit()
+    return _get_product_dimension_row(table_name, item_id, company_id=company_id)
 
 
 def _serialize_status_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -1292,6 +1395,7 @@ def init_db(skip_defaults: bool = False) -> None:
                     created_at TEXT NOT NULL,
                     company_id INTEGER NOT NULL DEFAULT 1,
                     name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
                     phone TEXT NOT NULL,
                     email TEXT NOT NULL,
                     city TEXT NOT NULL,
@@ -1303,7 +1407,8 @@ def init_db(skip_defaults: bool = False) -> None:
                     preferred_contact_channel TEXT NOT NULL DEFAULT '',
                     preferred_payment_method TEXT NOT NULL DEFAULT '',
                     interests TEXT NOT NULL DEFAULT '',
-                    notes TEXT NOT NULL
+                    notes TEXT NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1
                 )
                 """
             )
@@ -1312,6 +1417,7 @@ def init_db(skip_defaults: bool = False) -> None:
                 "clients",
                 {
                     "company_id": "INTEGER NOT NULL DEFAULT 1",
+                    "description": "TEXT NOT NULL DEFAULT ''",
                     "address": "TEXT NOT NULL DEFAULT ''",
                     "neighborhood": "TEXT NOT NULL DEFAULT ''",
                     "whatsapp_phone": "TEXT NOT NULL DEFAULT ''",
@@ -1320,6 +1426,7 @@ def init_db(skip_defaults: bool = False) -> None:
                     "preferred_contact_channel": "TEXT NOT NULL DEFAULT ''",
                     "preferred_payment_method": "TEXT NOT NULL DEFAULT ''",
                     "interests": "TEXT NOT NULL DEFAULT ''",
+                    "is_active": "INTEGER NOT NULL DEFAULT 1",
                 },
             )
             connection.execute(
@@ -1390,6 +1497,7 @@ def init_db(skip_defaults: bool = False) -> None:
                     created_at TEXT NOT NULL,
                     company_id INTEGER NOT NULL DEFAULT 1,
                     name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
                     reference TEXT NOT NULL,
                     category TEXT NOT NULL DEFAULT '',
                     store TEXT NOT NULL DEFAULT '',
@@ -1400,7 +1508,8 @@ def init_db(skip_defaults: bool = False) -> None:
                     price_usd_net REAL NOT NULL,
                     tax_usa_percent REAL NOT NULL,
                     locker_shipping_usd REAL NOT NULL,
-                    notes TEXT NOT NULL
+                    notes TEXT NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1
                 )
                 """
             )
@@ -1409,12 +1518,14 @@ def init_db(skip_defaults: bool = False) -> None:
                 "products",
                 {
                     "company_id": "INTEGER NOT NULL DEFAULT 1",
+                    "description": "TEXT NOT NULL DEFAULT ''",
                     "category": "TEXT NOT NULL DEFAULT ''",
                     "store": "TEXT NOT NULL DEFAULT ''",
                     "inventory_enabled": "INTEGER NOT NULL DEFAULT 0",
                     "current_stock": "INTEGER NOT NULL DEFAULT 0",
                     "inventory_unit_cost_cop": "REAL NOT NULL DEFAULT 0",
                     "current_stock_value_cop": "REAL NOT NULL DEFAULT 0",
+                    "is_active": "INTEGER NOT NULL DEFAULT 1",
                 },
             )
             connection.execute(
@@ -1425,9 +1536,19 @@ def init_db(skip_defaults: bool = False) -> None:
                     company_id INTEGER NOT NULL DEFAULT 1,
                     name TEXT NOT NULL,
                     normalized_name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    is_active INTEGER NOT NULL DEFAULT 1,
                     UNIQUE(company_id, normalized_name)
                 )
                 """
+            )
+            _ensure_table_columns(
+                connection,
+                "product_categories",
+                {
+                    "description": "TEXT NOT NULL DEFAULT ''",
+                    "is_active": "INTEGER NOT NULL DEFAULT 1",
+                },
             )
             connection.execute(
                 """
@@ -1437,9 +1558,19 @@ def init_db(skip_defaults: bool = False) -> None:
                     company_id INTEGER NOT NULL DEFAULT 1,
                     name TEXT NOT NULL,
                     normalized_name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    is_active INTEGER NOT NULL DEFAULT 1,
                     UNIQUE(company_id, normalized_name)
                 )
                 """
+            )
+            _ensure_table_columns(
+                connection,
+                "product_stores",
+                {
+                    "description": "TEXT NOT NULL DEFAULT ''",
+                    "is_active": "INTEGER NOT NULL DEFAULT 1",
+                },
             )
             connection.execute(
                 """
@@ -2525,6 +2656,63 @@ def update_quote(
     return record
 
 
+def _serialize_client_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "created_at": row["created_at"],
+        "company_id": row["company_id"],
+        "name": row["name"],
+        "description": row["description"],
+        "phone": row["phone"],
+        "email": row["email"],
+        "city": row["city"],
+        "address": row["address"],
+        "neighborhood": row["neighborhood"],
+        "whatsapp_phone": row["whatsapp_phone"],
+        "whatsapp_phone_masked": mask_whatsapp_phone(row["whatsapp_phone"]),
+        "whatsapp_opt_in": bool(row["whatsapp_opt_in"]),
+        "whatsapp_opt_in_at": row["whatsapp_opt_in_at"],
+        "preferred_contact_channel": row["preferred_contact_channel"],
+        "preferred_payment_method": row["preferred_payment_method"],
+        "interests": row["interests"],
+        "notes": row["notes"],
+        "is_active": bool(row["is_active"]),
+    }
+
+
+def _serialize_product_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "created_at": row["created_at"],
+        "company_id": row["company_id"],
+        "name": row["name"],
+        "description": row["description"],
+        "reference": row["reference"],
+        "category": row["category"],
+        "store": row["store"],
+        "inventory_enabled": bool(row["inventory_enabled"]),
+        "current_stock": int(row["current_stock"] or 0),
+        "inventory_unit_cost_cop": float(row["inventory_unit_cost_cop"] or 0),
+        "current_stock_value_cop": float(row["current_stock_value_cop"] or 0),
+        "price_usd_net": row["price_usd_net"],
+        "tax_usa_percent": row["tax_usa_percent"],
+        "locker_shipping_usd": row["locker_shipping_usd"],
+        "notes": row["notes"],
+        "is_active": bool(row["is_active"]),
+    }
+
+
+def _serialize_dimension_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "created_at": row["created_at"],
+        "company_id": row["company_id"],
+        "name": row["name"],
+        "description": row["description"],
+        "is_active": bool(row["is_active"]),
+    }
+
+
 def save_client(client_data: dict[str, Any], company_id: int | None = None) -> dict[str, Any]:
     init_db()
     company_id = _normalize_company_id(company_id)
@@ -2543,6 +2731,7 @@ def save_client(client_data: dict[str, Any], company_id: int | None = None) -> d
                 created_at,
                 company_id,
                 name,
+                description,
                 phone,
                 email,
                 city,
@@ -2554,14 +2743,16 @@ def save_client(client_data: dict[str, Any], company_id: int | None = None) -> d
                 preferred_contact_channel,
                 preferred_payment_method,
                 interests,
-                notes
+                notes,
+                is_active
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 created_at,
                 company_id,
                 client_data.get("name", ""),
+                client_data.get("description", ""),
                 client_data.get("phone", ""),
                 client_data.get("email", ""),
                 client_data.get("city", ""),
@@ -2574,43 +2765,27 @@ def save_client(client_data: dict[str, Any], company_id: int | None = None) -> d
                 client_data.get("preferred_payment_method", ""),
                 client_data.get("interests", ""),
                 client_data.get("notes", ""),
+                1,
             ),
         )
         connection.commit()
 
-    return {
-        "id": client_id,
-        "created_at": created_at,
-        "company_id": company_id,
-        "name": client_data.get("name", ""),
-        "phone": client_data.get("phone", ""),
-        "email": client_data.get("email", ""),
-        "city": client_data.get("city", ""),
-        "address": client_data.get("address", ""),
-        "neighborhood": client_data.get("neighborhood", ""),
-        "whatsapp_phone": whatsapp_phone,
-        "whatsapp_phone_masked": mask_whatsapp_phone(whatsapp_phone),
-        "whatsapp_opt_in": whatsapp_opt_in,
-        "whatsapp_opt_in_at": whatsapp_opt_in_at,
-        "preferred_contact_channel": client_data.get("preferred_contact_channel", ""),
-        "preferred_payment_method": client_data.get("preferred_payment_method", ""),
-        "interests": client_data.get("interests", ""),
-        "notes": client_data.get("notes", ""),
-    }
+    return get_client_summary(client_id, company_id=company_id)
 
 
-def list_clients(limit: int = 100, company_id: int | None = None) -> list[dict[str, Any]]:
+def get_client_summary(client_id: int, company_id: int | None = None) -> dict[str, Any]:
     init_db()
     company_id = _normalize_company_id(company_id)
     with closing(_connect()) as connection:
         connection.row_factory = sqlite3.Row
-        rows = connection.execute(
+        row = connection.execute(
             """
             SELECT
                 id,
                 created_at,
                 company_id,
                 name,
+                description,
                 phone,
                 email,
                 city,
@@ -2622,37 +2797,160 @@ def list_clients(limit: int = 100, company_id: int | None = None) -> list[dict[s
                 preferred_contact_channel,
                 preferred_payment_method,
                 interests,
-                notes
+                notes,
+                is_active
+            FROM clients
+            WHERE id = ? AND company_id = ?
+            """,
+            (client_id, company_id),
+        ).fetchone()
+    if row is None:
+        raise ValueError("Cliente no encontrado.")
+    return _serialize_client_row(row)
+
+
+def update_client(
+    client_id: int,
+    client_data: dict[str, Any],
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    updated_at = datetime.now(timezone.utc).isoformat()
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        existing = connection.execute(
+            """
+            SELECT whatsapp_phone, whatsapp_opt_in, whatsapp_opt_in_at, is_active
+            FROM clients
+            WHERE id = ? AND company_id = ?
+            """,
+            (client_id, company_id),
+        ).fetchone()
+        if existing is None:
+            raise ValueError("Cliente no encontrado.")
+
+        whatsapp_phone = normalize_whatsapp_phone(client_data.get("whatsapp_phone", ""))
+        whatsapp_opt_in = bool(client_data.get("whatsapp_opt_in")) and bool(whatsapp_phone)
+        if client_data.get("whatsapp_opt_in") and not whatsapp_phone:
+            raise ValueError("Debes registrar el WhatsApp del cliente para activar notificaciones.")
+
+        existing_opt_in = bool(existing["whatsapp_opt_in"])
+        existing_opt_in_at = str(existing["whatsapp_opt_in_at"] or "").strip()
+        if whatsapp_opt_in:
+            whatsapp_opt_in_at = existing_opt_in_at or updated_at
+        else:
+            whatsapp_opt_in_at = ""
+
+        connection.execute(
+            """
+            UPDATE clients
+            SET
+                name = ?,
+                description = ?,
+                phone = ?,
+                email = ?,
+                city = ?,
+                address = ?,
+                neighborhood = ?,
+                whatsapp_phone = ?,
+                whatsapp_opt_in = ?,
+                whatsapp_opt_in_at = ?,
+                preferred_contact_channel = ?,
+                preferred_payment_method = ?,
+                interests = ?,
+                notes = ?
+            WHERE id = ? AND company_id = ?
+            """,
+            (
+                client_data.get("name", ""),
+                client_data.get("description", ""),
+                client_data.get("phone", ""),
+                client_data.get("email", ""),
+                client_data.get("city", ""),
+                client_data.get("address", ""),
+                client_data.get("neighborhood", ""),
+                whatsapp_phone,
+                1 if whatsapp_opt_in else 0,
+                whatsapp_opt_in_at,
+                client_data.get("preferred_contact_channel", ""),
+                client_data.get("preferred_payment_method", ""),
+                client_data.get("interests", ""),
+                client_data.get("notes", ""),
+                client_id,
+                company_id,
+            ),
+        )
+        connection.commit()
+
+    return get_client_summary(client_id, company_id=company_id)
+
+
+def set_client_active(
+    client_id: int,
+    is_active: bool,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    with closing(_connect()) as connection:
+        connection.execute(
+            """
+            UPDATE clients
+            SET is_active = ?
+            WHERE id = ? AND company_id = ?
+            """,
+            (_to_bool_flag(is_active), client_id, company_id),
+        )
+        connection.commit()
+    return get_client_summary(client_id, company_id=company_id)
+
+
+def list_clients(
+    limit: int = 100,
+    company_id: int | None = None,
+    *,
+    include_inactive: bool = True,
+) -> list[dict[str, Any]]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        sql = """
+            SELECT
+                id,
+                created_at,
+                company_id,
+                name,
+                description,
+                phone,
+                email,
+                city,
+                address,
+                neighborhood,
+                whatsapp_phone,
+                whatsapp_opt_in,
+                whatsapp_opt_in_at,
+                preferred_contact_channel,
+                preferred_payment_method,
+                interests,
+                notes,
+                is_active
             FROM clients
             WHERE company_id = ?
-            ORDER BY id DESC
-            LIMIT ?
-            """,
-            (company_id, limit),
+        """
+        params: list[Any] = [company_id]
+        if not include_inactive:
+            sql += " AND is_active = 1"
+        sql += " ORDER BY is_active DESC, id DESC LIMIT ?"
+        params.append(limit)
+        rows = connection.execute(
+            sql,
+            tuple(params),
         ).fetchall()
 
-    return [
-        {
-            "id": row["id"],
-            "created_at": row["created_at"],
-            "company_id": row["company_id"],
-            "name": row["name"],
-            "phone": row["phone"],
-            "email": row["email"],
-            "city": row["city"],
-            "address": row["address"],
-            "neighborhood": row["neighborhood"],
-            "whatsapp_phone": row["whatsapp_phone"],
-            "whatsapp_phone_masked": mask_whatsapp_phone(row["whatsapp_phone"]),
-            "whatsapp_opt_in": bool(row["whatsapp_opt_in"]),
-            "whatsapp_opt_in_at": row["whatsapp_opt_in_at"],
-            "preferred_contact_channel": row["preferred_contact_channel"],
-            "preferred_payment_method": row["preferred_payment_method"],
-            "interests": row["interests"],
-            "notes": row["notes"],
-        }
-        for row in rows
-    ]
+    return [_serialize_client_row(row) for row in rows]
 
 
 def get_client_detail(client_id: int, company_id: int | None = None) -> dict[str, Any] | None:
@@ -2676,6 +2974,7 @@ def get_client_detail(client_id: int, company_id: int | None = None) -> dict[str
                 created_at,
                 company_id,
                 name,
+                description,
                 phone,
                 email,
                 city,
@@ -2687,7 +2986,8 @@ def get_client_detail(client_id: int, company_id: int | None = None) -> dict[str
                 preferred_contact_channel,
                 preferred_payment_method,
                 interests,
-                notes
+                notes,
+                is_active
             FROM clients
             WHERE id = ? AND company_id = ?
             """,
@@ -2880,25 +3180,7 @@ def get_client_detail(client_id: int, company_id: int | None = None) -> dict[str
     last_order_at = str(matching_order_rows[0]["created_at"]) if matching_order_rows else ""
 
     return {
-        "client": {
-            "id": client_row["id"],
-            "created_at": client_row["created_at"],
-            "company_id": client_row["company_id"],
-            "name": client_row["name"],
-            "phone": client_row["phone"],
-                "email": client_row["email"],
-                "city": client_row["city"],
-                "address": client_row["address"],
-                "neighborhood": client_row["neighborhood"],
-                "whatsapp_phone": client_row["whatsapp_phone"],
-                "whatsapp_phone_masked": mask_whatsapp_phone(client_row["whatsapp_phone"]),
-                "whatsapp_opt_in": bool(client_row["whatsapp_opt_in"]),
-                "whatsapp_opt_in_at": client_row["whatsapp_opt_in_at"],
-                "preferred_contact_channel": client_row["preferred_contact_channel"],
-                "preferred_payment_method": client_row["preferred_payment_method"],
-                "interests": client_row["interests"],
-                "notes": client_row["notes"],
-        },
+        "client": _serialize_client_row(client_row),
         "summary": {
             "quotes_count": quotes_count,
             "orders_count": orders_count,
@@ -2918,20 +3200,114 @@ def get_client_detail(client_id: int, company_id: int | None = None) -> dict[str
     }
 
 
-def list_product_categories(company_id: int | None = None) -> list[dict[str, Any]]:
-    return _list_product_dimension_rows("product_categories", company_id=company_id)
+def list_product_categories(
+    company_id: int | None = None,
+    *,
+    include_inactive: bool = True,
+) -> list[dict[str, Any]]:
+    return _list_product_dimension_rows(
+        "product_categories",
+        company_id=company_id,
+        include_inactive=include_inactive,
+    )
 
 
-def create_product_category(name: str, company_id: int | None = None) -> dict[str, Any]:
-    return _create_product_dimension_row("product_categories", name, company_id=company_id)
+def create_product_category(
+    name: str,
+    description: str = "",
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    return _create_product_dimension_row(
+        "product_categories",
+        name,
+        description=description,
+        company_id=company_id,
+    )
 
 
-def list_product_stores(company_id: int | None = None) -> list[dict[str, Any]]:
-    return _list_product_dimension_rows("product_stores", company_id=company_id)
+def update_product_category(
+    category_id: int,
+    *,
+    name: str,
+    description: str = "",
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    return _update_product_dimension_row(
+        "product_categories",
+        category_id,
+        name=name,
+        description=description,
+        company_id=company_id,
+    )
 
 
-def create_product_store(name: str, company_id: int | None = None) -> dict[str, Any]:
-    return _create_product_dimension_row("product_stores", name, company_id=company_id)
+def set_product_category_active(
+    category_id: int,
+    *,
+    is_active: bool,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    return _set_product_dimension_active(
+        "product_categories",
+        category_id,
+        is_active=is_active,
+        company_id=company_id,
+    )
+
+
+def list_product_stores(
+    company_id: int | None = None,
+    *,
+    include_inactive: bool = True,
+) -> list[dict[str, Any]]:
+    return _list_product_dimension_rows(
+        "product_stores",
+        company_id=company_id,
+        include_inactive=include_inactive,
+    )
+
+
+def create_product_store(
+    name: str,
+    description: str = "",
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    return _create_product_dimension_row(
+        "product_stores",
+        name,
+        description=description,
+        company_id=company_id,
+    )
+
+
+def update_product_store(
+    store_id: int,
+    *,
+    name: str,
+    description: str = "",
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    return _update_product_dimension_row(
+        "product_stores",
+        store_id,
+        name=name,
+        description=description,
+        company_id=company_id,
+    )
+
+
+def set_product_store_active(
+    store_id: int,
+    *,
+    is_active: bool,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    return _set_product_dimension_active(
+        "product_stores",
+        store_id,
+        is_active=is_active,
+        company_id=company_id,
+    )
 
 
 def _serialize_inventory_movement_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -2967,6 +3343,7 @@ def _get_product_row(
             created_at,
             company_id,
             name,
+            description,
             reference,
             category,
             store,
@@ -2977,7 +3354,8 @@ def _get_product_row(
             price_usd_net,
             tax_usa_percent,
             locker_shipping_usd,
-            notes
+            notes,
+            is_active
         FROM products
         WHERE id = ? AND company_id = ?
         """,
@@ -3183,23 +3561,7 @@ def _record_inventory_movement(
     updated_product_row = _get_product_row(connection, product_id=product_id, company_id=company_id)
     if updated_product_row is None:
         raise ValueError("No fue posible cargar el producto actualizado.")
-    return _serialize_inventory_movement_row(movement_row), {
-        "id": updated_product_row["id"],
-        "created_at": updated_product_row["created_at"],
-        "company_id": updated_product_row["company_id"],
-        "name": updated_product_row["name"],
-        "reference": updated_product_row["reference"],
-        "category": updated_product_row["category"],
-        "store": updated_product_row["store"],
-        "inventory_enabled": bool(updated_product_row["inventory_enabled"]),
-        "current_stock": int(updated_product_row["current_stock"] or 0),
-        "inventory_unit_cost_cop": float(updated_product_row["inventory_unit_cost_cop"] or 0),
-        "current_stock_value_cop": float(updated_product_row["current_stock_value_cop"] or 0),
-        "price_usd_net": updated_product_row["price_usd_net"],
-        "tax_usa_percent": updated_product_row["tax_usa_percent"],
-        "locker_shipping_usd": updated_product_row["locker_shipping_usd"],
-        "notes": updated_product_row["notes"],
-    }
+    return _serialize_inventory_movement_row(movement_row), _serialize_product_row(updated_product_row)
 
 
 def record_product_inventory_movement(
@@ -3246,6 +3608,7 @@ def save_product(product_data: dict[str, Any], company_id: int | None = None) ->
             "created_at",
             "company_id",
             "name",
+            "description",
             "reference",
             "category",
             "store",
@@ -3258,6 +3621,7 @@ def save_product(product_data: dict[str, Any], company_id: int | None = None) ->
             created_at,
             company_id,
             product_data.get("name", ""),
+            product_data.get("description", ""),
             product_data.get("reference", ""),
             product_data.get("category", ""),
             product_data.get("store", ""),
@@ -3272,6 +3636,7 @@ def save_product(product_data: dict[str, Any], company_id: int | None = None) ->
             ("current_stock", 0),
             ("inventory_unit_cost_cop", 0),
             ("current_stock_value_cop", 0),
+            ("is_active", 1),
         ):
             if column_name in existing_columns:
                 product_columns.append(column_name)
@@ -3317,23 +3682,7 @@ def save_product(product_data: dict[str, Any], company_id: int | None = None) ->
             )
         connection.commit()
 
-    return {
-        "id": product_id,
-        "created_at": created_at,
-        "company_id": company_id,
-        "name": product_data.get("name", ""),
-        "reference": product_data.get("reference", ""),
-        "category": product_data.get("category", ""),
-        "store": product_data.get("store", ""),
-        "inventory_enabled": inventory_enabled,
-        "current_stock": initial_stock_quantity if inventory_enabled else 0,
-        "inventory_unit_cost_cop": 0.0,
-        "current_stock_value_cop": 0.0,
-        "price_usd_net": product_data.get("price_usd_net", 0),
-        "tax_usa_percent": product_data.get("tax_usa_percent", 0),
-        "locker_shipping_usd": product_data.get("locker_shipping_usd", 0),
-        "notes": product_data.get("notes", ""),
-    }
+    return get_product_summary(product_id, company_id=company_id)
 
 
 def update_product_pricing(
@@ -3381,18 +3730,19 @@ def update_product_pricing(
     return item["product"]
 
 
-def list_products(limit: int = 100, company_id: int | None = None) -> list[dict[str, Any]]:
+def get_product_summary(product_id: int, company_id: int | None = None) -> dict[str, Any]:
     init_db()
     company_id = _normalize_company_id(company_id)
     with closing(_connect()) as connection:
         connection.row_factory = sqlite3.Row
-        rows = connection.execute(
+        row = connection.execute(
             """
             SELECT
                 id,
                 created_at,
                 company_id,
                 name,
+                description,
                 reference,
                 category,
                 store,
@@ -3403,35 +3753,157 @@ def list_products(limit: int = 100, company_id: int | None = None) -> list[dict[
                 price_usd_net,
                 tax_usa_percent,
                 locker_shipping_usd,
-                notes
+                notes,
+                is_active
+            FROM products
+            WHERE id = ? AND company_id = ?
+            """,
+            (product_id, company_id),
+        ).fetchone()
+    if row is None:
+        raise ValueError("Producto no encontrado.")
+    return _serialize_product_row(row)
+
+
+def update_product(
+    product_id: int,
+    product_data: dict[str, Any],
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    initial_stock_quantity = _coerce_inventory_quantity(
+        product_data.get("initial_stock_quantity") or 0,
+        field_name="initial_stock_quantity",
+    )
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        existing = connection.execute(
+            """
+            SELECT inventory_enabled, current_stock, inventory_unit_cost_cop, current_stock_value_cop
+            FROM products
+            WHERE id = ? AND company_id = ?
+            """,
+            (product_id, company_id),
+        ).fetchone()
+        if existing is None:
+            raise ValueError("Producto no encontrado.")
+
+        current_stock = int(existing["current_stock"] or 0)
+        inventory_enabled = bool(product_data.get("inventory_enabled")) or current_stock > 0 or initial_stock_quantity > 0
+
+        connection.execute(
+            """
+            UPDATE products
+            SET
+                name = ?,
+                description = ?,
+                reference = ?,
+                category = ?,
+                store = ?,
+                inventory_enabled = ?,
+                price_usd_net = ?,
+                tax_usa_percent = ?,
+                locker_shipping_usd = ?,
+                notes = ?
+            WHERE id = ? AND company_id = ?
+            """,
+            (
+                product_data.get("name", ""),
+                product_data.get("description", ""),
+                product_data.get("reference", ""),
+                product_data.get("category", ""),
+                product_data.get("store", ""),
+                1 if inventory_enabled else 0,
+                product_data.get("price_usd_net", 0),
+                product_data.get("tax_usa_percent", 0),
+                product_data.get("locker_shipping_usd", 0),
+                product_data.get("notes", ""),
+                product_id,
+                company_id,
+            ),
+        )
+        _ensure_product_dimension_value(
+            connection,
+            "product_categories",
+            product_data.get("category", ""),
+            company_id,
+        )
+        _ensure_product_dimension_value(
+            connection,
+            "product_stores",
+            product_data.get("store", ""),
+            company_id,
+        )
+        connection.commit()
+
+    return get_product_summary(product_id, company_id=company_id)
+
+
+def set_product_active(
+    product_id: int,
+    is_active: bool,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    with closing(_connect()) as connection:
+        connection.execute(
+            """
+            UPDATE products
+            SET is_active = ?
+            WHERE id = ? AND company_id = ?
+            """,
+            (_to_bool_flag(is_active), product_id, company_id),
+        )
+        connection.commit()
+    return get_product_summary(product_id, company_id=company_id)
+
+
+def list_products(
+    limit: int = 100,
+    company_id: int | None = None,
+    *,
+    include_inactive: bool = True,
+) -> list[dict[str, Any]]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        sql = """
+            SELECT
+                id,
+                created_at,
+                company_id,
+                name,
+                description,
+                reference,
+                category,
+                store,
+                inventory_enabled,
+                current_stock,
+                inventory_unit_cost_cop,
+                current_stock_value_cop,
+                price_usd_net,
+                tax_usa_percent,
+                locker_shipping_usd,
+                notes,
+                is_active
             FROM products
             WHERE company_id = ?
-            ORDER BY id DESC
-            LIMIT ?
-            """,
-            (company_id, limit),
+        """
+        params: list[Any] = [company_id]
+        if not include_inactive:
+            sql += " AND is_active = 1"
+        sql += " ORDER BY is_active DESC, id DESC LIMIT ?"
+        params.append(limit)
+        rows = connection.execute(
+            sql,
+            tuple(params),
         ).fetchall()
 
-    return [
-        {
-            "id": row["id"],
-            "created_at": row["created_at"],
-            "company_id": row["company_id"],
-            "name": row["name"],
-            "reference": row["reference"],
-            "category": row["category"],
-            "store": row["store"],
-            "inventory_enabled": bool(row["inventory_enabled"]),
-            "current_stock": int(row["current_stock"] or 0),
-            "inventory_unit_cost_cop": float(row["inventory_unit_cost_cop"] or 0),
-            "current_stock_value_cop": float(row["current_stock_value_cop"] or 0),
-            "price_usd_net": row["price_usd_net"],
-            "tax_usa_percent": row["tax_usa_percent"],
-            "locker_shipping_usd": row["locker_shipping_usd"],
-            "notes": row["notes"],
-        }
-        for row in rows
-    ]
+    return [_serialize_product_row(row) for row in rows]
 
 
 def get_product_detail(product_id: int, company_id: int | None = None) -> dict[str, Any] | None:
@@ -3469,6 +3941,7 @@ def get_product_detail(product_id: int, company_id: int | None = None) -> dict[s
                 created_at,
                 company_id,
                 name,
+                description,
                 reference,
                 category,
                 store,
@@ -3479,7 +3952,8 @@ def get_product_detail(product_id: int, company_id: int | None = None) -> dict[s
                 price_usd_net,
                 tax_usa_percent,
                 locker_shipping_usd,
-                notes
+                notes,
+                is_active
             FROM products
             WHERE id = ? AND company_id = ?
             """,
@@ -3726,23 +4200,7 @@ def get_product_detail(product_id: int, company_id: int | None = None) -> dict[s
     last_order_at = str(matching_order_rows[0]["created_at"]) if matching_order_rows else ""
 
     return {
-        "product": {
-            "id": product_row["id"],
-            "created_at": product_row["created_at"],
-            "company_id": product_row["company_id"],
-            "name": product_row["name"],
-            "reference": product_row["reference"],
-            "category": product_row["category"],
-            "store": product_row["store"],
-            "inventory_enabled": bool(product_row["inventory_enabled"]),
-            "current_stock": int(product_row["current_stock"] or 0),
-            "inventory_unit_cost_cop": float(product_row["inventory_unit_cost_cop"] or 0),
-            "current_stock_value_cop": float(product_row["current_stock_value_cop"] or 0),
-            "price_usd_net": product_row["price_usd_net"],
-            "tax_usa_percent": product_row["tax_usa_percent"],
-            "locker_shipping_usd": product_row["locker_shipping_usd"],
-            "notes": product_row["notes"],
-        },
+        "product": _serialize_product_row(product_row),
         "summary": {
             "quotes_count": quotes_count,
             "orders_count": orders_count,

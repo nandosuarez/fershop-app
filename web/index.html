@@ -510,6 +510,7 @@
                 </div>
 
                 <form id="client-form" class="catalog-form">
+                  <input name="id" type="hidden" />
                   <div class="field-grid">
                     <label>
                       <span>Nombre</span>
@@ -570,6 +571,15 @@
                     </label>
                   </div>
 
+                  <label class="full-width">
+                    <span>Descripcion comercial</span>
+                    <textarea
+                      name="description"
+                      rows="3"
+                      placeholder="Resumen corto para identificar al cliente, su perfil o contexto comercial."
+                    ></textarea>
+                  </label>
+
                   <label class="checkbox-field">
                     <input name="whatsapp_opt_in" type="checkbox" />
                     <span>Autorizo notificaciones de compra por WhatsApp</span>
@@ -590,7 +600,8 @@
                   </label>
 
                   <div class="actions">
-                    <button type="submit" class="primary">Guardar cliente</button>
+                    <button type="submit" class="primary" data-client-submit-button>Guardar cliente</button>
+                    <button type="button" class="secondary" data-client-cancel-button hidden>Cancelar edicion</button>
                   </div>
                 </form>
 
@@ -606,6 +617,7 @@
                 </div>
 
                 <form id="product-form" class="catalog-form">
+                  <input name="id" type="hidden" />
                   <div class="field-grid">
                     <label>
                       <span>Nombre</span>
@@ -666,6 +678,15 @@
                   </div>
 
                   <label class="full-width">
+                    <span>Descripcion comercial</span>
+                    <textarea
+                      name="description"
+                      rows="3"
+                      placeholder="Resumen corto del producto, publico ideal, coleccion o contexto comercial."
+                    ></textarea>
+                  </label>
+
+                  <label class="full-width">
                     <span>Notas del producto</span>
                     <textarea
                       name="notes"
@@ -675,7 +696,8 @@
                   </label>
 
                   <div class="actions">
-                    <button type="submit" class="primary">Guardar producto</button>
+                    <button type="submit" class="primary" data-product-submit-button>Guardar producto</button>
+                    <button type="button" class="secondary" data-product-cancel-button hidden>Cancelar edicion</button>
                   </div>
                 </form>
 
@@ -1120,18 +1142,30 @@
 
                 <form id="product-category-form" class="catalog-form">
                   <label>
-                    <span>Nueva categoria</span>
-                    <div class="inline-input-action">
-                      <input
-                        name="name"
-                        type="text"
-                        placeholder="Ej. Sueters, polos, zapatos"
-                        autocomplete="off"
-                        required
-                      />
-                      <button type="submit" class="primary">Agregar</button>
-                    </div>
+                    <input name="id" type="hidden" />
+                    <span>Nombre de la categoria</span>
+                    <input
+                      name="name"
+                      type="text"
+                      placeholder="Ej. Sueters, polos, zapatos"
+                      autocomplete="off"
+                      required
+                    />
                   </label>
+
+                  <label class="full-width">
+                    <span>Descripcion</span>
+                    <textarea
+                      name="description"
+                      rows="3"
+                      placeholder="Explica para que tipo de productos usas esta categoria."
+                    ></textarea>
+                  </label>
+
+                  <div class="actions">
+                    <button type="submit" class="primary" data-category-submit-button>Guardar categoria</button>
+                    <button type="button" class="secondary" data-category-cancel-button hidden>Cancelar edicion</button>
+                  </div>
                 </form>
 
                 <div id="product-categories-list" class="catalog-empty">
@@ -1147,18 +1181,30 @@
 
                 <form id="product-store-form" class="catalog-form">
                   <label>
-                    <span>Nueva tienda</span>
-                    <div class="inline-input-action">
-                      <input
-                        name="name"
-                        type="text"
-                        placeholder="Ej. Nike, Zara, Ralph Lauren"
-                        autocomplete="off"
-                        required
-                      />
-                      <button type="submit" class="primary">Agregar</button>
-                    </div>
+                    <input name="id" type="hidden" />
+                    <span>Nombre de la tienda</span>
+                    <input
+                      name="name"
+                      type="text"
+                      placeholder="Ej. Nike, Zara, Ralph Lauren"
+                      autocomplete="off"
+                      required
+                    />
                   </label>
+
+                  <label class="full-width">
+                    <span>Descripcion</span>
+                    <textarea
+                      name="description"
+                      rows="3"
+                      placeholder="Notas para ubicar esta tienda, su enfoque o por que la usas."
+                    ></textarea>
+                  </label>
+
+                  <div class="actions">
+                    <button type="submit" class="primary" data-store-submit-button>Guardar tienda</button>
+                    <button type="button" class="secondary" data-store-cancel-button hidden>Cancelar edicion</button>
+                  </div>
                 </form>
 
                 <div id="product-stores-list" class="catalog-empty">

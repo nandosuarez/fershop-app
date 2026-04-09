@@ -13,6 +13,7 @@ class CatalogTests(unittest.TestCase):
         client = ClientInput.from_dict(
             {
                 "name": "Laura",
+                "description": "Cliente premium",
                 "phone": "3001234567",
                 "email": "laura@example.com",
                 "city": "Bogota",
@@ -26,6 +27,7 @@ class CatalogTests(unittest.TestCase):
         )
 
         self.assertEqual(client.address, "Cra 15 # 93 - 40")
+        self.assertEqual(client.description, "Cliente premium")
         self.assertEqual(client.preferred_contact_channel, "WhatsApp")
         self.assertEqual(client.interests, "Apple, premium")
 
@@ -44,6 +46,7 @@ class CatalogTests(unittest.TestCase):
         product = ProductInput.from_dict(
             {
                 "name": "AirPods Pro",
+                "description": "Accesorio premium",
                 "reference": "USB-C",
                 "category": "Accesorios",
                 "store": "Apple",
@@ -54,6 +57,7 @@ class CatalogTests(unittest.TestCase):
             }
         )
 
+        self.assertEqual(product.description, "Accesorio premium")
         self.assertEqual(product.category, "Accesorios")
         self.assertEqual(product.store, "Apple")
         self.assertEqual(product.locker_shipping_usd, 12)

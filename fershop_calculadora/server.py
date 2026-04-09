@@ -54,8 +54,16 @@ from .database import (
     save_quote,
     save_whatsapp_template,
     send_order_whatsapp_notification,
+    set_client_active,
+    set_product_active,
+    set_product_category_active,
+    set_product_store_active,
+    update_client,
     update_pending_request_status,
+    update_product,
     update_product_pricing,
+    update_product_category,
+    update_product_store,
     update_quote,
     update_order_status,
     update_order_travel_transport,
@@ -141,7 +149,15 @@ class FerShopHandler(BaseHTTPRequestHandler):
         order_route = self._parse_order_route(parsed.path)
         client_route = self._parse_client_route(parsed.path)
         product_route = self._parse_product_route(parsed.path)
+        product_pricing_route = self._parse_product_pricing_route(parsed.path)
+        client_update_route = self._parse_client_update_route(parsed.path)
+        client_active_route = self._parse_client_active_route(parsed.path)
         product_update_route = self._parse_product_update_route(parsed.path)
+        product_active_route = self._parse_product_active_route(parsed.path)
+        category_update_route = self._parse_product_category_update_route(parsed.path)
+        category_active_route = self._parse_product_category_active_route(parsed.path)
+        store_update_route = self._parse_product_store_update_route(parsed.path)
+        store_active_route = self._parse_product_store_active_route(parsed.path)
         pending_status_route = self._parse_pending_request_status_route(parsed.path)
         pending_detail_route = self._parse_pending_request_detail_route(parsed.path)
         if parsed.path == "/healthz":
@@ -277,10 +293,23 @@ class FerShopHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.OK, {"item": detail})
             return
 
-        if product_update_route is not None:
+        if any(
+            route is not None
+            for route in (
+                client_update_route,
+                client_active_route,
+                product_pricing_route,
+                product_update_route,
+                product_active_route,
+                category_update_route,
+                category_active_route,
+                store_update_route,
+                store_active_route,
+            )
+        ):
             self._send_json(
                 HTTPStatus.METHOD_NOT_ALLOWED,
-                {"error": "Usa POST para actualizar el producto."},
+                {"error": "Usa POST para actualizar este recurso."},
             )
             return
 
@@ -589,6 +618,30 @@ class FerShopHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.CREATED, {"item": record})
                 return
 
+            client_update_route = self._parse_client_update_route(self.path)
+            if client_update_route is not None:
+                payload = self._read_json()
+                client = ClientInput.from_dict(payload)
+                record = update_client(
+                    client_update_route,
+                    client.to_dict(),
+                    company_id=session["company"]["id"],
+                )
+                self._send_json(HTTPStatus.OK, {"item": record})
+                return
+
+            client_active_route = self._parse_client_active_route(self.path)
+            if client_active_route is not None:
+                payload = self._read_json()
+                is_active = bool(payload.get("is_active"))
+                record = set_client_active(
+                    client_active_route,
+                    is_active=is_active,
+                    company_id=session["company"]["id"],
+                )
+                self._send_json(HTTPStatus.OK, {"item": record})
+                return
+
             if self.path == "/api/products":
                 payload = self._read_json()
                 product = ProductInput.from_dict(payload)
@@ -596,14 +649,37 @@ class FerShopHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.CREATED, {"item": record})
                 return
 
-            product_update_route = self._parse_product_update_route(self.path)
-            if product_update_route is not None:
+            product_pricing_route = self._parse_product_pricing_route(self.path)
+            if product_pricing_route is not None:
                 payload = self._read_json()
                 item = update_product_pricing(
-                    product_update_route,
+                    product_pricing_route,
                     price_usd_net=float(payload.get("price_usd_net") or 0),
                     tax_usa_percent=float(payload.get("tax_usa_percent") or 0),
                     locker_shipping_usd=float(payload.get("locker_shipping_usd") or 0),
+                    company_id=session["company"]["id"],
+                )
+                self._send_json(HTTPStatus.OK, {"item": item})
+                return
+
+            product_update_route = self._parse_product_update_route(self.path)
+            if product_update_route is not None:
+                payload = self._read_json()
+                product = ProductInput.from_dict(payload)
+                item = update_product(
+                    product_update_route,
+                    product.to_dict(),
+                    company_id=session["company"]["id"],
+                )
+                self._send_json(HTTPStatus.OK, {"item": item})
+                return
+
+            product_active_route = self._parse_product_active_route(self.path)
+            if product_active_route is not None:
+                payload = self._read_json()
+                item = set_product_active(
+                    product_active_route,
+                    is_active=bool(payload.get("is_active")),
                     company_id=session["company"]["id"],
                 )
                 self._send_json(HTTPStatus.OK, {"item": item})
@@ -628,15 +704,75 @@ class FerShopHandler(BaseHTTPRequestHandler):
             if self.path == "/api/product-categories":
                 payload = self._read_json()
                 name = str(payload.get("name", "")).strip()
-                record = create_product_category(name, company_id=session["company"]["id"])
+                description = str(payload.get("description", "")).strip()
+                record = create_product_category(
+                    name,
+                    description=description,
+                    company_id=session["company"]["id"],
+                )
                 self._send_json(HTTPStatus.CREATED, {"item": record})
+                return
+
+            category_update_route = self._parse_product_category_update_route(self.path)
+            if category_update_route is not None:
+                payload = self._read_json()
+                name = str(payload.get("name", "")).strip()
+                description = str(payload.get("description", "")).strip()
+                record = update_product_category(
+                    category_update_route,
+                    name=name,
+                    description=description,
+                    company_id=session["company"]["id"],
+                )
+                self._send_json(HTTPStatus.OK, {"item": record})
+                return
+
+            category_active_route = self._parse_product_category_active_route(self.path)
+            if category_active_route is not None:
+                payload = self._read_json()
+                record = set_product_category_active(
+                    category_active_route,
+                    is_active=bool(payload.get("is_active")),
+                    company_id=session["company"]["id"],
+                )
+                self._send_json(HTTPStatus.OK, {"item": record})
                 return
 
             if self.path == "/api/product-stores":
                 payload = self._read_json()
                 name = str(payload.get("name", "")).strip()
-                record = create_product_store(name, company_id=session["company"]["id"])
+                description = str(payload.get("description", "")).strip()
+                record = create_product_store(
+                    name,
+                    description=description,
+                    company_id=session["company"]["id"],
+                )
                 self._send_json(HTTPStatus.CREATED, {"item": record})
+                return
+
+            store_update_route = self._parse_product_store_update_route(self.path)
+            if store_update_route is not None:
+                payload = self._read_json()
+                name = str(payload.get("name", "")).strip()
+                description = str(payload.get("description", "")).strip()
+                record = update_product_store(
+                    store_update_route,
+                    name=name,
+                    description=description,
+                    company_id=session["company"]["id"],
+                )
+                self._send_json(HTTPStatus.OK, {"item": record})
+                return
+
+            store_active_route = self._parse_product_store_active_route(self.path)
+            if store_active_route is not None:
+                payload = self._read_json()
+                record = set_product_store_active(
+                    store_active_route,
+                    is_active=bool(payload.get("is_active")),
+                    company_id=session["company"]["id"],
+                )
+                self._send_json(HTTPStatus.OK, {"item": record})
                 return
 
             if self.path == "/api/whatsapp/settings":
@@ -928,9 +1064,49 @@ class FerShopHandler(BaseHTTPRequestHandler):
         except ValueError:
             return None
 
-    def _parse_product_update_route(self, path: str) -> int | None:
+    def _parse_client_update_route(self, path: str) -> int | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) != 4 or parts[0] != "api" or parts[1] != "clients" or parts[3] != "update":
+            return None
+
+        try:
+            return int(parts[2])
+        except ValueError:
+            return None
+
+    def _parse_client_active_route(self, path: str) -> int | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) != 4 or parts[0] != "api" or parts[1] != "clients" or parts[3] != "active":
+            return None
+
+        try:
+            return int(parts[2])
+        except ValueError:
+            return None
+
+    def _parse_product_pricing_route(self, path: str) -> int | None:
         parts = [part for part in path.split("/") if part]
         if len(parts) != 4 or parts[0] != "api" or parts[1] != "products" or parts[3] != "pricing":
+            return None
+
+        try:
+            return int(parts[2])
+        except ValueError:
+            return None
+
+    def _parse_product_update_route(self, path: str) -> int | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) != 4 or parts[0] != "api" or parts[1] != "products" or parts[3] != "update":
+            return None
+
+        try:
+            return int(parts[2])
+        except ValueError:
+            return None
+
+    def _parse_product_active_route(self, path: str) -> int | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) != 4 or parts[0] != "api" or parts[1] != "products" or parts[3] != "active":
             return None
 
         try:
@@ -961,6 +1137,28 @@ class FerShopHandler(BaseHTTPRequestHandler):
     def _parse_pending_request_status_route(self, path: str) -> int | None:
         parts = [part for part in path.split("/") if part]
         if len(parts) != 4 or parts[0] != "api" or parts[1] != "pending-requests" or parts[3] != "status":
+            return None
+
+        try:
+            return int(parts[2])
+        except ValueError:
+            return None
+
+    def _parse_product_category_update_route(self, path: str) -> int | None:
+        return self._parse_catalog_item_route(path, "product-categories", "update")
+
+    def _parse_product_category_active_route(self, path: str) -> int | None:
+        return self._parse_catalog_item_route(path, "product-categories", "active")
+
+    def _parse_product_store_update_route(self, path: str) -> int | None:
+        return self._parse_catalog_item_route(path, "product-stores", "update")
+
+    def _parse_product_store_active_route(self, path: str) -> int | None:
+        return self._parse_catalog_item_route(path, "product-stores", "active")
+
+    def _parse_catalog_item_route(self, path: str, resource_name: str, action: str) -> int | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) != 4 or parts[0] != "api" or parts[1] != resource_name or parts[3] != action:
             return None
 
         try:

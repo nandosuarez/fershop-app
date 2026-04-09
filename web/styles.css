@@ -293,6 +293,183 @@ body.menu-open {
   margin-bottom: 0;
 }
 
+.dashboard-chart-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.8fr);
+}
+
+.dashboard-chart-card {
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.58);
+  display: grid;
+  gap: 16px;
+}
+
+.dashboard-chart-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.dashboard-chart-head h3 {
+  margin: 0;
+  font-family: "Didot", "Bodoni MT", "Times New Roman", serif;
+  font-size: 1.18rem;
+}
+
+.dashboard-chart-head p {
+  margin: 6px 0 0;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.dashboard-chart-total {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(219, 202, 188, 0.32);
+  color: var(--accent-soft);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.dashboard-chart-bars {
+  display: grid;
+  gap: 14px;
+}
+
+.dashboard-bar-row {
+  display: grid;
+  gap: 8px;
+}
+
+.dashboard-bar-row-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
+.dashboard-bar-label {
+  font-weight: 700;
+}
+
+.dashboard-bar-row-top strong {
+  font-size: 0.94rem;
+}
+
+.dashboard-bar-track {
+  position: relative;
+  overflow: hidden;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(18, 17, 17, 0.08);
+}
+
+.dashboard-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--chart-fill-color), rgba(219, 202, 188, 0.96));
+  box-shadow: 0 10px 18px rgba(18, 17, 17, 0.12);
+}
+
+.dashboard-bar-fill.is-negative {
+  background: linear-gradient(90deg, #8f4a4a, #d7a89e);
+}
+
+.dashboard-bar-row small {
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+.dashboard-expense-visuals {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.05fr) minmax(240px, 0.95fr);
+  align-items: start;
+}
+
+.dashboard-donut-layout {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1fr);
+  align-items: center;
+}
+
+.dashboard-donut {
+  position: relative;
+  width: min(220px, 100%);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(18, 17, 17, 0.06);
+}
+
+.dashboard-donut::after {
+  content: "";
+  position: absolute;
+  inset: 18%;
+  border-radius: 50%;
+  background: rgba(255, 250, 244, 0.96);
+  box-shadow: inset 0 0 0 1px rgba(18, 17, 17, 0.06);
+}
+
+.dashboard-donut-center {
+  position: absolute;
+  inset: 25%;
+  z-index: 1;
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+
+.dashboard-donut-center strong {
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.dashboard-donut-center span {
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  margin-top: 4px;
+}
+
+.dashboard-chart-legend {
+  display: grid;
+  gap: 10px;
+}
+
+.dashboard-legend-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.dashboard-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  margin-top: 4px;
+  background: var(--legend-color);
+}
+
+.dashboard-legend-copy strong {
+  display: block;
+  font-size: 0.92rem;
+}
+
+.dashboard-legend-copy p {
+  margin: 4px 0 0;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
 .dashboard-expense-layout {
   display: grid;
   gap: 16px;
@@ -915,6 +1092,11 @@ button:disabled {
   background: rgba(255, 255, 255, 0.58);
 }
 
+.catalog-card.is-inactive {
+  opacity: 0.78;
+  background: rgba(245, 239, 232, 0.92);
+}
+
 .catalog-card-top {
   display: flex;
   justify-content: space-between;
@@ -1481,6 +1663,12 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .dashboard-chart-grid,
+  .dashboard-expense-visuals,
+  .dashboard-donut-layout {
+    grid-template-columns: 1fr;
+  }
+
   .client-detail-grid {
     grid-template-columns: 1fr;
   }
@@ -1590,6 +1778,16 @@ button:disabled {
     flex-direction: column;
   }
 
+  .dashboard-chart-head,
+  .dashboard-bar-row-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dashboard-donut {
+    width: min(200px, 100%);
+  }
+
   .client-detail-hero,
   .catalog-card-top,
   .catalog-card-actions {
@@ -1672,6 +1870,18 @@ button:disabled {
   color: var(--ink-soft);
   font-size: 0.84rem;
   font-weight: 700;
+}
+
+.catalog-chip-success {
+  background: rgba(215, 233, 214, 0.92);
+  color: #305236;
+  border-color: rgba(48, 82, 54, 0.18);
+}
+
+.catalog-chip-muted {
+  background: rgba(18, 17, 17, 0.08);
+  color: var(--ink-soft);
+  border-color: rgba(18, 17, 17, 0.08);
 }
 
 .quote-cancel-button {

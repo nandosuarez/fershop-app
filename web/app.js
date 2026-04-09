@@ -82,6 +82,14 @@ const currentUserLabel = document.querySelector("[data-current-user]");
 const logoutButton = document.getElementById("logout-button");
 const purchaseTypeHelper = document.getElementById("purchase-type-helper");
 const inventorySaleHelper = document.getElementById("inventory-sale-helper");
+const clientSubmitButton = clientForm?.querySelector("[data-client-submit-button]");
+const clientCancelButton = clientForm?.querySelector("[data-client-cancel-button]");
+const productSubmitButton = productForm?.querySelector("[data-product-submit-button]");
+const productCancelButton = productForm?.querySelector("[data-product-cancel-button]");
+const categorySubmitButton = productCategoryForm?.querySelector("[data-category-submit-button]");
+const categoryCancelButton = productCategoryForm?.querySelector("[data-category-cancel-button]");
+const storeSubmitButton = productStoreForm?.querySelector("[data-store-submit-button]");
+const storeCancelButton = productStoreForm?.querySelector("[data-store-cancel-button]");
 
 const state = {
   session: null,
@@ -118,6 +126,10 @@ const state = {
   editingQuoteId: null,
   editingQuoteItemIndex: null,
   activeOrderId: null,
+  editingClientId: null,
+  editingProductId: null,
+  editingProductCategoryId: null,
+  editingProductStoreId: null,
 };
 
 const autocompleteControllers = [];
@@ -156,6 +168,9 @@ const percentFormatter = new Intl.NumberFormat("es-CO", {
   style: "percent",
   minimumFractionDigits: 1,
   maximumFractionDigits: 2,
+});
+const integerFormatter = new Intl.NumberFormat("es-CO", {
+  maximumFractionDigits: 0,
 });
 
 const dateFormatter = new Intl.DateTimeFormat("es-CO", {
@@ -331,6 +346,26 @@ function productSearchLabel(product) {
   return parts.filter(Boolean).join(" · ");
 }
 
+function isEntityActive(item) {
+  return Boolean(item?.is_active ?? true);
+}
+
+function getActiveClients() {
+  return state.clients.filter((item) => isEntityActive(item));
+}
+
+function getActiveProducts() {
+  return state.products.filter((item) => isEntityActive(item));
+}
+
+function getActiveProductCategories() {
+  return state.productCategories.filter((item) => isEntityActive(item));
+}
+
+function getActiveProductStores() {
+  return state.productStores.filter((item) => isEntityActive(item));
+}
+
 function updateSearchableOptions(dataList, items, labelBuilder) {
   if (!dataList) {
     return;
@@ -487,9 +522,10 @@ function findClientBySearchValue(value) {
     return null;
   }
   const loweredValue = cleanValue.toLocaleLowerCase("es-CO");
+  const activeClients = getActiveClients();
   return (
-    state.clients.find((item) => clientSearchLabel(item) === cleanValue) ||
-    state.clients.find(
+    activeClients.find((item) => clientSearchLabel(item) === cleanValue) ||
+    activeClients.find(
       (item) => String(item.name || "").trim().toLocaleLowerCase("es-CO") === loweredValue
     ) ||
     null
@@ -502,10 +538,11 @@ function findProductBySearchValue(value) {
     return null;
   }
   const loweredValue = cleanValue.toLocaleLowerCase("es-CO");
+  const activeProducts = getActiveProducts();
   return (
-    state.products.find((item) => productSearchLabel(item) === cleanValue) ||
-    state.products.find((item) => productLabel(item) === cleanValue) ||
-    state.products.find(
+    activeProducts.find((item) => productSearchLabel(item) === cleanValue) ||
+    activeProducts.find((item) => productLabel(item) === cleanValue) ||
+    activeProducts.find(
       (item) => String(item.name || "").trim().toLocaleLowerCase("es-CO") === loweredValue
     ) ||
     null
@@ -1277,6 +1314,7 @@ function readClientPayload() {
   const data = new FormData(clientForm);
   return {
     name: String(data.get("name") || "").trim(),
+    description: String(data.get("description") || "").trim(),
     phone: String(data.get("phone") || "").trim(),
     email: String(data.get("email") || "").trim(),
     city: String(data.get("city") || "").trim(),
@@ -1295,6 +1333,7 @@ function readProductPayload() {
   const data = new FormData(productForm);
   return {
     name: String(data.get("name") || "").trim(),
+    description: String(data.get("description") || "").trim(),
     reference: String(data.get("reference") || "").trim(),
     category: String(data.get("category") || "").trim(),
     store: String(data.get("store") || "").trim(),
@@ -1305,6 +1344,163 @@ function readProductPayload() {
     locker_shipping_usd: Number(data.get("locker_shipping_usd") || 0),
     notes: String(data.get("notes") || "").trim(),
   };
+}
+
+function readNamedCatalogPayload(form) {
+  const data = new FormData(form);
+  return {
+    name: String(data.get("name") || "").trim(),
+    description: String(data.get("description") || "").trim(),
+  };
+}
+
+function resetClientForm() {
+  if (!clientForm) {
+    return;
+  }
+  clientForm.reset();
+  clientForm.elements.namedItem("id").value = "";
+  state.editingClientId = null;
+  if (clientSubmitButton) {
+    clientSubmitButton.textContent = "Guardar cliente";
+  }
+  if (clientCancelButton) {
+    clientCancelButton.hidden = true;
+  }
+}
+
+function startClientEdit(client) {
+  if (!clientForm || !client) {
+    return;
+  }
+  state.editingClientId = Number(client.id);
+  clientForm.elements.namedItem("id").value = String(client.id || "");
+  clientForm.elements.namedItem("name").value = client.name || "";
+  clientForm.elements.namedItem("description").value = client.description || "";
+  clientForm.elements.namedItem("phone").value = client.phone || "";
+  clientForm.elements.namedItem("email").value = client.email || "";
+  clientForm.elements.namedItem("city").value = client.city || "";
+  clientForm.elements.namedItem("address").value = client.address || "";
+  clientForm.elements.namedItem("neighborhood").value = client.neighborhood || "";
+  clientForm.elements.namedItem("whatsapp_phone").value = client.whatsapp_phone || "";
+  clientForm.elements.namedItem("whatsapp_opt_in").checked = Boolean(client.whatsapp_opt_in);
+  clientForm.elements.namedItem("preferred_contact_channel").value =
+    client.preferred_contact_channel || "";
+  clientForm.elements.namedItem("preferred_payment_method").value =
+    client.preferred_payment_method || "";
+  clientForm.elements.namedItem("interests").value = client.interests || "";
+  clientForm.elements.namedItem("notes").value = client.notes || "";
+  if (clientSubmitButton) {
+    clientSubmitButton.textContent = "Guardar cambios";
+  }
+  if (clientCancelButton) {
+    clientCancelButton.hidden = false;
+  }
+}
+
+function resetProductForm() {
+  if (!productForm) {
+    return;
+  }
+  productForm.reset();
+  productForm.elements.namedItem("id").value = "";
+  productForm.elements.namedItem("tax_usa_percent").value = 0;
+  productForm.elements.namedItem("locker_shipping_usd").value = 0;
+  productForm.elements.namedItem("initial_stock_quantity").value = 0;
+  state.editingProductId = null;
+  if (productSubmitButton) {
+    productSubmitButton.textContent = "Guardar producto";
+  }
+  if (productCancelButton) {
+    productCancelButton.hidden = true;
+  }
+}
+
+function startProductEdit(product) {
+  if (!productForm || !product) {
+    return;
+  }
+  state.editingProductId = Number(product.id);
+  productForm.elements.namedItem("id").value = String(product.id || "");
+  productForm.elements.namedItem("name").value = product.name || "";
+  productForm.elements.namedItem("description").value = product.description || "";
+  productForm.elements.namedItem("reference").value = product.reference || "";
+  productForm.elements.namedItem("category").value = product.category || "";
+  productForm.elements.namedItem("store").value = product.store || "";
+  productForm.elements.namedItem("price_usd_net").value = product.price_usd_net ?? "";
+  productForm.elements.namedItem("tax_usa_percent").value = product.tax_usa_percent ?? 0;
+  productForm.elements.namedItem("locker_shipping_usd").value = product.locker_shipping_usd ?? 0;
+  productForm.elements.namedItem("inventory_enabled").checked = Boolean(product.inventory_enabled);
+  productForm.elements.namedItem("initial_stock_quantity").value = 0;
+  productForm.elements.namedItem("notes").value = product.notes || "";
+  if (productSubmitButton) {
+    productSubmitButton.textContent = "Guardar cambios";
+  }
+  if (productCancelButton) {
+    productCancelButton.hidden = false;
+  }
+}
+
+function resetProductCategoryForm() {
+  if (!productCategoryForm) {
+    return;
+  }
+  productCategoryForm.reset();
+  productCategoryForm.elements.namedItem("id").value = "";
+  state.editingProductCategoryId = null;
+  if (categorySubmitButton) {
+    categorySubmitButton.textContent = "Guardar categoria";
+  }
+  if (categoryCancelButton) {
+    categoryCancelButton.hidden = true;
+  }
+}
+
+function startProductCategoryEdit(item) {
+  if (!productCategoryForm || !item) {
+    return;
+  }
+  state.editingProductCategoryId = Number(item.id);
+  productCategoryForm.elements.namedItem("id").value = String(item.id || "");
+  productCategoryForm.elements.namedItem("name").value = item.name || "";
+  productCategoryForm.elements.namedItem("description").value = item.description || "";
+  if (categorySubmitButton) {
+    categorySubmitButton.textContent = "Guardar cambios";
+  }
+  if (categoryCancelButton) {
+    categoryCancelButton.hidden = false;
+  }
+}
+
+function resetProductStoreForm() {
+  if (!productStoreForm) {
+    return;
+  }
+  productStoreForm.reset();
+  productStoreForm.elements.namedItem("id").value = "";
+  state.editingProductStoreId = null;
+  if (storeSubmitButton) {
+    storeSubmitButton.textContent = "Guardar tienda";
+  }
+  if (storeCancelButton) {
+    storeCancelButton.hidden = true;
+  }
+}
+
+function startProductStoreEdit(item) {
+  if (!productStoreForm || !item) {
+    return;
+  }
+  state.editingProductStoreId = Number(item.id);
+  productStoreForm.elements.namedItem("id").value = String(item.id || "");
+  productStoreForm.elements.namedItem("name").value = item.name || "";
+  productStoreForm.elements.namedItem("description").value = item.description || "";
+  if (storeSubmitButton) {
+    storeSubmitButton.textContent = "Guardar cambios";
+  }
+  if (storeCancelButton) {
+    storeCancelButton.hidden = false;
+  }
 }
 
 function readPendingPayload() {
@@ -1488,6 +1684,10 @@ function formatPercent(value) {
   return percentFormatter.format(value);
 }
 
+function formatInteger(value) {
+  return integerFormatter.format(Number(value || 0));
+}
+
 function toDateInputValue(value) {
   if (!value) {
     return "";
@@ -1588,6 +1788,11 @@ function renderQuoteLiveSummary() {
       </article>
     </div>
   `;
+  const useButton = clientDetailContainer.querySelector("[data-use-client-detail]");
+  if (useButton && !client.is_active) {
+    useButton.disabled = true;
+    useButton.textContent = "Cliente inactivo";
+  }
 }
 
 function updateExpenseCategoryOptions(items) {
@@ -2025,6 +2230,11 @@ function renderPendingRequests(items) {
         .join("")}
     </div>
   `;
+  const useButton = productDetailContainer.querySelector("[data-use-product-detail]");
+  if (useButton && !product.is_active) {
+    useButton.disabled = true;
+    useButton.textContent = "Producto inactivo";
+  }
 }
 
 function renderNamedCatalogList(container, items, emptyMessage) {
@@ -2046,6 +2256,201 @@ function renderNamedCatalogList(container, items, emptyMessage) {
           <div class="catalog-card-top">
             <div>
               <h3>${escapeHtml(item.name)}</h3>
+            </div>
+          </div>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function renderClientsManaged(items) {
+  if (!items.length) {
+    clientsListContainer.className = "catalog-empty";
+    clientsListContainer.innerHTML = "<p>Aun no hay clientes guardados.</p>";
+    return;
+  }
+
+  clientsListContainer.className = "catalog-list";
+  clientsListContainer.innerHTML = items
+    .map(
+      (client) => `
+        <article class="catalog-card ${client.is_active ? "" : "is-inactive"}">
+          <div class="catalog-card-top">
+            <div>
+              <h3>${escapeHtml(client.name)}</h3>
+              <p>${escapeHtml(client.city || "Ciudad no registrada")}</p>
+            </div>
+            <div class="catalog-card-actions">
+              <span class="catalog-chip ${client.is_active ? "catalog-chip-success" : "catalog-chip-muted"}">
+                ${client.is_active ? "Activo" : "Inactivo"}
+              </span>
+              <button class="history-action-button history-action-button-secondary" type="button" data-view-client="${client.id}">
+                Ver detalle
+              </button>
+              <button
+                class="history-action-button history-action-button-secondary history-action-button-icon"
+                type="button"
+                data-edit-client="${client.id}"
+                title="Editar cliente"
+                aria-label="Editar cliente"
+              >
+                ${renderActionIcon("edit")}
+              </button>
+              <button
+                class="history-action-button history-action-button-secondary"
+                type="button"
+                data-use-client="${client.id}"
+                ${client.is_active ? "" : "disabled"}
+              >
+                Usar
+              </button>
+              <button
+                class="history-action-button ${client.is_active ? "history-action-button-secondary" : ""} history-action-button-icon"
+                type="button"
+                data-toggle-client-active="${client.id}"
+                data-next-active="${client.is_active ? "0" : "1"}"
+                title="${client.is_active ? "Inactivar cliente" : "Reactivar cliente"}"
+                aria-label="${client.is_active ? "Inactivar cliente" : "Reactivar cliente"}"
+              >
+                ${renderActionIcon(client.is_active ? "deactivate" : "activate")}
+              </button>
+            </div>
+          </div>
+          <div class="catalog-card-meta">
+            <span>${escapeHtml(client.phone || "Sin telefono")}</span>
+            <span>${escapeHtml(client.email || "Sin email")}</span>
+            ${client.whatsapp_phone_masked ? `<span>WhatsApp: ${escapeHtml(client.whatsapp_phone_masked)}</span>` : ""}
+            ${client.whatsapp_opt_in ? "<span>WhatsApp autorizado</span>" : ""}
+            ${client.preferred_contact_channel ? `<span>${escapeHtml(client.preferred_contact_channel)}</span>` : ""}
+            ${client.preferred_payment_method ? `<span>${escapeHtml(client.preferred_payment_method)}</span>` : ""}
+            ${client.neighborhood ? `<span>${escapeHtml(client.neighborhood)}</span>` : ""}
+          </div>
+          ${client.address ? `<p class="catalog-card-note"><strong>Direccion:</strong> ${escapeHtml(client.address)}</p>` : ""}
+          ${client.description ? `<p class="catalog-card-note"><strong>Descripcion:</strong> ${escapeHtml(client.description)}</p>` : ""}
+          ${client.interests ? `<p class="catalog-card-note"><strong>Intereses:</strong> ${escapeHtml(client.interests)}</p>` : ""}
+          ${client.notes ? `<p class="catalog-card-note">${escapeHtml(client.notes)}</p>` : ""}
+        </article>
+      `
+    )
+    .join("");
+}
+
+function renderProductsManaged(items) {
+  if (!items.length) {
+    productsListContainer.className = "catalog-empty";
+    productsListContainer.innerHTML = "<p>Aun no hay productos guardados.</p>";
+    return;
+  }
+
+  productsListContainer.className = "catalog-list";
+  productsListContainer.innerHTML = items
+    .map(
+      (product) => `
+        <article class="catalog-card ${product.is_active ? "" : "is-inactive"}">
+          <div class="catalog-card-top">
+            <div>
+              <h3>${escapeHtml(productLabel(product))}</h3>
+              <p>${formatUsd(product.price_usd_net)} base + ${product.tax_usa_percent}% tax</p>
+            </div>
+            <div class="catalog-card-actions">
+              <span class="catalog-chip ${product.is_active ? "catalog-chip-success" : "catalog-chip-muted"}">
+                ${product.is_active ? "Activo" : "Inactivo"}
+              </span>
+              <button class="history-action-button history-action-button-secondary" type="button" data-view-product="${product.id}">
+                Ver detalle
+              </button>
+              <button
+                class="history-action-button history-action-button-secondary history-action-button-icon"
+                type="button"
+                data-edit-product="${product.id}"
+                title="Editar producto"
+                aria-label="Editar producto"
+              >
+                ${renderActionIcon("edit")}
+              </button>
+              <button
+                class="history-action-button history-action-button-secondary"
+                type="button"
+                data-use-product="${product.id}"
+                ${product.is_active ? "" : "disabled"}
+              >
+                Usar
+              </button>
+              <button
+                class="history-action-button ${product.is_active ? "history-action-button-secondary" : ""} history-action-button-icon"
+                type="button"
+                data-toggle-product-active="${product.id}"
+                data-next-active="${product.is_active ? "0" : "1"}"
+                title="${product.is_active ? "Inactivar producto" : "Reactivar producto"}"
+                aria-label="${product.is_active ? "Inactivar producto" : "Reactivar producto"}"
+              >
+                ${renderActionIcon(product.is_active ? "deactivate" : "activate")}
+              </button>
+            </div>
+          </div>
+          <div class="catalog-card-meta">
+            <span>${escapeHtml(product.category || "Sin categoria")}</span>
+            <span>${escapeHtml(product.store || "Sin tienda")}</span>
+            <span>Casillero: ${formatUsd(product.locker_shipping_usd)}</span>
+            <span>${
+              product.inventory_enabled
+                ? `Inventario: ${Number(product.current_stock || 0)}`
+                : "Sin inventario de tienda"
+            }</span>
+          </div>
+          ${product.description ? `<p class="catalog-card-note"><strong>Descripcion:</strong> ${escapeHtml(product.description)}</p>` : ""}
+          ${product.notes ? `<p class="catalog-card-note">${escapeHtml(product.notes)}</p>` : ""}
+        </article>
+      `
+    )
+    .join("");
+}
+
+function renderAdminNamedCatalogList(container, items, emptyMessage, config) {
+  if (!container) {
+    return;
+  }
+
+  if (!items.length) {
+    container.className = "catalog-empty";
+    container.innerHTML = `<p>${emptyMessage}</p>`;
+    return;
+  }
+
+  container.className = "catalog-list compact-list";
+  container.innerHTML = items
+    .map(
+      (item) => `
+        <article class="catalog-card compact-card ${item.is_active ? "" : "is-inactive"}">
+          <div class="catalog-card-top">
+            <div>
+              <h3>${escapeHtml(item.name)}</h3>
+              ${item.description ? `<p>${escapeHtml(item.description)}</p>` : ""}
+            </div>
+            <div class="catalog-card-actions">
+              <span class="catalog-chip ${item.is_active ? "catalog-chip-success" : "catalog-chip-muted"}">
+                ${item.is_active ? "Activo" : "Inactivo"}
+              </span>
+              <button
+                class="history-action-button history-action-button-secondary history-action-button-icon"
+                type="button"
+                ${config.editAttr}="${item.id}"
+                title="Editar ${config.entityName || "registro"}"
+                aria-label="Editar ${config.entityName || "registro"}"
+              >
+                ${renderActionIcon("edit")}
+              </button>
+              <button
+                class="history-action-button ${item.is_active ? "history-action-button-secondary" : ""} history-action-button-icon"
+                type="button"
+                ${config.toggleAttr}="${item.id}"
+                data-next-active="${item.is_active ? "0" : "1"}"
+                title="${item.is_active ? "Inactivar" : "Reactivar"} ${config.entityName || "registro"}"
+                aria-label="${item.is_active ? "Inactivar" : "Reactivar"} ${config.entityName || "registro"}"
+              >
+                ${renderActionIcon(item.is_active ? "deactivate" : "activate")}
+              </button>
             </div>
           </div>
         </article>
@@ -2771,6 +3176,33 @@ function renderDashboard(summary) {
   const productInsights = summary.product_insights || {};
   const recentExpenses = summary.recent_expenses || [];
   const expensesByCategory = summary.expenses_by_category || [];
+  const financialPulseItems = [
+    {
+      label: "Vendido",
+      value: metrics.sales_total_cop,
+      meta: `${formatInteger(metrics.orders_count || 0)} compra(s) registradas`,
+    },
+    {
+      label: "Recibido",
+      value: metrics.cash_in_total_cop,
+      meta: "Anticipos y pagos registrados",
+    },
+    {
+      label: "Cartera",
+      value: metrics.accounts_receivable_cop,
+      meta: "Solo compras notificadas pendientes de segundo pago",
+    },
+    {
+      label: "Utilidad bruta",
+      value: metrics.gross_profit_cop,
+      meta: "Antes de gastos operativos",
+    },
+    {
+      label: "Utilidad neta",
+      value: metrics.net_profit_cop,
+      meta: "Despues de gastos operativos",
+    },
+  ];
 
   dashboardSummaryContainer.className = "results-ready";
   dashboardSummaryContainer.innerHTML = `
@@ -2786,7 +3218,15 @@ function renderDashboard(summary) {
       ${makeMetricCard("Compras abiertas", String(metrics.open_orders_count || 0), "Seguimientos que siguen activos")}
     </div>
 
-    <div class="detail-grid">
+    <div class="dashboard-chart-grid">
+      ${renderDashboardBarChart({
+        title: "Pulso financiero",
+        subtitle: "Compara rapido ventas, recaudo, cartera y utilidad del periodo.",
+        items: financialPulseItems,
+        valueFormatter: formatCop,
+        maxItems: 5,
+        sortByMagnitude: false,
+      })}
       <section class="detail-panel">
         <h3>Lectura del periodo</h3>
         <div class="detail-item">
@@ -2815,20 +3255,33 @@ function renderDashboard(summary) {
 
   dashboardExpensesContainer.className = "dashboard-expense-layout";
   dashboardExpensesContainer.innerHTML = `
-    <div class="dashboard-expense-categories">
-      ${expensesByCategory.length
-        ? expensesByCategory
-            .map(
-              (item) => `
-                <article class="dashboard-expense-card">
-                  <strong>${escapeHtml(item.category_label)}</strong>
-                  <span>${formatCop(item.amount_cop)}</span>
-                  <small>${item.count} movimiento(s)</small>
-                </article>
-              `
-            )
-            .join("")
-        : '<p class="catalog-card-note">Sin gastos por categoria para este periodo.</p>'}
+    <div class="dashboard-expense-visuals">
+      ${renderDashboardDonutChart({
+        title: "Distribucion del gasto",
+        subtitle: "Visualiza en que se fue la caja operativa del periodo.",
+        items: expensesByCategory.map((item) => ({
+          label: item.category_label,
+          value: item.amount_cop,
+          meta: `${formatInteger(item.count || 0)} movimiento(s)`,
+          metaCount: item.count || 0,
+        })),
+        valueFormatter: formatCop,
+      })}
+      <div class="dashboard-expense-categories">
+        ${expensesByCategory.length
+          ? expensesByCategory
+              .map(
+                (item) => `
+                  <article class="dashboard-expense-card">
+                    <strong>${escapeHtml(item.category_label)}</strong>
+                    <span>${formatCop(item.amount_cop)}</span>
+                    <small>${item.count} movimiento(s)</small>
+                  </article>
+                `
+              )
+              .join("")
+          : '<p class="catalog-card-note">Sin gastos por categoria para este periodo.</p>'}
+      </div>
     </div>
     <div class="dashboard-recent-expenses">
       <h3>Ultimos gastos registrados</h3>
@@ -2994,6 +3447,198 @@ function renderInventoryPurchases(items) {
     .join("");
 }
 
+const dashboardChartPalette = ["#111111", "#51433b", "#8a7567", "#b79f8f", "#dbcabc", "#efe4da"];
+
+function collapseChartItems(items, limit = 5, otherLabel = "Otros") {
+  if (items.length <= limit) {
+    return items;
+  }
+
+  const visible = items.slice(0, limit - 1);
+  const remaining = items.slice(limit - 1);
+  const otherValue = remaining.reduce((sum, item) => sum + Number(item.value || 0), 0);
+  const otherMeta = remaining.reduce((sum, item) => sum + Number(item.metaCount || 0), 0);
+
+  return [
+    ...visible,
+    {
+      label: otherLabel,
+      value: otherValue,
+      meta: `${formatInteger(otherMeta || remaining.length)} registro(s) agrupado(s)`,
+      metaCount: otherMeta || remaining.length,
+    },
+  ];
+}
+
+function renderDashboardBarChart({
+  title,
+  subtitle = "",
+  items = [],
+  valueFormatter = formatCop,
+  emptyMessage = "Sin datos suficientes para graficar.",
+  maxItems = 5,
+  otherLabel = "Otros",
+  sortByMagnitude = true,
+}) {
+  const normalizedItems = collapseChartItems(
+    items
+      .map((item) => ({
+        label: String(item.label || "-"),
+        value: Number(item.value || 0),
+        meta: item.meta ? String(item.meta) : "",
+        metaCount: Number(item.metaCount || 0),
+      }))
+      .filter((item) => Number.isFinite(item.value)),
+    maxItems,
+    otherLabel
+  );
+
+  if (!normalizedItems.length || normalizedItems.every((item) => Math.abs(item.value) <= 0)) {
+    return `
+      <article class="dashboard-chart-card">
+        <div class="dashboard-chart-head">
+          <div>
+            <h3>${escapeHtml(title)}</h3>
+            ${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ""}
+          </div>
+        </div>
+        <p class="catalog-card-note">${escapeHtml(emptyMessage)}</p>
+      </article>
+    `;
+  }
+
+  const orderedItems = sortByMagnitude
+    ? [...normalizedItems].sort((left, right) => Math.abs(right.value) - Math.abs(left.value))
+    : normalizedItems;
+  const maxMagnitude = Math.max(...orderedItems.map((item) => Math.abs(item.value)), 1);
+  const leadItem = orderedItems[0];
+
+  return `
+    <article class="dashboard-chart-card">
+      <div class="dashboard-chart-head">
+        <div>
+          <h3>${escapeHtml(title)}</h3>
+          ${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ""}
+        </div>
+        <span class="dashboard-chart-total">Pico: ${escapeHtml(valueFormatter(leadItem.value))}</span>
+      </div>
+      <div class="dashboard-chart-bars">
+        ${orderedItems
+          .map((item, index) => {
+            const magnitude = Math.abs(item.value);
+            const rawWidth = maxMagnitude ? (magnitude / maxMagnitude) * 100 : 0;
+            const width = rawWidth > 0 ? Math.max(rawWidth, 8) : 0;
+            const color = dashboardChartPalette[index % dashboardChartPalette.length];
+
+            return `
+              <div class="dashboard-bar-row">
+                <div class="dashboard-bar-row-top">
+                  <span class="dashboard-bar-label">${escapeHtml(item.label)}</span>
+                  <strong>${escapeHtml(valueFormatter(item.value))}</strong>
+                </div>
+                <div class="dashboard-bar-track">
+                  <span
+                    class="dashboard-bar-fill${item.value < 0 ? " is-negative" : ""}"
+                    style="width: ${width.toFixed(2)}%; --chart-fill-color: ${color};"
+                  ></span>
+                </div>
+                ${item.meta ? `<small>${escapeHtml(item.meta)}</small>` : ""}
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    </article>
+  `;
+}
+
+function renderDashboardDonutChart({
+  title,
+  subtitle = "",
+  items = [],
+  valueFormatter = formatCop,
+  emptyMessage = "Sin movimientos suficientes para graficar.",
+  maxItems = 5,
+  otherLabel = "Otros",
+}) {
+  const normalizedItems = collapseChartItems(
+    items
+      .map((item) => ({
+        label: String(item.label || "-"),
+        value: Math.max(0, Number(item.value || 0)),
+        meta: item.meta ? String(item.meta) : "",
+        metaCount: Number(item.metaCount || 0),
+      }))
+      .filter((item) => Number.isFinite(item.value) && item.value > 0),
+    maxItems,
+    otherLabel
+  );
+
+  if (!normalizedItems.length) {
+    return `
+      <article class="dashboard-chart-card">
+        <div class="dashboard-chart-head">
+          <div>
+            <h3>${escapeHtml(title)}</h3>
+            ${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ""}
+          </div>
+        </div>
+        <p class="catalog-card-note">${escapeHtml(emptyMessage)}</p>
+      </article>
+    `;
+  }
+
+  const total = normalizedItems.reduce((sum, item) => sum + item.value, 0);
+  let cursor = 0;
+  const gradientStops = normalizedItems
+    .map((item, index) => {
+      const percentage = total ? (item.value / total) * 100 : 0;
+      const start = cursor;
+      const end = cursor + percentage;
+      cursor = end;
+      return `${dashboardChartPalette[index % dashboardChartPalette.length]} ${start}% ${end}%`;
+    })
+    .join(", ");
+
+  return `
+    <article class="dashboard-chart-card">
+      <div class="dashboard-chart-head">
+        <div>
+          <h3>${escapeHtml(title)}</h3>
+          ${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ""}
+        </div>
+        <span class="dashboard-chart-total">${escapeHtml(valueFormatter(total))}</span>
+      </div>
+      <div class="dashboard-donut-layout">
+        <div class="dashboard-donut" style="background: conic-gradient(${gradientStops});">
+          <div class="dashboard-donut-center">
+            <strong>${escapeHtml(valueFormatter(total))}</strong>
+            <span>Total</span>
+          </div>
+        </div>
+        <div class="dashboard-chart-legend">
+          ${normalizedItems
+            .map((item, index) => {
+              const share = total ? item.value / total : 0;
+              const color = dashboardChartPalette[index % dashboardChartPalette.length];
+
+              return `
+                <div class="dashboard-legend-row">
+                  <span class="dashboard-legend-swatch" style="--legend-color: ${color};"></span>
+                  <div class="dashboard-legend-copy">
+                    <strong>${escapeHtml(item.label)}</strong>
+                    <p>${escapeHtml(valueFormatter(item.value))} - ${escapeHtml(formatPercent(share))}</p>
+                  </div>
+                </div>
+              `;
+            })
+            .join("")}
+        </div>
+      </div>
+    </article>
+  `;
+}
+
 function renderRankingList(items, emptyMessage, renderer) {
   if (!items.length) {
     return `<p class="catalog-card-note">${emptyMessage}</p>`;
@@ -3023,7 +3668,16 @@ function renderDashboardClients(insights) {
   dashboardClientsContainer.className = "dashboard-ranking-layout";
   dashboardClientsContainer.innerHTML = `
     <section class="dashboard-ranking-column">
-      <h3>Clientes que mas compraron</h3>
+      ${renderDashboardBarChart({
+        title: "Clientes que mas compraron",
+        subtitle: "Top comercial del periodo segun venta cerrada.",
+        items: topBuyers.map((item) => ({
+          label: item.client_name,
+          value: item.sales_total_cop,
+          meta: `${formatInteger(item.orders_count || 0)} compra(s) - Ticket ${formatCop(item.average_ticket_cop)}`,
+        })),
+        valueFormatter: formatCop,
+      })}
       ${renderRankingList(
         topBuyers,
         "Todavia no hay compras suficientes para armar este ranking.",
@@ -3057,7 +3711,16 @@ function renderDashboardClients(insights) {
       )}
     </section>
     <section class="dashboard-ranking-column">
-      <h3>Clientes con cartera por cobrar</h3>
+      ${renderDashboardBarChart({
+        title: "Clientes con cartera por cobrar",
+        subtitle: "Solo compras notificadas y pendientes de segundo pago.",
+        items: receivables.map((item) => ({
+          label: item.client_name,
+          value: item.accounts_receivable_cop,
+          meta: `${formatInteger(item.open_orders_count || 0)} compra(s) notificadas`,
+        })),
+        valueFormatter: formatCop,
+      })}
       ${renderRankingList(
         receivables,
         "No hay cartera por cobrar en este momento.",
@@ -3105,7 +3768,16 @@ function renderDashboardProducts(insights) {
   dashboardProductsContainer.className = "dashboard-ranking-layout";
   dashboardProductsContainer.innerHTML = `
     <section class="dashboard-ranking-column">
-      <h3>Productos mas vendidos</h3>
+      ${renderDashboardBarChart({
+        title: "Productos mas vendidos",
+        subtitle: "Referencias con mayor movimiento de salida en el periodo.",
+        items: topSellers.map((item) => ({
+          label: item.product_name,
+          value: item.units_sold,
+          meta: `Vendido ${formatCop(item.sales_total_cop)} - Recaudado ${formatCop(item.cash_in_total_cop)}`,
+        })),
+        valueFormatter: (value) => `${formatInteger(value)} und`,
+      })}
       ${renderRankingList(
         topSellers,
         "Todavia no hay ventas suficientes para este ranking.",
@@ -3137,7 +3809,16 @@ function renderDashboardProducts(insights) {
       )}
     </section>
     <section class="dashboard-ranking-column">
-      <h3>Productos con mayor utilidad</h3>
+      ${renderDashboardBarChart({
+        title: "Productos con mayor utilidad",
+        subtitle: "Referencias que mas margen bruto dejaron en el periodo.",
+        items: mostProfitable.map((item) => ({
+          label: item.product_name,
+          value: item.gross_profit_cop,
+          meta: `Margen ${formatPercent(item.gross_margin_percent)} - Vendido ${formatCop(item.sales_total_cop)}`,
+        })),
+        valueFormatter: formatCop,
+      })}
       ${renderRankingList(
         mostProfitable,
         "Aun no hay utilidad suficiente para comparar productos.",
@@ -4375,6 +5056,17 @@ function renderActionIcon(kind) {
         <path d="M14 6l4 4"></path>
       </svg>
     `,
+    deactivate: `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 3v8"></path>
+        <path d="M7.1 5.8A8 8 0 1 0 16.9 5.8"></path>
+      </svg>
+    `,
+    activate: `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M20 6 9 17l-5-5"></path>
+      </svg>
+    `,
     pdf: `
       <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M7 3h7l5 5v13H7z"></path>
@@ -4811,22 +5503,32 @@ async function loadCatalog() {
     state.productCategories = categoriesResponse.items || [];
     state.productStores = storesResponse.items || [];
 
-    updateSearchableOptions(clientSelectOptions, state.clients, clientSearchLabel);
-    updateSearchableOptions(productSelectOptions, state.products, productSearchLabel);
-    updateNameOptions(productCategoryOptions, state.productCategories);
-    updateNameOptions(productStoreOptions, state.productStores);
+    updateSearchableOptions(clientSelectOptions, getActiveClients(), clientSearchLabel);
+    updateSearchableOptions(productSelectOptions, getActiveProducts(), productSearchLabel);
+    updateNameOptions(productCategoryOptions, getActiveProductCategories());
+    updateNameOptions(productStoreOptions, getActiveProductStores());
 
-    renderClients(state.clients);
-    renderProducts(state.products);
-    renderNamedCatalogList(
+    renderClientsManaged(state.clients);
+    renderProductsManaged(state.products);
+    renderAdminNamedCatalogList(
       productCategoriesListContainer,
       state.productCategories,
-      "Aun no hay categorias creadas."
+      "Aun no hay categorias creadas.",
+      {
+        entityName: "categoria",
+        editAttr: "data-edit-product-category",
+        toggleAttr: "data-toggle-product-category-active",
+      }
     );
-    renderNamedCatalogList(
+    renderAdminNamedCatalogList(
       productStoresListContainer,
       state.productStores,
-      "Aun no hay tiendas creadas."
+      "Aun no hay tiendas creadas.",
+      {
+        entityName: "tienda",
+        editAttr: "data-edit-product-store",
+        toggleAttr: "data-toggle-product-store-active",
+      }
     );
     autocompleteControllers.forEach((controller) => controller.refresh());
     syncInventorySaleUi();
@@ -4835,8 +5537,16 @@ async function loadCatalog() {
     productsListContainer.className = "catalog-empty";
     clientsListContainer.innerHTML = `<p>${error.message}</p>`;
     productsListContainer.innerHTML = `<p>${error.message}</p>`;
-    renderNamedCatalogList(productCategoriesListContainer, [], error.message);
-    renderNamedCatalogList(productStoresListContainer, [], error.message);
+    renderAdminNamedCatalogList(productCategoriesListContainer, [], error.message, {
+      entityName: "categoria",
+      editAttr: "data-edit-product-category",
+      toggleAttr: "data-toggle-product-category-active",
+    });
+    renderAdminNamedCatalogList(productStoresListContainer, [], error.message, {
+      entityName: "tienda",
+      editAttr: "data-edit-product-store",
+      toggleAttr: "data-toggle-product-store-active",
+    });
   }
 }
 
@@ -5171,16 +5881,24 @@ clientForm.addEventListener("submit", async (event) => {
 
   try {
     const payload = readClientPayload();
-    const response = await requestJson("/api/clients", {
+    const editingId = String(clientForm.elements.namedItem("id")?.value || "").trim();
+    const isEditing = Boolean(editingId);
+    const response = await requestJson(isEditing ? `/api/clients/${editingId}/update` : "/api/clients", {
       method: "POST",
       body: JSON.stringify(payload),
     });
-    clientForm.reset();
+    resetClientForm();
     await loadCatalog();
-    const client = state.clients.find((item) => item.id === response.item.id);
-    applyClientToQuote(client || response.item);
+    if (!isEditing) {
+      const client = state.clients.find((item) => item.id === response.item.id);
+      if (client && client.is_active) {
+        applyClientToQuote(client);
+      }
+    }
     await loadClientDetail(response.item.id);
-    statusMessage.textContent = "Cliente guardado y disponible para usar en la calculadora.";
+    statusMessage.textContent = isEditing
+      ? "Cliente actualizado."
+      : "Cliente guardado y disponible para usar en la calculadora.";
   } catch (error) {
     statusMessage.textContent = error.message;
   }
@@ -5191,13 +5909,23 @@ productForm.addEventListener("submit", async (event) => {
 
   try {
     const payload = readProductPayload();
+    const editingId = String(productForm.elements.namedItem("id")?.value || "").trim();
+    if (editingId) {
+      const response = await requestJson(`/api/products/${editingId}/update`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      resetProductForm();
+      await loadCatalog();
+      await loadProductDetail(response.item.id);
+      statusMessage.textContent = "Producto actualizado.";
+      return;
+    }
     const response = await requestJson("/api/products", {
       method: "POST",
       body: JSON.stringify(payload),
     });
-    productForm.reset();
-    productForm.elements.namedItem("tax_usa_percent").value = 0;
-    productForm.elements.namedItem("locker_shipping_usd").value = 0;
+    resetProductForm();
     await loadCatalog();
     const product = state.products.find((item) => item.id === response.item.id);
     applyProductToQuote(product || response.item);
@@ -5207,6 +5935,20 @@ productForm.addEventListener("submit", async (event) => {
     statusMessage.textContent = error.message;
   }
 });
+
+if (clientCancelButton) {
+  clientCancelButton.addEventListener("click", () => {
+    resetClientForm();
+    statusMessage.textContent = "Edicion de cliente cancelada.";
+  });
+}
+
+if (productCancelButton) {
+  productCancelButton.addEventListener("click", () => {
+    resetProductForm();
+    statusMessage.textContent = "Edicion de producto cancelada.";
+  });
+}
 
 if (pendingForm) {
   pendingForm.addEventListener("submit", async (event) => {
@@ -5359,16 +6101,15 @@ if (productCategoryForm) {
     event.preventDefault();
 
     try {
-      const payload = new FormData(productCategoryForm);
-      await requestJson("/api/product-categories", {
+      const payload = readNamedCatalogPayload(productCategoryForm);
+      const editingId = String(productCategoryForm.elements.namedItem("id")?.value || "").trim();
+      await requestJson(editingId ? `/api/product-categories/${editingId}/update` : "/api/product-categories", {
         method: "POST",
-        body: JSON.stringify({
-          name: String(payload.get("name") || "").trim(),
-        }),
+        body: JSON.stringify(payload),
       });
-      productCategoryForm.reset();
+      resetProductCategoryForm();
       await loadCatalog();
-      statusMessage.textContent = "Categoria agregada al catalogo.";
+      statusMessage.textContent = editingId ? "Categoria actualizada." : "Categoria agregada al catalogo.";
       window.location.hash = "administracion";
     } catch (error) {
       statusMessage.textContent = error.message;
@@ -5381,20 +6122,33 @@ if (productStoreForm) {
     event.preventDefault();
 
     try {
-      const payload = new FormData(productStoreForm);
-      await requestJson("/api/product-stores", {
+      const payload = readNamedCatalogPayload(productStoreForm);
+      const editingId = String(productStoreForm.elements.namedItem("id")?.value || "").trim();
+      await requestJson(editingId ? `/api/product-stores/${editingId}/update` : "/api/product-stores", {
         method: "POST",
-        body: JSON.stringify({
-          name: String(payload.get("name") || "").trim(),
-        }),
+        body: JSON.stringify(payload),
       });
-      productStoreForm.reset();
+      resetProductStoreForm();
       await loadCatalog();
-      statusMessage.textContent = "Tienda agregada al catalogo.";
+      statusMessage.textContent = editingId ? "Tienda actualizada." : "Tienda agregada al catalogo.";
       window.location.hash = "administracion";
     } catch (error) {
       statusMessage.textContent = error.message;
     }
+  });
+}
+
+if (categoryCancelButton) {
+  categoryCancelButton.addEventListener("click", () => {
+    resetProductCategoryForm();
+    statusMessage.textContent = "Edicion de categoria cancelada.";
+  });
+}
+
+if (storeCancelButton) {
+  storeCancelButton.addEventListener("click", () => {
+    resetProductStoreForm();
+    statusMessage.textContent = "Edicion de tienda cancelada.";
   });
 }
 
@@ -5696,13 +6450,49 @@ clientsListContainer.addEventListener("click", (event) => {
     return;
   }
 
+  const editButton = event.target.closest("[data-edit-client]");
+  if (editButton) {
+    const client = state.clients.find(
+      (item) => String(item.id) === editButton.getAttribute("data-edit-client")
+    );
+    if (!client) {
+      return;
+    }
+    startClientEdit(client);
+    window.location.hash = "clientes";
+    statusMessage.textContent = `Editando cliente ${client.name}.`;
+    return;
+  }
+
+  const toggleButton = event.target.closest("[data-toggle-client-active]");
+  if (toggleButton) {
+    const clientId = toggleButton.getAttribute("data-toggle-client-active");
+    const nextActive = toggleButton.getAttribute("data-next-active") === "1";
+    if (!clientId) {
+      return;
+    }
+    requestJson(`/api/clients/${clientId}/active`, {
+      method: "POST",
+      body: JSON.stringify({ is_active: nextActive }),
+    })
+      .then(async () => {
+        await loadCatalog();
+        await refreshActiveClientDetail();
+        statusMessage.textContent = nextActive ? "Cliente reactivado." : "Cliente inactivado.";
+      })
+      .catch((error) => {
+        statusMessage.textContent = error.message;
+      });
+    return;
+  }
+
   const button = event.target.closest("[data-use-client]");
   if (!button) {
     return;
   }
 
   const client = state.clients.find((item) => String(item.id) === button.getAttribute("data-use-client"));
-  if (client) {
+  if (client && client.is_active) {
     applyClientToQuote(client);
     statusMessage.textContent = "Cliente cargado desde la base comercial.";
   }
@@ -5795,6 +6585,42 @@ productsListContainer.addEventListener("click", (event) => {
     return;
   }
 
+  const editButton = event.target.closest("[data-edit-product]");
+  if (editButton) {
+    const product = state.products.find(
+      (item) => String(item.id) === editButton.getAttribute("data-edit-product")
+    );
+    if (!product) {
+      return;
+    }
+    startProductEdit(product);
+    window.location.hash = "productos";
+    statusMessage.textContent = `Editando producto ${product.name}.`;
+    return;
+  }
+
+  const toggleButton = event.target.closest("[data-toggle-product-active]");
+  if (toggleButton) {
+    const productId = toggleButton.getAttribute("data-toggle-product-active");
+    const nextActive = toggleButton.getAttribute("data-next-active") === "1";
+    if (!productId) {
+      return;
+    }
+    requestJson(`/api/products/${productId}/active`, {
+      method: "POST",
+      body: JSON.stringify({ is_active: nextActive }),
+    })
+      .then(async () => {
+        await loadCatalog();
+        await refreshActiveProductDetail();
+        statusMessage.textContent = nextActive ? "Producto reactivado." : "Producto inactivado.";
+      })
+      .catch((error) => {
+        statusMessage.textContent = error.message;
+      });
+    return;
+  }
+
   const button = event.target.closest("[data-use-product]");
   if (!button) {
     return;
@@ -5804,10 +6630,97 @@ productsListContainer.addEventListener("click", (event) => {
     (item) => String(item.id) === button.getAttribute("data-use-product")
   );
   if (product) {
+    if (!product.is_active) {
+      statusMessage.textContent = "Este producto esta inactivo y no puede usarse en nuevas cotizaciones.";
+      return;
+    }
+
     applyProductToQuote(product);
     statusMessage.textContent = "Producto cargado desde el catálogo.";
   }
 });
+
+if (productCategoriesListContainer) {
+  productCategoriesListContainer.addEventListener("click", (event) => {
+    const editButton = event.target.closest("[data-edit-product-category]");
+    if (editButton) {
+      const item = state.productCategories.find(
+        (entry) => String(entry.id) === editButton.getAttribute("data-edit-product-category")
+      );
+      if (!item) {
+        return;
+      }
+      startProductCategoryEdit(item);
+      window.location.hash = "administracion";
+      statusMessage.textContent = `Editando categoria ${item.name}.`;
+      return;
+    }
+
+    const toggleButton = event.target.closest("[data-toggle-product-category-active]");
+    if (!toggleButton) {
+      return;
+    }
+
+    const categoryId = toggleButton.getAttribute("data-toggle-product-category-active");
+    const nextActive = toggleButton.getAttribute("data-next-active") === "1";
+    if (!categoryId) {
+      return;
+    }
+
+    requestJson(`/api/product-categories/${categoryId}/active`, {
+      method: "POST",
+      body: JSON.stringify({ is_active: nextActive }),
+    })
+      .then(async () => {
+        await loadCatalog();
+        statusMessage.textContent = nextActive ? "Categoria reactivada." : "Categoria inactivada.";
+      })
+      .catch((error) => {
+        statusMessage.textContent = error.message;
+      });
+  });
+}
+
+if (productStoresListContainer) {
+  productStoresListContainer.addEventListener("click", (event) => {
+    const editButton = event.target.closest("[data-edit-product-store]");
+    if (editButton) {
+      const item = state.productStores.find(
+        (entry) => String(entry.id) === editButton.getAttribute("data-edit-product-store")
+      );
+      if (!item) {
+        return;
+      }
+      startProductStoreEdit(item);
+      window.location.hash = "administracion";
+      statusMessage.textContent = `Editando tienda ${item.name}.`;
+      return;
+    }
+
+    const toggleButton = event.target.closest("[data-toggle-product-store-active]");
+    if (!toggleButton) {
+      return;
+    }
+
+    const storeId = toggleButton.getAttribute("data-toggle-product-store-active");
+    const nextActive = toggleButton.getAttribute("data-next-active") === "1";
+    if (!storeId) {
+      return;
+    }
+
+    requestJson(`/api/product-stores/${storeId}/active`, {
+      method: "POST",
+      body: JSON.stringify({ is_active: nextActive }),
+    })
+      .then(async () => {
+        await loadCatalog();
+        statusMessage.textContent = nextActive ? "Tienda reactivada." : "Tienda inactivada.";
+      })
+      .catch((error) => {
+        statusMessage.textContent = error.message;
+      });
+  });
+}
 
 if (dashboardProductsContainer) {
   dashboardProductsContainer.addEventListener("click", (event) => {
@@ -6043,6 +6956,10 @@ if (clientDetailContainer) {
       statusMessage.textContent = "No fue posible cargar este cliente en la cotizacion.";
       return;
     }
+    if (!client.is_active) {
+      statusMessage.textContent = "Este cliente esta inactivo y no puede usarse en nuevas cotizaciones.";
+      return;
+    }
 
     applyClientToQuote(client);
     statusMessage.textContent = "Cliente cargado desde su ficha comercial.";
@@ -6068,6 +6985,11 @@ if (productDetailContainer) {
     const product = state.products.find((item) => String(item.id) === String(productId));
     if (!product) {
       statusMessage.textContent = "No fue posible cargar este producto en la cotización.";
+      return;
+    }
+
+    if (!product.is_active) {
+      statusMessage.textContent = "Este producto esta inactivo y no puede usarse en nuevas cotizaciones.";
       return;
     }
 
@@ -6190,7 +7112,7 @@ function setupAutocomplete() {
 
   [
     createAutocompleteController(clientSelect, {
-      getItems: () => state.clients,
+      getItems: () => getActiveClients(),
       getLabel: clientSearchLabel,
       getSearchText: clientSearchLabel,
       onSelect: (client) => {
@@ -6200,7 +7122,7 @@ function setupAutocomplete() {
       emptyMessage: "No hay clientes con esas letras",
     }),
     createAutocompleteController(productSelect, {
-      getItems: () => state.products,
+      getItems: () => getActiveProducts(),
       getLabel: productSearchLabel,
       getSearchText: productSearchLabel,
       onSelect: (product) => {
@@ -6210,7 +7132,7 @@ function setupAutocomplete() {
       emptyMessage: "No hay productos con esas letras",
     }),
     createAutocompleteController(inventoryPurchaseProductSelect, {
-      getItems: () => state.products,
+      getItems: () => getActiveProducts(),
       getLabel: productSearchLabel,
       getSearchText: productSearchLabel,
       onSelect: (product) => {
@@ -6220,7 +7142,7 @@ function setupAutocomplete() {
       emptyMessage: "No hay productos con esas letras",
     }),
     createAutocompleteController(productCategoryInput, {
-      getItems: () => state.productCategories,
+      getItems: () => getActiveProductCategories(),
       getLabel: (item) => item.name,
       getSearchText: (item) => item.name,
       onSelect: (item) => {
@@ -6229,7 +7151,7 @@ function setupAutocomplete() {
       emptyMessage: "No hay categorias con esas letras",
     }),
     createAutocompleteController(productStoreInput, {
-      getItems: () => state.productStores,
+      getItems: () => getActiveProductStores(),
       getLabel: (item) => item.name,
       getSearchText: (item) => item.name,
       onSelect: (item) => {
@@ -6238,7 +7160,7 @@ function setupAutocomplete() {
       emptyMessage: "No hay tiendas con esas letras",
     }),
     createAutocompleteController(pendingClientSelect, {
-      getItems: () => state.clients,
+      getItems: () => getActiveClients(),
       getLabel: clientSearchLabel,
       getSearchText: clientSearchLabel,
       onSelect: (client) => {
@@ -6248,7 +7170,7 @@ function setupAutocomplete() {
       emptyMessage: "No hay clientes con esas letras",
     }),
     createAutocompleteController(pendingCategoryInput, {
-      getItems: () => state.productCategories,
+      getItems: () => getActiveProductCategories(),
       getLabel: (item) => item.name,
       getSearchText: (item) => item.name,
       onSelect: (item) => {
@@ -6257,7 +7179,7 @@ function setupAutocomplete() {
       emptyMessage: "No hay categorias con esas letras",
     }),
     createAutocompleteController(pendingStoreInput, {
-      getItems: () => state.productStores,
+      getItems: () => getActiveProductStores(),
       getLabel: (item) => item.name,
       getSearchText: (item) => item.name,
       onSelect: (item) => {
@@ -6311,6 +7233,10 @@ async function initApp() {
   renderQuoteLineItems();
   renderQuoteLiveSummary();
   renderInventoryPurchaseDraft();
+  resetClientForm();
+  resetProductForm();
+  resetProductCategoryForm();
+  resetProductStoreForm();
   setupAutocomplete();
   await loadSession();
   state.dashboardPeriod = dashboardPeriodSelect.value || "daily";

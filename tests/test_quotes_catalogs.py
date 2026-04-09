@@ -9,11 +9,22 @@ from fershop_calculadora.database import (
     create_product_category,
     create_product_store,
     get_quote,
+    list_clients,
     list_product_categories,
+    list_products,
     list_product_stores,
+    save_client,
     save_product,
     save_quote,
+    set_client_active,
+    set_product_active,
+    set_product_category_active,
+    set_product_store_active,
+    update_client,
+    update_product,
+    update_product_category,
     update_product_pricing,
+    update_product_store,
     update_quote,
 )
 import fershop_calculadora.database as database
@@ -157,6 +168,92 @@ class QuoteCatalogPersistenceTests(unittest.TestCase):
         self.assertIn("Sueters", category_names)
         self.assertIn("Ralph Lauren", store_names)
         self.assertIn("Nike", store_names)
+
+    def test_clients_and_products_support_description_update_and_inactivation(self) -> None:
+        client = save_client(
+            {
+                "name": "Laura",
+                "description": "Cliente inicial",
+                "phone": "3001234567",
+            }
+        )
+        updated_client = update_client(
+            client["id"],
+            {
+                "name": "Laura",
+                "description": "Cliente premium",
+                "phone": "3001234567",
+                "email": "",
+                "city": "",
+                "address": "",
+                "neighborhood": "",
+                "whatsapp_phone": "",
+                "whatsapp_opt_in": False,
+                "preferred_contact_channel": "",
+                "preferred_payment_method": "",
+                "interests": "",
+                "notes": "",
+            },
+        )
+        set_client_active(client["id"], False)
+
+        product = save_product(
+            {
+                "name": "Sueter premium",
+                "description": "Coleccion invierno",
+                "reference": "SW-22",
+                "category": "Sueters",
+                "store": "Zara",
+                "price_usd_net": 25,
+                "tax_usa_percent": 7,
+                "locker_shipping_usd": 4,
+                "notes": "",
+            }
+        )
+        updated_product = update_product(
+            product["id"],
+            {
+                "name": "Sueter premium",
+                "description": "Coleccion invierno renovada",
+                "reference": "SW-22",
+                "category": "Sueters",
+                "store": "Zara",
+                "inventory_enabled": False,
+                "initial_stock_quantity": 0,
+                "price_usd_net": 27,
+                "tax_usa_percent": 8,
+                "locker_shipping_usd": 5,
+                "notes": "Actualizado",
+            },
+        )
+        set_product_active(product["id"], False)
+
+        self.assertEqual(updated_client["description"], "Cliente premium")
+        self.assertEqual(updated_product["description"], "Coleccion invierno renovada")
+        self.assertEqual(len(list_clients(include_inactive=False)), 0)
+        self.assertEqual(len(list_products(include_inactive=False)), 0)
+
+    def test_categories_and_stores_support_description_update_and_inactivation(self) -> None:
+        category = create_product_category("Sueters", description="Tejidos y basicos")
+        store = create_product_store("Nike", description="Tienda deportiva")
+
+        updated_category = update_product_category(
+            category["id"],
+            name="Sueters",
+            description="Tejidos, hoodies y basicos",
+        )
+        updated_store = update_product_store(
+            store["id"],
+            name="Nike",
+            description="Tienda deportiva principal",
+        )
+        set_product_category_active(category["id"], is_active=False)
+        set_product_store_active(store["id"], is_active=False)
+
+        self.assertEqual(updated_category["description"], "Tejidos, hoodies y basicos")
+        self.assertEqual(updated_store["description"], "Tienda deportiva principal")
+        self.assertEqual(len(list_product_categories(include_inactive=False)), 0)
+        self.assertEqual(len(list_product_stores(include_inactive=False)), 0)
 
     def test_save_product_handles_legacy_schema_with_removed_cost_columns(self) -> None:
         self.keepalive.execute(
