@@ -54,6 +54,9 @@ const productCategoryForm = document.getElementById("product-category-form");
 const productStoreForm = document.getElementById("product-store-form");
 const productCategoriesListContainer = document.getElementById("product-categories-list");
 const productStoresListContainer = document.getElementById("product-stores-list");
+const publicRegistrationUrlInput = document.getElementById("public-registration-url");
+const copyPublicRegistrationUrlButton = document.getElementById("copy-public-registration-url");
+const openPublicRegistrationUrlLink = document.getElementById("open-public-registration-url");
 const whatsappSettingsForm = document.getElementById("whatsapp-settings-form");
 const whatsappTemplateForm = document.getElementById("whatsapp-template-form");
 const whatsappTriggerSelect = document.getElementById("whatsapp-trigger-select");
@@ -1203,6 +1206,27 @@ function applyCompanyBranding(session) {
     "Esta sesion carga clientes, productos, cotizaciones, compras y estados solo de la empresa autenticada."
   );
   setText(currentUserLabel, user.display_name || user.username || "Usuario");
+  renderPublicRegistrationLink(company);
+}
+
+function renderPublicRegistrationLink(company) {
+  if (!publicRegistrationUrlInput || !openPublicRegistrationUrlLink) {
+    return;
+  }
+
+  const slug = String(company?.slug || "").trim();
+  const registrationUrl = slug
+    ? `${window.location.origin}/registro/${encodeURIComponent(slug)}`
+    : "";
+
+  publicRegistrationUrlInput.value = registrationUrl;
+  openPublicRegistrationUrlLink.href = registrationUrl || "#";
+  openPublicRegistrationUrlLink.setAttribute("aria-disabled", registrationUrl ? "false" : "true");
+  if (!registrationUrl) {
+    openPublicRegistrationUrlLink.classList.add("is-disabled");
+  } else {
+    openPublicRegistrationUrlLink.classList.remove("is-disabled");
+  }
 }
 
 function toNumberOrNull(value) {
@@ -7269,6 +7293,24 @@ if (menuToggleButton) {
 if (menuOverlay) {
   menuOverlay.addEventListener("click", () => {
     setMenuOpen(false);
+  });
+}
+
+if (copyPublicRegistrationUrlButton) {
+  copyPublicRegistrationUrlButton.addEventListener("click", async () => {
+    const value = publicRegistrationUrlInput?.value || "";
+    if (!value) {
+      statusMessage.textContent = "No encontramos el enlace publico de registro para esta empresa.";
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      statusMessage.textContent = "Enlace publico copiado. Ya puedes compartirlo con tus clientes.";
+      window.location.hash = "administracion";
+    } catch (_error) {
+      statusMessage.textContent = "No fue posible copiar el enlace publico en este navegador.";
+    }
   });
 }
 

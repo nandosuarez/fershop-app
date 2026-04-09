@@ -18,6 +18,7 @@ from .database import (
     create_order_status,
     create_session_for_user,
     delete_session,
+    get_company_by_slug,
     get_client_detail,
     get_product_detail,
     get_quote,
@@ -172,6 +173,32 @@ def _parse_product_route(path: str) -> int | None:
         return None
 
 
+def _parse_public_registration_page_route(path: str) -> str | None:
+    parts = [part for part in path.split("/") if part]
+    if len(parts) != 2 or parts[0] != "registro":
+        return None
+    return parts[1]
+
+
+def _parse_public_company_route(path: str) -> str | None:
+    parts = [part for part in path.split("/") if part]
+    if len(parts) != 4 or parts[0] != "api" or parts[1] != "public" or parts[2] != "company":
+        return None
+    return parts[3]
+
+
+def _parse_public_registration_api_route(path: str) -> str | None:
+    parts = [part for part in path.split("/") if part]
+    if (
+        len(parts) != 4
+        or parts[0] != "api"
+        or parts[1] != "public"
+        or parts[2] != "register"
+    ):
+        return None
+    return parts[3]
+
+
 def _serve_file(file_path: Path, content_type: str | None = None):
     if not file_path.exists() or not file_path.is_file():
         return _json_response(HTTPStatus.NOT_FOUND, {"error": "Archivo no encontrado."})
@@ -198,6 +225,8 @@ def _require_session(environ: dict[str, Any]):
 def _handle_get(environ: dict[str, Any]):
     path = str(environ.get("PATH_INFO", "") or "/")
     query = parse_qs(str(environ.get("QUERY_STRING", "") or ""))
+    public_registration_slug = _parse_public_registration_page_route(path)
+    public_company_slug = _parse_public_company_route(path)
     quote_route = _parse_quote_route(path)
     order_route = _parse_order_route(path)
     client_route = _parse_client_route(path)
@@ -205,6 +234,18 @@ def _handle_get(environ: dict[str, Any]):
 
     if path == "/healthz":
         return _json_response(HTTPStatus.OK, {"ok": True})
+
+    if public_registration_slug is not None:
+        return _serve_file(WEB_DIR / "customer-register.html", "text/html; charset=utf-8")
+
+    if public_company_slug is not None:
+        company = get_company_by_slug(public_company_slug)
+        if company is None or not company.get("is_active"):
+            return _json_response(
+                HTTPStatus.NOT_FOUND,
+                {"error": "No encontramos una empresa activa para ese enlace."},
+            )
+        return _json_response(HTTPStatus.OK, {"item": company})
 
     if path == "/":
         session = _current_session(environ)
@@ -360,6 +401,32 @@ def _handle_get(environ: dict[str, Any]):
 def _handle_post(environ: dict[str, Any]):
     path = str(environ.get("PATH_INFO", "") or "/")
     try:
+        public_registration_slug = _parse_public_registration_api_route(path)
+        if public_registration_slug is not None:
+            company = get_company_by_slug(public_registration_slug)
+            if company is None or not company.get("is_active"):
+                return _json_response(
+                    HTTPStatus.NOT_FOUND,
+                    {"error": "No encontramos una empresa activa para ese enlace."},
+                )
+            payload = _read_json(environ)
+            client = ClientInput.from_dict(payload)
+            client_data = client.to_dict()
+            existing_notes = str(client_data.get("notes", "")).strip()
+            registration_note = "Registro publico desde formulario web."
+            client_data["notes"] = (
+                f"{registration_note}\n{existing_notes}" if existing_notes else registration_note
+            )
+            record = save_client(client_data, company_id=company["id"])
+            return _json_response(
+                HTTPStatus.CREATED,
+                {
+                    "item": record,
+                    "company": company,
+                    "message": "Tus datos quedaron registrados correctamente.",
+                },
+            )
+
         if path == "/api/login":
             payload = _read_json(environ)
             username = str(payload.get("username", "")).strip()

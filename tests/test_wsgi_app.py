@@ -1,4 +1,5 @@
 import io
+import json
 import sqlite3
 import unittest
 
@@ -67,6 +68,37 @@ class WsgiAppTests(unittest.TestCase):
         self.assertEqual(status, "200 OK")
         self.assertIn(("Content-Type", "text/html; charset=utf-8"), headers)
         self.assertIn(b"login-form", body)
+
+    def test_public_registration_page_and_company_info_are_available(self) -> None:
+        status, headers, body = self._call_app("/registro/fershop")
+        self.assertEqual(status, "200 OK")
+        self.assertIn(("Content-Type", "text/html; charset=utf-8"), headers)
+        self.assertIn(b"public-register-form", body)
+
+        status, headers, body = self._call_app("/api/public/company/fershop")
+        self.assertEqual(status, "200 OK")
+        self.assertIn(("Content-Type", "application/json; charset=utf-8"), headers)
+        self.assertIn(b'"slug": "fershop"', body)
+
+    def test_public_registration_creates_client_in_default_company(self) -> None:
+        payload = json.dumps(
+            {
+                "name": "Cliente Web",
+                "whatsapp_phone": "3001234567",
+                "whatsapp_opt_in": True,
+                "notes": "Le interesa ropa.",
+            }
+        ).encode("utf-8")
+
+        status, headers, body = self._call_app(
+            "/api/public/register/fershop",
+            method="POST",
+            body=payload,
+        )
+        self.assertEqual(status, "201 Created")
+        self.assertIn(("Content-Type", "application/json; charset=utf-8"), headers)
+        self.assertIn(b"Cliente Web", body)
+        self.assertIn(b"Registro publico desde formulario web.", body)
 
 
 if __name__ == "__main__":

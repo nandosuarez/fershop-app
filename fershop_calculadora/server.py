@@ -22,6 +22,7 @@ from .database import (
     create_order_from_quote,
     create_session_for_user,
     delete_session,
+    get_company_by_slug,
     get_company_whatsapp_settings,
     get_client_detail,
     get_pending_request,
@@ -144,6 +145,8 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
     def _do_get(self) -> None:
         parsed = urlparse(self.path)
+        public_registration_slug = self._parse_public_registration_page_route(parsed.path)
+        public_company_slug = self._parse_public_company_route(parsed.path)
         route = self._parse_quote_route(parsed.path)
         quote_detail_route = self._parse_quote_detail_route(parsed.path)
         order_route = self._parse_order_route(parsed.path)
@@ -162,6 +165,21 @@ class FerShopHandler(BaseHTTPRequestHandler):
         pending_detail_route = self._parse_pending_request_detail_route(parsed.path)
         if parsed.path == "/healthz":
             self._send_json(HTTPStatus.OK, {"ok": True})
+            return
+
+        if public_registration_slug is not None:
+            self._serve_file(WEB_DIR / "customer-register.html", "text/html; charset=utf-8")
+            return
+
+        if public_company_slug is not None:
+            company = get_company_by_slug(public_company_slug)
+            if company is None or not company.get("is_active"):
+                self._send_json(
+                    HTTPStatus.NOT_FOUND,
+                    {"error": "No encontramos una empresa activa para ese enlace."},
+                )
+                return
+            self._send_json(HTTPStatus.OK, {"item": company})
             return
 
         if parsed.path == "/":
@@ -498,6 +516,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         try:
+            public_registration_slug = self._parse_public_registration_api_route(self.path)
             if self.path == "/api/whatsapp/twilio/status":
                 form_payload = self._read_form_data()
                 message_sid = str(form_payload.get("MessageSid", "")).strip()
@@ -511,6 +530,34 @@ class FerShopHandler(BaseHTTPRequestHandler):
                     error_message=error_message,
                 )
                 self._send_json(HTTPStatus.OK, {"ok": True})
+                return
+
+            if public_registration_slug is not None:
+                company = get_company_by_slug(public_registration_slug)
+                if company is None or not company.get("is_active"):
+                    self._send_json(
+                        HTTPStatus.NOT_FOUND,
+                        {"error": "No encontramos una empresa activa para ese enlace."},
+                    )
+                    return
+
+                payload = self._read_json()
+                client = ClientInput.from_dict(payload)
+                client_data = client.to_dict()
+                existing_notes = str(client_data.get("notes", "")).strip()
+                registration_note = "Registro publico desde formulario web."
+                client_data["notes"] = (
+                    f"{registration_note}\n{existing_notes}" if existing_notes else registration_note
+                )
+                record = save_client(client_data, company_id=company["id"])
+                self._send_json(
+                    HTTPStatus.CREATED,
+                    {
+                        "item": record,
+                        "company": company,
+                        "message": "Tus datos quedaron registrados correctamente.",
+                    },
+                )
                 return
 
             if self.path == "/api/login":
@@ -993,6 +1040,29 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
         parsed = parse_qs(raw_body.decode("utf-8"), keep_blank_values=True)
         return {key: values[-1] if values else "" for key, values in parsed.items()}
+
+    def _parse_public_registration_page_route(self, path: str) -> str | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) != 2 or parts[0] != "registro":
+            return None
+        return parts[1]
+
+    def _parse_public_company_route(self, path: str) -> str | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) != 4 or parts[0] != "api" or parts[1] != "public" or parts[2] != "company":
+            return None
+        return parts[3]
+
+    def _parse_public_registration_api_route(self, path: str) -> str | None:
+        parts = [part for part in path.split("/") if part]
+        if (
+            len(parts) != 4
+            or parts[0] != "api"
+            or parts[1] != "public"
+            or parts[2] != "register"
+        ):
+            return None
+        return parts[3]
 
     def _parse_quote_route(self, path: str) -> tuple[int, str] | None:
         parts = [part for part in path.split("/") if part]

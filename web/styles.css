@@ -233,6 +233,61 @@ body.menu-open {
   min-height: 24px;
 }
 
+.public-register-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(280px, 0.95fr) minmax(320px, 1.05fr);
+  gap: 24px;
+  align-items: start;
+  width: min(1120px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 28px 0 40px;
+}
+
+.public-register-brand-panel,
+.public-register-form-panel {
+  padding: 28px;
+}
+
+.public-register-brand-lockup {
+  display: grid;
+  gap: 18px;
+}
+
+.public-register-logo {
+  width: min(260px, 100%);
+  max-width: 100%;
+}
+
+.public-register-copy {
+  margin: 8px 0 0;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+.public-register-card,
+.public-registration-admin-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+  margin-top: 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.48);
+  border: 1px solid rgba(18, 17, 17, 0.08);
+}
+
+.public-register-card p,
+.public-registration-admin-card p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+.history-action-button.is-disabled {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
 .hero {
   display: grid;
   grid-template-columns: 1.6fr 0.9fr;
@@ -1560,6 +1615,10 @@ button:disabled {
 }
 
 @media (max-width: 1100px) {
+  .public-register-shell {
+    grid-template-columns: 1fr;
+  }
+
   .page-shell {
     width: min(100vw - 24px, 1380px);
     padding-top: 20px;
@@ -1729,6 +1788,17 @@ button:disabled {
 }
 
 @media (max-width: 720px) {
+  .public-register-shell {
+    width: min(100vw - 20px, 1120px);
+    padding: 20px 0 28px;
+  }
+
+  .public-register-brand-panel,
+  .public-register-form-panel {
+    padding: 20px;
+    border-radius: 20px;
+  }
+
   .page-shell {
     width: min(100vw - 20px, 1220px);
     padding-top: 18px;

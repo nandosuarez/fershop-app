@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Registro de clientes</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="public-register-shell">
+      <section class="panel public-register-brand-panel">
+        <div class="public-register-brand-lockup">
+          <img
+            class="brand-logo public-register-logo"
+            data-public-company-logo
+            src="/static/assets/fershop-logo-crop.jpg"
+            alt="Logo de la empresa"
+          />
+          <div>
+            <p class="eyebrow">Registro de clientes</p>
+            <h1 data-public-company-brand>Portal comercial</h1>
+            <p class="public-register-copy" data-public-company-tagline>
+              Comparte tus datos y te contactaremos para ayudarte con tu compra.
+            </p>
+          </div>
+        </div>
+
+        <div class="public-register-card">
+          <strong>¿Para qué sirve este formulario?</strong>
+          <p>
+            Tus datos llegan directo al equipo comercial de la empresa para que puedan cotizarte,
+            buscar referencias o hacer seguimiento a tus pedidos.
+          </p>
+        </div>
+      </section>
+
+      <section class="panel public-register-form-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Formulario de inscripción</p>
+            <h2>Déjanos tus datos</h2>
+          </div>
+        </div>
+
+        <form id="public-register-form" class="catalog-form">
+          <div class="field-grid">
+            <label>
+              <span>Nombre</span>
+              <input name="name" type="text" placeholder="Tu nombre completo" required />
+            </label>
+
+            <label>
+              <span>Teléfono</span>
+              <input name="phone" type="text" placeholder="Ej. 3001234567" />
+            </label>
+
+            <label>
+              <span>WhatsApp</span>
+              <input
+                name="whatsapp_phone"
+                type="text"
+                placeholder="Ej. +573001234567 o 3001234567"
+                autocomplete="off"
+              />
+            </label>
+
+            <label>
+              <span>Email</span>
+              <input name="email" type="email" placeholder="Opcional" />
+            </label>
+
+            <label>
+              <span>Ciudad</span>
+              <input name="city" type="text" placeholder="Ej. Bogota" />
+            </label>
+
+            <label>
+              <span>Dirección</span>
+              <input name="address" type="text" placeholder="Ej. Cra 15 # 93 - 40" />
+            </label>
+
+            <label>
+              <span>Barrio / zona</span>
+              <input name="neighborhood" type="text" placeholder="Ej. Chico, Laureles, Cedritos" />
+            </label>
+
+            <label>
+              <span>Canal preferido</span>
+              <input
+                name="preferred_contact_channel"
+                type="text"
+                placeholder="Ej. WhatsApp, llamada, Instagram"
+              />
+            </label>
+
+            <label>
+              <span>Pago preferido</span>
+              <input
+                name="preferred_payment_method"
+                type="text"
+                placeholder="Ej. transferencia, efectivo, anticipo 50%"
+              />
+            </label>
+          </div>
+
+          <label class="full-width">
+            <span>Descripción corta</span>
+            <textarea
+              name="description"
+              rows="3"
+              placeholder="Cuéntanos quién eres o qué tipo de compra acostumbras hacer."
+            ></textarea>
+          </label>
+
+          <label class="checkbox-field">
+            <input name="whatsapp_opt_in" type="checkbox" />
+            <span>Autorizo notificaciones de compra por WhatsApp</span>
+          </label>
+
+          <label class="full-width">
+            <span>Intereses</span>
+            <textarea
+              name="interests"
+              rows="3"
+              placeholder="Ej. tecnología, ropa, regalos, combos, referencias premium"
+            ></textarea>
+          </label>
+
+          <label class="full-width">
+            <span>Mensaje adicional</span>
+            <textarea
+              name="notes"
+              rows="4"
+              placeholder="Si quieres, déjanos una nota sobre lo que buscas o cómo prefieres que te contactemos."
+            ></textarea>
+          </label>
+
+          <div class="actions">
+            <button id="public-register-submit" type="submit" class="primary">Enviar registro</button>
+          </div>
+        </form>
+
+        <p id="public-register-status" class="login-status">
+          Completa tus datos y envíalos para quedar registrado.
+        </p>
+      </section>
+    </main>
+
+    <script src="/static/customer-register.js" defer></script>
+  </body>
+</html>

@@ -65,7 +65,8 @@ DB_PATH = Path(
 DEFAULT_COMPANY_SLUG = "fershop"
 DEFAULT_COMPANY_NAME = "FerShop"
 DEFAULT_COMPANY_BRAND_NAME = "FerShop USA"
-DEFAULT_COMPANY_TAGLINE = "Cotizaciones elegantes para importacion y cierre comercial"
+DEFAULT_COMPANY_TAGLINE = ""
+LEGACY_COMPANY_TAGLINE = "Cotizaciones elegantes para importacion y cierre comercial"
 DEFAULT_COMPANY_LOGO_PATH = "/static/assets/fershop-logo-crop.jpg"
 DEFAULT_ADMIN_USERNAME = os.environ.get("FERSHOP_DEFAULT_ADMIN_USERNAME", "fershop_admin")
 DEFAULT_ADMIN_PASSWORD = os.environ.get("FERSHOP_DEFAULT_ADMIN_PASSWORD", "FerShop2026!")
@@ -570,6 +571,11 @@ def _ensure_default_company_and_admin(
                 1,
             ),
         )
+
+    connection.execute(
+        "UPDATE companies SET tagline = ? WHERE tagline = ?",
+        (DEFAULT_COMPANY_TAGLINE, LEGACY_COMPANY_TAGLINE),
+    )
 
     row = connection.execute(
         """
@@ -1912,6 +1918,28 @@ def get_company(company_id: int) -> dict[str, Any] | None:
             """,
             (company_id,),
         ).fetchone()
+    if row is None:
+        return None
+    return _serialize_company_row(row)
+
+
+def get_company_by_slug(slug: str) -> dict[str, Any] | None:
+    init_db()
+    clean_slug = build_status_key(str(slug or "").strip()).replace("_", "-")
+    if not clean_slug:
+        return None
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT id, slug, name, brand_name, tagline, logo_path, is_active
+            FROM companies
+            WHERE slug = ?
+            """,
+            (clean_slug,),
+        ).fetchone()
+
     if row is None:
         return None
     return _serialize_company_row(row)
