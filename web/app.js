@@ -72,6 +72,7 @@ const pendingStoreInput = document.getElementById("pending-store-input");
 const pendingListContainer = document.getElementById("pending-list");
 const pendingOriginBadge = document.getElementById("pending-origin-badge");
 const saveButton = document.getElementById("save-button");
+const clientViewButtons = Array.from(document.querySelectorAll("[data-client-view]"));
 const brandLogo = document.querySelector(".brand-logo");
 const brandKicker = document.querySelector(".brand-kicker");
 const brandSubtitle = document.querySelector(".brand-subtitle");
@@ -133,6 +134,8 @@ const state = {
   editingProductId: null,
   editingProductCategoryId: null,
   editingProductStoreId: null,
+  clientCatalogView: "list",
+  collapsiblePanels: {},
 };
 
 const autocompleteControllers = [];
@@ -1229,6 +1232,51 @@ function renderPublicRegistrationLink(company) {
   }
 }
 
+function syncClientViewButtons() {
+  clientViewButtons.forEach((button) => {
+    const isActive = button.getAttribute("data-client-view") === state.clientCatalogView;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
+function setClientCatalogView(nextView) {
+  state.clientCatalogView = nextView === "cards" ? "cards" : "list";
+  syncClientViewButtons();
+  renderClientsManaged(state.clients);
+}
+
+function getCollapsibleDefaultOpen(panelKey) {
+  const toggle = document.querySelector(`[data-collapsible-target="${panelKey}"]`);
+  return toggle ? toggle.dataset.defaultOpen !== "false" : true;
+}
+
+function applyCollapsiblePanel(panelKey) {
+  const toggle = document.querySelector(`[data-collapsible-target="${panelKey}"]`);
+  const body = document.querySelector(`[data-collapsible-body="${panelKey}"]`);
+  const panel = document.querySelector(`[data-collapsible-panel="${panelKey}"]`);
+  if (!toggle || !body) {
+    return;
+  }
+
+  const isOpen = Object.prototype.hasOwnProperty.call(state.collapsiblePanels, panelKey)
+    ? Boolean(state.collapsiblePanels[panelKey])
+    : getCollapsibleDefaultOpen(panelKey);
+
+  body.hidden = !isOpen;
+  toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  panel?.classList.toggle("is-collapsed", !isOpen);
+}
+
+function syncCollapsiblePanels() {
+  document.querySelectorAll("[data-collapsible-target]").forEach((button) => {
+    const panelKey = button.getAttribute("data-collapsible-target");
+    if (panelKey) {
+      applyCollapsiblePanel(panelKey);
+    }
+  });
+}
+
 function toNumberOrNull(value) {
   if (value === "" || value === null || value === undefined) {
     return null;
@@ -2295,6 +2343,71 @@ function renderClientsManaged(items) {
     return;
   }
 
+  if (state.clientCatalogView === "cards") {
+    renderClientsCards(items);
+    return;
+  }
+
+  renderClientsCompact(items);
+}
+
+function renderClientsCompact(items) {
+  clientsListContainer.className = "catalog-list catalog-list-rows";
+  clientsListContainer.innerHTML = items
+    .map(
+      (client) => `
+        <article class="catalog-row ${client.is_active ? "" : "is-inactive"}">
+          <button class="catalog-row-primary" type="button" data-view-client="${client.id}">
+            <strong>${escapeHtml(client.name)}</strong>
+            <span>${escapeHtml(client.city || "Ciudad no registrada")}</span>
+          </button>
+          <div class="catalog-row-details">
+            <span>${escapeHtml(client.phone || "Sin telefono")}</span>
+            ${
+              client.whatsapp_phone_masked
+                ? `<span>WhatsApp: ${escapeHtml(client.whatsapp_phone_masked)}</span>`
+                : `<span>${escapeHtml(client.email || "Sin email")}</span>`
+            }
+            <span class="catalog-chip ${client.is_active ? "catalog-chip-success" : "catalog-chip-muted"}">
+              ${client.is_active ? "Activo" : "Inactivo"}
+            </span>
+          </div>
+          <div class="catalog-row-actions">
+            <button
+              class="history-action-button history-action-button-secondary history-action-button-icon"
+              type="button"
+              data-edit-client="${client.id}"
+              title="Editar cliente"
+              aria-label="Editar cliente"
+            >
+              ${renderActionIcon("edit")}
+            </button>
+            <button
+              class="history-action-button history-action-button-secondary"
+              type="button"
+              data-use-client="${client.id}"
+              ${client.is_active ? "" : "disabled"}
+            >
+              Usar
+            </button>
+            <button
+              class="history-action-button ${client.is_active ? "history-action-button-secondary" : ""} history-action-button-icon"
+              type="button"
+              data-toggle-client-active="${client.id}"
+              data-next-active="${client.is_active ? "0" : "1"}"
+              title="${client.is_active ? "Inactivar cliente" : "Reactivar cliente"}"
+              aria-label="${client.is_active ? "Inactivar cliente" : "Reactivar cliente"}"
+            >
+              ${renderActionIcon(client.is_active ? "deactivate" : "activate")}
+            </button>
+          </div>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function renderClientsCards(items) {
   clientsListContainer.className = "catalog-list";
   clientsListContainer.innerHTML = items
     .map(
@@ -7261,6 +7374,8 @@ async function initApp() {
   resetProductForm();
   resetProductCategoryForm();
   resetProductStoreForm();
+  syncClientViewButtons();
+  syncCollapsiblePanels();
   setupAutocomplete();
   await loadSession();
   state.dashboardPeriod = dashboardPeriodSelect.value || "daily";
@@ -7313,6 +7428,30 @@ if (copyPublicRegistrationUrlButton) {
     }
   });
 }
+
+clientViewButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    setClientCatalogView(button.getAttribute("data-client-view") || "list");
+  });
+});
+
+document.addEventListener("click", (event) => {
+  const toggleButton = event.target.closest("[data-collapsible-target]");
+  if (!toggleButton) {
+    return;
+  }
+
+  const panelKey = toggleButton.getAttribute("data-collapsible-target");
+  if (!panelKey) {
+    return;
+  }
+
+  const currentValue = Object.prototype.hasOwnProperty.call(state.collapsiblePanels, panelKey)
+    ? Boolean(state.collapsiblePanels[panelKey])
+    : getCollapsibleDefaultOpen(panelKey);
+  state.collapsiblePanels[panelKey] = !currentValue;
+  applyCollapsiblePanel(panelKey);
+});
 
 window.addEventListener("resize", syncResponsiveShell);
 window.addEventListener("keydown", (event) => {

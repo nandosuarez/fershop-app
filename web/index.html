@@ -504,9 +504,19 @@
 
             <section class="catalog-layout">
               <section id="clientes" class="panel catalog-panel">
-                <div class="panel-header">
-                  <h2>Clientes</h2>
-                  <p>Crea tu base comercial y luego seleccionalos desde la calculadora.</p>
+                <div class="panel-header panel-header-stackable">
+                  <div>
+                    <h2>Clientes</h2>
+                    <p>Crea tu base comercial y luego seleccionalos desde la calculadora.</p>
+                  </div>
+                  <div class="view-toggle-group" aria-label="Vista de clientes">
+                    <button type="button" class="view-toggle-button is-active" data-client-view="list" aria-pressed="true">
+                      Lista
+                    </button>
+                    <button type="button" class="view-toggle-button" data-client-view="cards" aria-pressed="false">
+                      Tarjetas
+                    </button>
+                  </div>
                 </div>
 
                 <form id="client-form" class="catalog-form">
@@ -1088,12 +1098,22 @@
             </header>
 
             <section class="catalog-layout admin-layout">
-              <section class="panel catalog-panel">
-                <div class="panel-header">
-                  <h2>Nuevo estado</h2>
-                  <p>Crea nuevos pasos del flujo y ubicalos en el orden correcto.</p>
-                </div>
+              <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-order-status-create">
+                <button
+                  class="panel-header collapsible-toggle"
+                  type="button"
+                  data-collapsible-target="admin-order-status-create"
+                  data-default-open="true"
+                  aria-expanded="true"
+                >
+                  <div>
+                    <h2>Nuevo estado</h2>
+                    <p>Crea nuevos pasos del flujo y ubicalos en el orden correcto.</p>
+                  </div>
+                  <span class="collapsible-indicator" aria-hidden="true"></span>
+                </button>
 
+                <div class="collapsible-body" data-collapsible-body="admin-order-status-create">
                 <form id="order-status-form" class="catalog-form">
                   <div class="field-grid">
                     <label>
@@ -1122,24 +1142,46 @@
                     <button type="submit" class="primary">Crear estado</button>
                   </div>
                 </form>
-              </section>
-
-              <section class="panel catalog-panel">
-                <div class="panel-header">
-                  <h2>Flujo activo</h2>
-                  <p>Estos son los pasos secuenciales que hoy usa la operacion.</p>
-                </div>
-                <div id="order-statuses-list" class="catalog-empty">
-                  <p>Aun no hay estados configurados.</p>
                 </div>
               </section>
 
-              <section class="panel catalog-panel">
-                <div class="panel-header">
-                  <h2>Categorias de producto</h2>
-                  <p>Crea y organiza las categorias que quieres usar en el catalogo.</p>
+              <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-order-status-list">
+                <button
+                  class="panel-header collapsible-toggle"
+                  type="button"
+                  data-collapsible-target="admin-order-status-list"
+                  data-default-open="true"
+                  aria-expanded="true"
+                >
+                  <div>
+                    <h2>Flujo activo</h2>
+                    <p>Estos son los pasos secuenciales que hoy usa la operacion.</p>
+                  </div>
+                  <span class="collapsible-indicator" aria-hidden="true"></span>
+                </button>
+                <div class="collapsible-body" data-collapsible-body="admin-order-status-list">
+                  <div id="order-statuses-list" class="catalog-empty">
+                    <p>Aun no hay estados configurados.</p>
+                  </div>
                 </div>
+              </section>
 
+              <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-categories">
+                <button
+                  class="panel-header collapsible-toggle"
+                  type="button"
+                  data-collapsible-target="admin-categories"
+                  data-default-open="false"
+                  aria-expanded="false"
+                >
+                  <div>
+                    <h2>Categorias de producto</h2>
+                    <p>Crea y organiza las categorias que quieres usar en el catalogo.</p>
+                  </div>
+                  <span class="collapsible-indicator" aria-hidden="true"></span>
+                </button>
+
+                <div class="collapsible-body" data-collapsible-body="admin-categories">
                 <form id="product-category-form" class="catalog-form">
                   <label>
                     <input name="id" type="hidden" />
@@ -1171,14 +1213,25 @@
                 <div id="product-categories-list" class="catalog-empty">
                   <p>Aun no hay categorias creadas.</p>
                 </div>
+                </div>
               </section>
 
-              <section class="panel catalog-panel">
-                <div class="panel-header">
-                  <h2>Tiendas</h2>
+              <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-stores">
+                <button
+                  class="panel-header collapsible-toggle"
+                  type="button"
+                  data-collapsible-target="admin-stores"
+                  data-default-open="false"
+                  aria-expanded="false"
+                >
+                  <div>
+                    <h2>Tiendas</h2>
                   <p>Mantén una lista buscable de las tiendas donde cotizas o compras.</p>
-                </div>
+                  </div>
+                  <span class="collapsible-indicator" aria-hidden="true"></span>
+                </button>
 
+                <div class="collapsible-body" data-collapsible-body="admin-stores">
                 <form id="product-store-form" class="catalog-form">
                   <label>
                     <input name="id" type="hidden" />
@@ -1210,14 +1263,25 @@
                 <div id="product-stores-list" class="catalog-empty">
                   <p>Aun no hay tiendas creadas.</p>
                 </div>
+                </div>
               </section>
 
-              <section class="panel catalog-panel">
-                <div class="panel-header">
-                  <h2>Registro publico de clientes</h2>
-                  <p>Comparte este enlace para que el cliente deje sus datos y quede creado en tu base.</p>
-                </div>
+              <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-public-registration">
+                <button
+                  class="panel-header collapsible-toggle"
+                  type="button"
+                  data-collapsible-target="admin-public-registration"
+                  data-default-open="false"
+                  aria-expanded="false"
+                >
+                  <div>
+                    <h2>Registro publico de clientes</h2>
+                    <p>Comparte este enlace para que el cliente deje sus datos y quede creado en tu base.</p>
+                  </div>
+                  <span class="collapsible-indicator" aria-hidden="true"></span>
+                </button>
 
+                <div class="collapsible-body" data-collapsible-body="admin-public-registration">
                 <div class="public-registration-admin-card">
                   <label class="full-width">
                     <span>Enlace de inscripcion</span>
@@ -1243,14 +1307,25 @@
                     El cliente llena sus datos y el registro entra directo a tu empresa autenticada.
                   </p>
                 </div>
+                </div>
               </section>
 
-              <section class="panel catalog-panel">
-                <div class="panel-header">
-                  <h2>Configuracion de WhatsApp</h2>
-                  <p>Conecta Twilio por empresa y decide si las compras deben notificar automaticamente.</p>
-                </div>
+              <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-whatsapp-settings">
+                <button
+                  class="panel-header collapsible-toggle"
+                  type="button"
+                  data-collapsible-target="admin-whatsapp-settings"
+                  data-default-open="false"
+                  aria-expanded="false"
+                >
+                  <div>
+                    <h2>Configuracion de WhatsApp</h2>
+                    <p>Conecta Twilio por empresa y decide si las compras deben notificar automaticamente.</p>
+                  </div>
+                  <span class="collapsible-indicator" aria-hidden="true"></span>
+                </button>
 
+                <div class="collapsible-body" data-collapsible-body="admin-whatsapp-settings">
                 <form id="whatsapp-settings-form" class="catalog-form">
                   <div class="field-grid">
                     <label>
@@ -1298,14 +1373,25 @@
                     <button type="submit" class="primary">Guardar configuracion</button>
                   </div>
                 </form>
+                </div>
               </section>
 
-              <section class="panel catalog-panel">
-                <div class="panel-header">
-                  <h2>Plantillas de WhatsApp</h2>
-                  <p>Define el texto por disparador y, si aplica, enlaza un Content SID aprobado por Meta.</p>
-                </div>
+              <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-whatsapp-templates">
+                <button
+                  class="panel-header collapsible-toggle"
+                  type="button"
+                  data-collapsible-target="admin-whatsapp-templates"
+                  data-default-open="false"
+                  aria-expanded="false"
+                >
+                  <div>
+                    <h2>Plantillas de WhatsApp</h2>
+                    <p>Define el texto por disparador y, si aplica, enlaza un Content SID aprobado por Meta.</p>
+                  </div>
+                  <span class="collapsible-indicator" aria-hidden="true"></span>
+                </button>
 
+                <div class="collapsible-body" data-collapsible-body="admin-whatsapp-templates">
                 <form id="whatsapp-template-form" class="catalog-form">
                   <div class="field-grid">
                     <label>
@@ -1362,6 +1448,7 @@
 
                 <div id="whatsapp-templates-list" class="catalog-empty">
                   <p>Aun no hay plantillas de WhatsApp cargadas.</p>
+                </div>
                 </div>
               </section>
             </section>

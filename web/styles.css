@@ -766,6 +766,89 @@ body.menu-open {
   line-height: 1.45;
 }
 
+.panel-header-stackable {
+  align-items: flex-start;
+}
+
+.view-toggle-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(219, 202, 188, 0.26);
+  border: 1px solid rgba(18, 17, 17, 0.08);
+}
+
+.view-toggle-button {
+  min-width: 90px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid transparent;
+  font-weight: 700;
+}
+
+.view-toggle-button.is-active {
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  border-color: rgba(18, 17, 17, 0.1);
+  box-shadow: 0 10px 24px rgba(18, 17, 17, 0.08);
+}
+
+.collapsible-toggle {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  align-items: center;
+}
+
+.collapsible-toggle > div {
+  min-width: 0;
+}
+
+.collapsible-indicator {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: var(--ink-soft);
+  transition: transform 180ms ease;
+}
+
+.collapsible-indicator::before,
+.collapsible-indicator::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transform-origin: center;
+}
+
+.collapsible-indicator::before {
+  transform: translate(-70%, -50%) rotate(45deg);
+}
+
+.collapsible-indicator::after {
+  transform: translate(-30%, -50%) rotate(-45deg);
+}
+
+.admin-collapsible.is-collapsed .collapsible-indicator {
+  transform: rotate(-90deg);
+}
+
+.collapsible-body[hidden] {
+  display: none !important;
+}
+
 .quote-form {
   display: flex;
   flex-direction: column;
@@ -1196,6 +1279,70 @@ button:disabled {
   margin: 12px 0 0;
   color: var(--ink-soft);
   line-height: 1.45;
+}
+
+.catalog-list-rows {
+  gap: 10px;
+}
+
+.catalog-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.9fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.catalog-row.is-inactive {
+  opacity: 0.78;
+  background: rgba(245, 239, 232, 0.92);
+}
+
+.catalog-row-primary {
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  color: inherit;
+}
+
+.catalog-row-primary strong {
+  display: block;
+  font-family: "Didot", "Bodoni MT", "Times New Roman", serif;
+  font-size: 1.18rem;
+}
+
+.catalog-row-primary span {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-soft);
+}
+
+.catalog-row-details {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.catalog-row-details span {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(219, 202, 188, 0.34);
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+.catalog-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .detail-list-card {
@@ -1842,6 +1989,16 @@ button:disabled {
   .metrics-grid,
   .catalog-picker-row {
     grid-template-columns: 1fr;
+  }
+
+  .catalog-row {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+
+  .catalog-row-actions,
+  .view-toggle-group {
+    width: 100%;
   }
 
   .expense-row {
