@@ -1,9 +1,38 @@
-const publicRegisterForm = document.getElementById("public-register-form");
 const publicRegisterStatus = document.getElementById("public-register-status");
 const publicRegisterSubmit = document.getElementById("public-register-submit");
 const publicCompanyLogo = document.querySelector("[data-public-company-logo]");
 const publicCompanyBrand = document.querySelector("[data-public-company-brand]");
 const publicCompanyTagline = document.querySelector("[data-public-company-tagline]");
+const publicRegisterForm = document.getElementById("public-register-form");
+
+function ensureIdentificationField() {
+  if (!publicRegisterForm) {
+    return;
+  }
+
+  if (publicRegisterForm.elements.namedItem("identification")) {
+    return;
+  }
+
+  const fieldGrid = publicRegisterForm.querySelector(".field-grid");
+  const nameField = publicRegisterForm.elements.namedItem("name")?.closest("label");
+  if (!fieldGrid || !nameField) {
+    return;
+  }
+
+  const wrapper = document.createElement("label");
+  wrapper.innerHTML = `
+    <span>Identificación</span>
+    <input
+      name="identification"
+      type="text"
+      placeholder="Tu número de identificación"
+      autocomplete="off"
+      required
+    />
+  `;
+  nameField.insertAdjacentElement("afterend", wrapper);
+}
 
 function getCompanySlugFromPath() {
   const parts = window.location.pathname.split("/").filter(Boolean);
@@ -45,6 +74,7 @@ function readClientPayload() {
   const data = new FormData(publicRegisterForm);
   return {
     name: String(data.get("name") || "").trim(),
+    identification: String(data.get("identification") || "").trim(),
     phone: String(data.get("phone") || "").trim(),
     whatsapp_phone: String(data.get("whatsapp_phone") || "").trim(),
     email: String(data.get("email") || "").trim(),
@@ -110,6 +140,8 @@ publicRegisterForm.addEventListener("submit", async (event) => {
     publicRegisterSubmit.disabled = false;
   }
 });
+
+ensureIdentificationField();
 
 loadCompany().catch((error) => {
   publicRegisterStatus.textContent = error.message;

@@ -65,6 +65,8 @@ const productCategoryOptions = document.getElementById("product-categories-optio
 const productStoreOptions = document.getElementById("product-stores-options");
 const productCategoryInput = document.getElementById("product-category-input");
 const productStoreInput = document.getElementById("product-store-input");
+const productImageFileInput = document.getElementById("product-image-file");
+const productImagePreview = document.getElementById("product-image-preview");
 const pendingForm = document.getElementById("pending-form");
 const pendingClientSelect = document.getElementById("pending-client-select");
 const pendingCategoryInput = document.getElementById("pending-category-input");
@@ -121,6 +123,10 @@ const state = {
   menuOpen: false,
   clientDetail: null,
   productDetail: null,
+  clientInlineDetail: null,
+  clientInlineDetailId: null,
+  productInlineDetail: null,
+  productInlineDetailId: null,
   pendingQuoteSeedId: null,
   quoteCalculationTimer: 0,
   quoteCalculationRequestId: 0,
@@ -329,6 +335,9 @@ function clientSearchLabel(client) {
     return "";
   }
   const parts = [client.name];
+  if (client.identification) {
+    parts.push(client.identification);
+  }
   if (client.phone) {
     parts.push(client.phone);
   }
@@ -1277,6 +1286,14 @@ function syncCollapsiblePanels() {
   });
 }
 
+function openCollapsiblePanel(panelKey) {
+  if (!panelKey) {
+    return;
+  }
+  state.collapsiblePanels[panelKey] = true;
+  applyCollapsiblePanel(panelKey);
+}
+
 function toNumberOrNull(value) {
   if (value === "" || value === null || value === undefined) {
     return null;
@@ -1386,6 +1403,7 @@ function readClientPayload() {
   const data = new FormData(clientForm);
   return {
     name: String(data.get("name") || "").trim(),
+    identification: String(data.get("identification") || "").trim(),
     description: String(data.get("description") || "").trim(),
     phone: String(data.get("phone") || "").trim(),
     email: String(data.get("email") || "").trim(),
@@ -1405,6 +1423,7 @@ function readProductPayload() {
   const data = new FormData(productForm);
   return {
     name: String(data.get("name") || "").trim(),
+    image_data_url: String(data.get("image_data_url") || "").trim(),
     description: String(data.get("description") || "").trim(),
     reference: String(data.get("reference") || "").trim(),
     category: String(data.get("category") || "").trim(),
@@ -1424,6 +1443,48 @@ function readNamedCatalogPayload(form) {
     name: String(data.get("name") || "").trim(),
     description: String(data.get("description") || "").trim(),
   };
+}
+
+function renderImagePreview(container, imageDataUrl, emptyMessage) {
+  if (!container) {
+    return;
+  }
+
+  const normalized = String(imageDataUrl || "").trim();
+  if (!normalized) {
+    container.className = "image-preview-card image-preview-card-empty";
+    container.innerHTML = `<p>${escapeHtml(emptyMessage)}</p>`;
+    return;
+  }
+
+  container.className = "image-preview-card";
+  container.innerHTML = `
+    <img src="${normalized}" alt="Vista previa" />
+    <button type="button" class="secondary image-preview-clear" data-clear-image-preview>
+      Quitar imagen
+    </button>
+  `;
+}
+
+function setProductImageDataUrl(imageDataUrl) {
+  if (!productForm) {
+    return;
+  }
+  productForm.elements.namedItem("image_data_url").value = String(imageDataUrl || "").trim();
+  renderImagePreview(
+    productImagePreview,
+    imageDataUrl,
+    "Aun no has cargado imagen para este producto."
+  );
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("No fue posible leer la imagen seleccionada."));
+    reader.readAsDataURL(file);
+  });
 }
 
 function resetClientForm() {
@@ -1448,6 +1509,7 @@ function startClientEdit(client) {
   state.editingClientId = Number(client.id);
   clientForm.elements.namedItem("id").value = String(client.id || "");
   clientForm.elements.namedItem("name").value = client.name || "";
+  clientForm.elements.namedItem("identification").value = client.identification || "";
   clientForm.elements.namedItem("description").value = client.description || "";
   clientForm.elements.namedItem("phone").value = client.phone || "";
   clientForm.elements.namedItem("email").value = client.email || "";
@@ -1479,6 +1541,10 @@ function resetProductForm() {
   productForm.elements.namedItem("tax_usa_percent").value = 0;
   productForm.elements.namedItem("locker_shipping_usd").value = 0;
   productForm.elements.namedItem("initial_stock_quantity").value = 0;
+  setProductImageDataUrl("");
+  if (productImageFileInput) {
+    productImageFileInput.value = "";
+  }
   state.editingProductId = null;
   if (productSubmitButton) {
     productSubmitButton.textContent = "Guardar producto";
@@ -1495,6 +1561,7 @@ function startProductEdit(product) {
   state.editingProductId = Number(product.id);
   productForm.elements.namedItem("id").value = String(product.id || "");
   productForm.elements.namedItem("name").value = product.name || "";
+  setProductImageDataUrl(product.image_data_url || "");
   productForm.elements.namedItem("description").value = product.description || "";
   productForm.elements.namedItem("reference").value = product.reference || "";
   productForm.elements.namedItem("category").value = product.category || "";
@@ -1505,6 +1572,9 @@ function startProductEdit(product) {
   productForm.elements.namedItem("inventory_enabled").checked = Boolean(product.inventory_enabled);
   productForm.elements.namedItem("initial_stock_quantity").value = 0;
   productForm.elements.namedItem("notes").value = product.notes || "";
+  if (productImageFileInput) {
+    productImageFileInput.value = "";
+  }
   if (productSubmitButton) {
     productSubmitButton.textContent = "Guardar cambios";
   }
@@ -1898,6 +1968,356 @@ function makeMetricCard(title, value, detail) {
       <strong>${value}</strong>
       <small>${detail}</small>
     </article>
+  `;
+}
+
+function buildClientDetailMarkup(detail) {
+  if (!detail) {
+    return "";
+  }
+
+  const client = detail.client || {};
+  const summary = detail.summary || {};
+  const topProducts = detail.top_products || [];
+  const recentQuotes = detail.recent_quotes || [];
+  const recentOrders = detail.recent_orders || [];
+
+  return `
+    <section class="client-detail-hero">
+      <div>
+        <p class="eyebrow">Ficha comercial</p>
+        <h3>${escapeHtml(client.name || "Cliente sin nombre")}</h3>
+        <p class="client-detail-copy">
+          ${escapeHtml(client.city || "Ciudad no registrada")}
+          ${client.neighborhood ? ` · ${escapeHtml(client.neighborhood)}` : ""}
+          ${client.address ? ` · ${escapeHtml(client.address)}` : ""}
+        </p>
+        ${
+          client.identification
+            ? `<p class="catalog-card-note"><strong>Identificacion:</strong> ${escapeHtml(client.identification)}</p>`
+            : ""
+        }
+      </div>
+      <div class="client-detail-actions">
+        <button class="primary" type="button" data-use-client-detail="${client.id}">Usar en cotizacion</button>
+      </div>
+    </section>
+
+    ${
+      product.image_data_url
+        ? `
+          <section class="detail-panel product-image-panel">
+            <h3>Imagen del producto</h3>
+            <div class="detail-image-card">
+              <img src="${product.image_data_url}" alt="${escapeHtml(productLabel(product))}" />
+            </div>
+          </section>
+        `
+        : ""
+    }
+
+    <div class="metrics-grid client-detail-metrics">
+      ${makeMetricCard("Cotizaciones", String(summary.quotes_count || 0), "Interacciones comerciales registradas")}
+      ${makeMetricCard("Compras", String(summary.orders_count || 0), "Compras confirmadas por este cliente")}
+      ${makeMetricCard("Vendido", formatCop(summary.sales_total_cop), "Valor total vendido a este cliente")}
+      ${makeMetricCard("Recaudado", formatCop(summary.cash_in_total_cop), "Anticipos y pagos recibidos")}
+      ${makeMetricCard("Cartera", formatCop(summary.accounts_receivable_cop), "Compras notificadas y pendientes de segundo pago")}
+      ${makeMetricCard("Utilidad", formatCop(summary.gross_profit_cop), "Ganancia bruta generada")}
+      ${makeMetricCard("Ticket promedio", formatCop(summary.average_ticket_cop), "Promedio por compra cerrada")}
+      ${makeMetricCard("Conversion", formatPercent(summary.conversion_rate_percent), "Compras frente a cotizaciones")}
+      ${makeMetricCard(
+        "Inventario",
+        String(summary.current_stock || 0),
+        summary.inventory_enabled ? "Unidades disponibles hoy en tienda" : "Producto sin stock inmediato"
+      )}
+    </div>
+
+    <div class="detail-grid client-detail-grid">
+      <section class="detail-panel">
+        <h3>Datos del cliente</h3>
+        ${makeDetailList(
+          [
+            ["Identificacion", client.identification || "No registrada"],
+            ["Telefono", client.phone || "No registrado"],
+            ["Email", client.email || "No registrado"],
+            ["Canal preferido", client.preferred_contact_channel || "No definido"],
+            ["Pago preferido", client.preferred_payment_method || "No definido"],
+            ["Ultima cotizacion", formatStoredDate(summary.last_quote_at)],
+            ["Ultima compra", formatStoredDate(summary.last_order_at)],
+          ],
+          (value) => escapeHtml(value)
+        )}
+        ${
+          client.interests
+            ? `<p class="catalog-card-note"><strong>Intereses:</strong> ${escapeHtml(client.interests)}</p>`
+            : ""
+        }
+        ${client.notes ? `<p class="catalog-card-note">${escapeHtml(client.notes)}</p>` : ""}
+      </section>
+
+      <section class="detail-panel">
+        <h3>Productos mas movidos</h3>
+        ${
+          topProducts.length
+            ? topProducts
+                .map(
+                  (item) => `
+                    <article class="detail-list-card">
+                      <div>
+                        <strong>${escapeHtml(item.product_name)}</strong>
+                        <p>${item.orders_count} compra(s) · ${item.quotes_count} cotizacion(es)</p>
+                      </div>
+                      <span>${formatCop(item.sales_total_cop || item.quoted_sales_total_cop)}</span>
+                    </article>
+                  `
+                )
+                .join("")
+            : '<p class="catalog-card-note">Todavia no hay suficiente historial de productos para este cliente.</p>'
+        }
+      </section>
+
+      <section class="detail-panel">
+        <h3>Ultimas cotizaciones</h3>
+        ${
+          recentQuotes.length
+            ? recentQuotes
+                .map(
+                  (item) => `
+                    <article class="detail-list-card">
+                      <div>
+                        <strong>${escapeHtml(item.product_name || "Producto sin nombre")}</strong>
+                        <p>${escapeHtml(formatStoredDate(item.created_at))} · ${item.has_order ? "Convertida en compra" : "Pendiente"}</p>
+                      </div>
+                      <span>${formatCop(item.sale_price_cop)}</span>
+                    </article>
+                  `
+                )
+                .join("")
+            : '<p class="catalog-card-note">Aun no hay cotizaciones registradas para este cliente.</p>'
+        }
+      </section>
+
+      <section class="detail-panel">
+        <h3>Ultimas compras</h3>
+        ${
+          recentOrders.length
+            ? recentOrders
+                .map(
+                  (item) => `
+                    <article class="detail-list-card">
+                      <div>
+                        <strong>${escapeHtml(item.product_name || "Producto sin nombre")}</strong>
+                        <p>${escapeHtml(item.status_label || "Sin estado")} · ${escapeHtml(
+                          formatStoredDate(item.last_status_changed_at || item.created_at)
+                        )}</p>
+                      </div>
+                      <span>${formatCop(item.sale_price_cop)}</span>
+                      <small>Pendiente: ${formatCop(item.balance_due_cop)}</small>
+                    </article>
+                  `
+                )
+                .join("")
+            : '<p class="catalog-card-note">Aun no hay compras registradas para este cliente.</p>'
+        }
+      </section>
+    </div>
+  `;
+}
+
+function buildProductDetailMarkup(detail) {
+  if (!detail) {
+    return "";
+  }
+
+  const product = detail.product || {};
+  const summary = detail.summary || {};
+  const topClients = detail.top_clients || [];
+  const recentQuotes = detail.recent_quotes || [];
+  const recentOrders = detail.recent_orders || [];
+  const inventoryMovements = detail.inventory_movements || [];
+  const currentStock = Number(product.current_stock || 0);
+
+  return `
+    <section class="client-detail-hero">
+      <div>
+        <p class="eyebrow">Ficha de producto</p>
+        <h3>${escapeHtml(productLabel(product))}</h3>
+        <p class="client-detail-copy">
+          ${escapeHtml(product.category || "Categoria no registrada")}
+          · ${escapeHtml(product.store || "Tienda no registrada")}
+          · ${formatUsd(product.price_usd_net)} base
+          · ${product.tax_usa_percent || 0}% tax
+        </p>
+      </div>
+      <div class="client-detail-actions">
+        <button class="primary" type="button" data-use-product-detail="${product.id}">Usar en cotizacion</button>
+      </div>
+    </section>
+
+    <div class="metrics-grid client-detail-metrics">
+      ${makeMetricCard("Cotizaciones", String(summary.quotes_count || 0), "Veces que este producto fue cotizado")}
+      ${makeMetricCard("Compras", String(summary.orders_count || 0), "Compras confirmadas con este producto")}
+      ${makeMetricCard("Vendido", formatCop(summary.sales_total_cop), "Valor vendido de esta referencia")}
+      ${makeMetricCard("Recaudado", formatCop(summary.cash_in_total_cop), "Anticipos y pagos recibidos")}
+      ${makeMetricCard("Cartera", formatCop(summary.accounts_receivable_cop), "Compras notificadas y pendientes de segundo pago")}
+      ${makeMetricCard("Utilidad", formatCop(summary.gross_profit_cop), "Ganancia bruta que ha generado")}
+      ${makeMetricCard("Venta promedio", formatCop(summary.average_sale_price_cop), "Promedio por compra cerrada")}
+      ${makeMetricCard("Conversion", formatPercent(summary.conversion_rate_percent), "Compras frente a cotizaciones")}
+      ${makeMetricCard(
+        "Inventario",
+        String(summary.current_stock || 0),
+        summary.inventory_enabled ? "Unidades disponibles hoy en tienda" : "Producto sin stock inmediato"
+      )}
+    </div>
+
+    <div class="detail-grid client-detail-grid">
+      <section class="detail-panel">
+        <h3>Ficha base</h3>
+        ${makeDetailList(
+          [
+            ["Referencia", product.reference || "No registrada"],
+            ["Categoria", product.category || "No registrada"],
+            ["Tienda", product.store || "No registrada"],
+            [
+              "Inventario tienda",
+              product.inventory_enabled
+                ? `${currentStock} unidad${currentStock === 1 ? "" : "es"}`
+                : "No activo",
+            ],
+            ["Costo promedio inventario", formatCop(product.inventory_unit_cost_cop)],
+            ["Valor actual del stock", formatCop(product.current_stock_value_cop)],
+            ["Envio casillero", formatUsd(product.locker_shipping_usd)],
+            ["Ultima cotizacion", formatStoredDate(summary.last_quote_at)],
+            ["Ultima compra", formatStoredDate(summary.last_order_at)],
+          ],
+          (value) => escapeHtml(value)
+        )}
+        ${product.notes ? `<p class="catalog-card-note">${escapeHtml(product.notes)}</p>` : ""}
+      </section>
+
+      <section class="detail-panel">
+        <h3>Clientes que mas lo compran</h3>
+        ${
+          topClients.length
+            ? topClients
+                .map(
+                  (item) => `
+                    <article class="detail-list-card">
+                      <div>
+                        <strong>${escapeHtml(item.client_name)}</strong>
+                        <p>${item.orders_count} compra(s) · ${item.quotes_count} cotizacion(es)</p>
+                      </div>
+                      <span>${formatCop(item.sales_total_cop || item.quoted_sales_total_cop)}</span>
+                      <small>Por cobrar: ${formatCop(item.accounts_receivable_cop)}</small>
+                    </article>
+                  `
+                )
+                .join("")
+            : '<p class="catalog-card-note">Todavia no hay suficiente historial de clientes para este producto.</p>'
+        }
+      </section>
+
+      <section class="detail-panel">
+        <h3>Ultimas cotizaciones</h3>
+        ${
+          recentQuotes.length
+            ? recentQuotes
+                .map(
+                  (item) => `
+                    <article class="detail-list-card">
+                      <div>
+                        <strong>${escapeHtml(item.client_name || "Cliente sin nombre")}</strong>
+                        <p>${escapeHtml(formatStoredDate(item.created_at))} · ${item.has_order ? "Convertida en compra" : "Pendiente"}</p>
+                      </div>
+                      <span>${formatCop(item.sale_price_cop)}</span>
+                    </article>
+                  `
+                )
+                .join("")
+            : '<p class="catalog-card-note">Aun no hay cotizaciones registradas para este producto.</p>'
+        }
+      </section>
+
+      <section class="detail-panel">
+        <h3>Ultimas compras</h3>
+        ${
+          recentOrders.length
+            ? recentOrders
+                .map(
+                  (item) => `
+                    <article class="detail-list-card">
+                      <div>
+                        <strong>${escapeHtml(item.client_name || "Cliente sin nombre")}</strong>
+                        <p>${escapeHtml(item.status_label || "Sin estado")} · ${escapeHtml(
+                          formatStoredDate(item.last_status_changed_at || item.created_at)
+                        )}</p>
+                      </div>
+                      <span>${formatCop(item.sale_price_cop)}</span>
+                      <small>Pendiente: ${formatCop(item.balance_due_cop)}</small>
+                    </article>
+                  `
+                )
+                .join("")
+            : '<p class="catalog-card-note">Aun no hay compras registradas para este producto.</p>'
+        }
+      </section>
+
+      <section class="detail-panel">
+        <h3>Inventario de tienda</h3>
+        <form class="catalog-form" data-product-inventory-form="${product.id}">
+          <div class="field-grid">
+            <label>
+              <span>Movimiento</span>
+              <select name="movement_type">
+                <option value="stock_in">Entrada</option>
+                <option value="stock_out">Salida manual</option>
+                <option value="set_stock">Ajustar stock final</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Cantidad</span>
+              <input name="quantity" type="number" min="0" step="1" value="1" required />
+            </label>
+          </div>
+
+          <label class="full-width">
+            <span>Nota del movimiento</span>
+            <input
+              name="note"
+              type="text"
+              placeholder="Ej. Compra para tienda, ajuste por conteo, salida por vitrina"
+            />
+          </label>
+
+          <div class="actions">
+            <button type="submit" class="secondary">Registrar movimiento</button>
+          </div>
+        </form>
+
+        ${
+          inventoryMovements.length
+            ? inventoryMovements
+                .map(
+                  (item) => `
+                    <article class="detail-list-card">
+                      <div>
+                        <strong>${escapeHtml(item.movement_label)}</strong>
+                        <p>${escapeHtml(formatStoredDate(item.created_at))}</p>
+                      </div>
+                      <span>${item.quantity_delta > 0 ? "+" : ""}${Number(item.quantity_delta || 0)}</span>
+                      <small>
+                        Stock despues: ${Number(item.quantity_after || 0)}
+                        ${item.note ? ` | ${escapeHtml(item.note)}` : ""}
+                      </small>
+                    </article>
+                  `
+                )
+                .join("")
+            : '<p class="catalog-card-note">Aun no hay movimientos de inventario para este producto.</p>'
+        }
+      </section>
+    </div>
   `;
 }
 
@@ -2831,6 +3251,8 @@ async function loadClientDetail(clientId, options = {}) {
     state.clientDetail = payload.item || null;
     renderClientDetail(state.clientDetail);
     if (shouldScroll && clientDetailSection) {
+      window.location.hash = "administracion";
+      openCollapsiblePanel("admin-clients");
       clientDetailSection.scrollIntoView({ block: "start", behavior: "smooth" });
     }
   } catch (error) {
@@ -3272,6 +3694,8 @@ async function loadProductDetail(productId, options = {}) {
     state.productDetail = payload.item || null;
     renderProductDetail(state.productDetail);
     if (shouldScroll && productDetailSection) {
+      window.location.hash = "administracion";
+      openCollapsiblePanel("admin-products");
       productDetailSection.scrollIntoView({ block: "start", behavior: "smooth" });
     }
   } catch (error) {
@@ -3288,6 +3712,366 @@ async function refreshActiveProductDetail() {
   }
 
   await loadProductDetail(activeProductId, { shouldScroll: false });
+}
+
+function renderClientDetail(detail) {
+  if (!clientDetailContainer) {
+    return;
+  }
+
+  if (clientDetailClearButton) {
+    clientDetailClearButton.disabled = !detail;
+  }
+
+  if (!detail) {
+    clientDetailContainer.className = "catalog-empty";
+    clientDetailContainer.innerHTML =
+      "<p>Selecciona un cliente desde el listado o el dashboard para abrir su ficha comercial.</p>";
+    return;
+  }
+
+  const client = detail.client || {};
+  clientDetailContainer.className = "client-detail-layout";
+  clientDetailContainer.innerHTML = buildClientDetailMarkup(detail);
+  const useButton = clientDetailContainer.querySelector("[data-use-client-detail]");
+  if (useButton && !client.is_active) {
+    useButton.disabled = true;
+    useButton.textContent = "Cliente inactivo";
+  }
+}
+
+function renderProductDetail(detail) {
+  if (!productDetailContainer) {
+    return;
+  }
+
+  if (productDetailClearButton) {
+    productDetailClearButton.disabled = !detail;
+  }
+
+  if (!detail) {
+    productDetailContainer.className = "catalog-empty";
+    productDetailContainer.innerHTML =
+      "<p>Selecciona un producto desde el catalogo o el dashboard para abrir su ficha comercial.</p>";
+    return;
+  }
+
+  const product = detail.product || {};
+  productDetailContainer.className = "client-detail-layout";
+  productDetailContainer.innerHTML = buildProductDetailMarkup(detail);
+  const useButton = productDetailContainer.querySelector("[data-use-product-detail]");
+  if (useButton && !product.is_active) {
+    useButton.disabled = true;
+    useButton.textContent = "Producto inactivo";
+  }
+}
+
+function buildInlineClientDetailShell(detail) {
+  if (!detail) {
+    return "";
+  }
+
+  const client = detail.client || {};
+  return `
+    <section class="catalog-inline-detail-shell">
+      <div class="catalog-inline-detail-header">
+        <strong>Ficha del cliente</strong>
+        <button
+          class="history-action-button history-action-button-secondary history-action-button-icon"
+          type="button"
+          data-close-inline-client-detail="${client.id}"
+          title="Cerrar ficha"
+          aria-label="Cerrar ficha"
+        >
+          ${renderActionIcon("close")}
+        </button>
+      </div>
+      <div class="client-detail-layout">
+        ${buildClientDetailMarkup(detail)}
+      </div>
+    </section>
+  `;
+}
+
+function buildInlineProductDetailShell(detail) {
+  if (!detail) {
+    return "";
+  }
+
+  const product = detail.product || {};
+  return `
+    <section class="catalog-inline-detail-shell">
+      <div class="catalog-inline-detail-header">
+        <strong>Ficha del producto</strong>
+        <button
+          class="history-action-button history-action-button-secondary history-action-button-icon"
+          type="button"
+          data-close-inline-product-detail="${product.id}"
+          title="Cerrar ficha"
+          aria-label="Cerrar ficha"
+        >
+          ${renderActionIcon("close")}
+        </button>
+      </div>
+      <div class="client-detail-layout">
+        ${buildProductDetailMarkup(detail)}
+      </div>
+    </section>
+  `;
+}
+
+async function toggleClientInlineDetail(clientId) {
+  const normalizedId = String(clientId || "").trim();
+  if (!normalizedId) {
+    return;
+  }
+
+  if (String(state.clientInlineDetailId || "") === normalizedId) {
+    state.clientInlineDetailId = null;
+    state.clientInlineDetail = null;
+    renderClientsManaged(state.clients);
+    return;
+  }
+
+  try {
+    const payload = await requestJson(`/api/clients/${encodeURIComponent(normalizedId)}`);
+    state.clientInlineDetailId = normalizedId;
+    state.clientInlineDetail = payload.item || null;
+    renderClientsManaged(state.clients);
+  } catch (error) {
+    statusMessage.textContent = error.message;
+  }
+}
+
+async function toggleProductInlineDetail(productId) {
+  const normalizedId = String(productId || "").trim();
+  if (!normalizedId) {
+    return;
+  }
+
+  if (String(state.productInlineDetailId || "") === normalizedId) {
+    state.productInlineDetailId = null;
+    state.productInlineDetail = null;
+    renderProductsManaged(state.products);
+    return;
+  }
+
+  try {
+    const payload = await requestJson(`/api/products/${encodeURIComponent(normalizedId)}`);
+    state.productInlineDetailId = normalizedId;
+    state.productInlineDetail = payload.item || null;
+    renderProductsManaged(state.products);
+  } catch (error) {
+    statusMessage.textContent = error.message;
+  }
+}
+
+function renderClientsCompact(items) {
+  clientsListContainer.className = "catalog-list catalog-list-rows";
+  clientsListContainer.innerHTML = items
+    .map((client) => {
+      const isExpanded = String(state.clientInlineDetailId || "") === String(client.id);
+      return `
+        <div class="catalog-row-group ${isExpanded ? "is-expanded" : ""}">
+          <article class="catalog-row ${client.is_active ? "" : "is-inactive"}">
+            <button class="catalog-row-primary" type="button" data-view-client="${client.id}">
+              <strong>${escapeHtml(client.name)}</strong>
+              <span>${escapeHtml(client.identification || client.city || "Sin identificación")}</span>
+            </button>
+            <div class="catalog-row-details">
+              <span>${escapeHtml(client.phone || "Sin telefono")}</span>
+              ${client.city ? `<span>${escapeHtml(client.city)}</span>` : ""}
+              ${
+                client.whatsapp_phone_masked
+                  ? `<span>WhatsApp: ${escapeHtml(client.whatsapp_phone_masked)}</span>`
+                  : `<span>${escapeHtml(client.email || "Sin email")}</span>`
+              }
+              <span class="catalog-chip ${client.is_active ? "catalog-chip-success" : "catalog-chip-muted"}">
+                ${client.is_active ? "Activo" : "Inactivo"}
+              </span>
+            </div>
+            <div class="catalog-row-actions">
+              <button
+                class="history-action-button history-action-button-secondary history-action-button-icon"
+                type="button"
+                data-edit-client="${client.id}"
+                title="Editar cliente"
+                aria-label="Editar cliente"
+              >
+                ${renderActionIcon("edit")}
+              </button>
+              <button
+                class="history-action-button history-action-button-secondary"
+                type="button"
+                data-use-client="${client.id}"
+                ${client.is_active ? "" : "disabled"}
+              >
+                Usar
+              </button>
+              <button
+                class="history-action-button ${client.is_active ? "history-action-button-secondary" : ""} history-action-button-icon"
+                type="button"
+                data-toggle-client-active="${client.id}"
+                data-next-active="${client.is_active ? "0" : "1"}"
+                title="${client.is_active ? "Inactivar cliente" : "Reactivar cliente"}"
+                aria-label="${client.is_active ? "Inactivar cliente" : "Reactivar cliente"}"
+              >
+                ${renderActionIcon(client.is_active ? "deactivate" : "activate")}
+              </button>
+            </div>
+          </article>
+          ${isExpanded ? buildInlineClientDetailShell(state.clientInlineDetail) : ""}
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderClientsCards(items) {
+  clientsListContainer.className = "catalog-list";
+  clientsListContainer.innerHTML = items
+    .map((client) => {
+      const isExpanded = String(state.clientInlineDetailId || "") === String(client.id);
+      return `
+        <div class="catalog-card-group ${isExpanded ? "is-expanded" : ""}">
+          <article class="catalog-card ${client.is_active ? "" : "is-inactive"}">
+            <div class="catalog-card-top">
+              <div>
+                <h3>${escapeHtml(client.name)}</h3>
+                <p>${escapeHtml(client.identification || client.city || "Sin identificación")}</p>
+              </div>
+              <div class="catalog-card-actions">
+                <span class="catalog-chip ${client.is_active ? "catalog-chip-success" : "catalog-chip-muted"}">
+                  ${client.is_active ? "Activo" : "Inactivo"}
+                </span>
+                <button class="history-action-button history-action-button-secondary" type="button" data-view-client="${client.id}">
+                  ${isExpanded ? "Ocultar ficha" : "Ver ficha"}
+                </button>
+                <button
+                  class="history-action-button history-action-button-secondary history-action-button-icon"
+                  type="button"
+                  data-edit-client="${client.id}"
+                  title="Editar cliente"
+                  aria-label="Editar cliente"
+                >
+                  ${renderActionIcon("edit")}
+                </button>
+                <button
+                  class="history-action-button history-action-button-secondary"
+                  type="button"
+                  data-use-client="${client.id}"
+                  ${client.is_active ? "" : "disabled"}
+                >
+                  Usar
+                </button>
+                <button
+                  class="history-action-button ${client.is_active ? "history-action-button-secondary" : ""} history-action-button-icon"
+                  type="button"
+                  data-toggle-client-active="${client.id}"
+                  data-next-active="${client.is_active ? "0" : "1"}"
+                  title="${client.is_active ? "Inactivar cliente" : "Reactivar cliente"}"
+                  aria-label="${client.is_active ? "Inactivar cliente" : "Reactivar cliente"}"
+                >
+                  ${renderActionIcon(client.is_active ? "deactivate" : "activate")}
+                </button>
+              </div>
+            </div>
+            <div class="catalog-card-meta">
+              <span>${escapeHtml(client.phone || "Sin telefono")}</span>
+              ${client.identification ? `<span>ID: ${escapeHtml(client.identification)}</span>` : ""}
+              <span>${escapeHtml(client.email || "Sin email")}</span>
+              ${client.whatsapp_phone_masked ? `<span>WhatsApp: ${escapeHtml(client.whatsapp_phone_masked)}</span>` : ""}
+              ${client.whatsapp_opt_in ? "<span>WhatsApp autorizado</span>" : ""}
+              ${client.preferred_contact_channel ? `<span>${escapeHtml(client.preferred_contact_channel)}</span>` : ""}
+              ${client.preferred_payment_method ? `<span>${escapeHtml(client.preferred_payment_method)}</span>` : ""}
+              ${client.neighborhood ? `<span>${escapeHtml(client.neighborhood)}</span>` : ""}
+            </div>
+            ${client.address ? `<p class="catalog-card-note"><strong>Direccion:</strong> ${escapeHtml(client.address)}</p>` : ""}
+            ${client.description ? `<p class="catalog-card-note"><strong>Descripcion:</strong> ${escapeHtml(client.description)}</p>` : ""}
+            ${client.interests ? `<p class="catalog-card-note"><strong>Intereses:</strong> ${escapeHtml(client.interests)}</p>` : ""}
+            ${client.notes ? `<p class="catalog-card-note">${escapeHtml(client.notes)}</p>` : ""}
+          </article>
+          ${isExpanded ? buildInlineClientDetailShell(state.clientInlineDetail) : ""}
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderProductsManaged(items) {
+  if (!items.length) {
+    productsListContainer.className = "catalog-empty";
+    productsListContainer.innerHTML = "<p>Aun no hay productos guardados.</p>";
+    return;
+  }
+
+  productsListContainer.className = "catalog-list";
+  productsListContainer.innerHTML = items
+    .map((product) => {
+      const isExpanded = String(state.productInlineDetailId || "") === String(product.id);
+      return `
+        <div class="catalog-card-group ${isExpanded ? "is-expanded" : ""}">
+          <article class="catalog-card ${product.is_active ? "" : "is-inactive"}">
+            ${product.image_data_url ? `<div class="catalog-card-image"><img src="${product.image_data_url}" alt="${escapeHtml(productLabel(product))}" /></div>` : ""}
+            <div class="catalog-card-top">
+              <div>
+                <h3>${escapeHtml(productLabel(product))}</h3>
+                <p>${formatUsd(product.price_usd_net)} base + ${product.tax_usa_percent}% tax</p>
+              </div>
+              <div class="catalog-card-actions">
+                <span class="catalog-chip ${product.is_active ? "catalog-chip-success" : "catalog-chip-muted"}">
+                  ${product.is_active ? "Activo" : "Inactivo"}
+                </span>
+                <button class="history-action-button history-action-button-secondary" type="button" data-view-product="${product.id}">
+                  ${isExpanded ? "Ocultar ficha" : "Ver ficha"}
+                </button>
+                <button
+                  class="history-action-button history-action-button-secondary history-action-button-icon"
+                  type="button"
+                  data-edit-product="${product.id}"
+                  title="Editar producto"
+                  aria-label="Editar producto"
+                >
+                  ${renderActionIcon("edit")}
+                </button>
+                <button
+                  class="history-action-button history-action-button-secondary"
+                  type="button"
+                  data-use-product="${product.id}"
+                  ${product.is_active ? "" : "disabled"}
+                >
+                  Usar
+                </button>
+                <button
+                  class="history-action-button ${product.is_active ? "history-action-button-secondary" : ""} history-action-button-icon"
+                  type="button"
+                  data-toggle-product-active="${product.id}"
+                  data-next-active="${product.is_active ? "0" : "1"}"
+                  title="${product.is_active ? "Inactivar producto" : "Reactivar producto"}"
+                  aria-label="${product.is_active ? "Inactivar producto" : "Reactivar producto"}"
+                >
+                  ${renderActionIcon(product.is_active ? "deactivate" : "activate")}
+                </button>
+              </div>
+            </div>
+            <div class="catalog-card-meta">
+              <span>${escapeHtml(product.category || "Sin categoria")}</span>
+              <span>${escapeHtml(product.store || "Sin tienda")}</span>
+              <span>Casillero: ${formatUsd(product.locker_shipping_usd)}</span>
+              <span>${
+                product.inventory_enabled
+                  ? `Inventario: ${Number(product.current_stock || 0)}`
+                  : "Sin inventario de tienda"
+              }</span>
+            </div>
+            ${product.description ? `<p class="catalog-card-note"><strong>Descripcion:</strong> ${escapeHtml(product.description)}</p>` : ""}
+            ${product.notes ? `<p class="catalog-card-note">${escapeHtml(product.notes)}</p>` : ""}
+          </article>
+          ${isExpanded ? buildInlineProductDetailShell(state.productInlineDetail) : ""}
+        </div>
+      `;
+    })
+    .join("");
 }
 
 function renderDashboard(summary) {
@@ -5218,14 +6002,20 @@ function renderActionIcon(kind) {
         <path d="M9.7 9.2c.2-.4.4-.4.6-.4h.5c.2 0 .4 0 .5.3l.7 1.7c.1.2.1.4 0 .6l-.4.6c-.1.1-.2.3 0 .5.3.6.8 1.2 1.4 1.6.2.1.4.1.5 0l.6-.4c.2-.1.4-.1.6 0l1.6.8c.3.1.3.3.3.5v.5c0 .2 0 .4-.4.6-.4.2-1.3.5-2.3.2-1-.3-2.2-1-3.2-2-.9-.9-1.6-2-1.9-3-.3-1 .1-1.9.3-2.2z"></path>
       </svg>
     `,
-    order: `
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M3 5h2l2.3 9.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.7L21 8H7"></path>
-        <circle cx="10" cy="19" r="1.5"></circle>
-        <circle cx="18" cy="19" r="1.5"></circle>
-      </svg>
-    `,
-  };
+      order: `
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M3 5h2l2.3 9.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.7L21 8H7"></path>
+          <circle cx="10" cy="19" r="1.5"></circle>
+          <circle cx="18" cy="19" r="1.5"></circle>
+        </svg>
+      `,
+      close: `
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M6 6l12 12"></path>
+          <path d="M18 6 6 18"></path>
+        </svg>
+      `,
+    };
   return icons[kind] || "";
 }
 
@@ -5396,6 +6186,25 @@ function renderOrderDetailPanel(order) {
             ? `<span>Ruta viaje: ${escapeHtml(order.travel_transport_label || "Por definir")}</span>`
             : ""
         }
+      </div>
+
+      <div class="order-payment-register">
+        <strong>Imagen de la compra</strong>
+        ${
+          order.image_data_url
+            ? `
+              <div class="detail-image-card detail-image-card-compact">
+                <img src="${order.image_data_url}" alt="Imagen de la compra ${escapeHtml(formatOrderCode(order.id))}" />
+              </div>
+            `
+            : '<p class="catalog-card-note">Aun no has cargado imagen para esta compra.</p>'
+        }
+        <div class="order-payment-fields order-image-fields">
+          <label>
+            <span>Subir imagen</span>
+            <input type="file" accept="image/*" data-order-image-input="${order.id}" />
+          </label>
+        </div>
       </div>
 
       ${
@@ -5635,12 +6444,21 @@ async function loadCatalog() {
       requestJson("/api/product-stores"),
     ]);
 
-    state.clients = clientsResponse.items || [];
-    state.products = productsResponse.items || [];
-    state.productCategories = categoriesResponse.items || [];
-    state.productStores = storesResponse.items || [];
+      state.clients = clientsResponse.items || [];
+      state.products = productsResponse.items || [];
+      state.productCategories = categoriesResponse.items || [];
+      state.productStores = storesResponse.items || [];
 
-    updateSearchableOptions(clientSelectOptions, getActiveClients(), clientSearchLabel);
+      if (!state.clients.some((item) => String(item.id) === String(state.clientInlineDetailId || ""))) {
+        state.clientInlineDetailId = null;
+        state.clientInlineDetail = null;
+      }
+      if (!state.products.some((item) => String(item.id) === String(state.productInlineDetailId || ""))) {
+        state.productInlineDetailId = null;
+        state.productInlineDetail = null;
+      }
+
+      updateSearchableOptions(clientSelectOptions, getActiveClients(), clientSearchLabel);
     updateSearchableOptions(productSelectOptions, getActiveProducts(), productSearchLabel);
     updateNameOptions(productCategoryOptions, getActiveProductCategories());
     updateNameOptions(productStoreOptions, getActiveProductStores());
@@ -6084,6 +6902,37 @@ if (productCancelButton) {
   productCancelButton.addEventListener("click", () => {
     resetProductForm();
     statusMessage.textContent = "Edicion de producto cancelada.";
+  });
+}
+
+if (productImageFileInput) {
+  productImageFileInput.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setProductImageDataUrl(dataUrl);
+      statusMessage.textContent = "Imagen del producto cargada en el formulario.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+      event.target.value = "";
+    }
+  });
+}
+
+if (productImagePreview) {
+  productImagePreview.addEventListener("click", (event) => {
+    const clearButton = event.target.closest("[data-clear-image-preview]");
+    if (!clearButton) {
+      return;
+    }
+    setProductImageDataUrl("");
+    if (productImageFileInput) {
+      productImageFileInput.value = "";
+    }
+    statusMessage.textContent = "Imagen del producto removida del formulario.";
   });
 }
 
@@ -6576,14 +7425,40 @@ historyContainer.addEventListener("click", async (event) => {
 });
 
 clientsListContainer.addEventListener("click", (event) => {
+  const closeButton = event.target.closest("[data-close-inline-client-detail]");
+  if (closeButton) {
+    state.clientInlineDetailId = null;
+    state.clientInlineDetail = null;
+    renderClientsManaged(state.clients);
+    return;
+  }
+
+  const useDetailButton = event.target.closest("[data-use-client-detail]");
+  if (useDetailButton) {
+    const clientId = useDetailButton.getAttribute("data-use-client-detail");
+    const client = state.clients.find((item) => String(item.id) === String(clientId));
+    if (!client) {
+      statusMessage.textContent = "No fue posible cargar este cliente en la cotizacion.";
+      return;
+    }
+    if (!client.is_active) {
+      statusMessage.textContent = "Este cliente esta inactivo y no puede usarse en nuevas cotizaciones.";
+      return;
+    }
+
+    applyClientToQuote(client);
+    statusMessage.textContent = "Cliente cargado desde su ficha comercial.";
+    window.location.hash = "cotizacion";
+    return;
+  }
+
   const viewButton = event.target.closest("[data-view-client]");
   if (viewButton) {
     const clientId = viewButton.getAttribute("data-view-client");
     if (!clientId) {
       return;
     }
-    window.location.hash = "comercial";
-    loadClientDetail(clientId);
+    void toggleClientInlineDetail(clientId);
     return;
   }
 
@@ -6596,7 +7471,8 @@ clientsListContainer.addEventListener("click", (event) => {
       return;
     }
     startClientEdit(client);
-    window.location.hash = "clientes";
+    window.location.hash = "administracion";
+    openCollapsiblePanel("admin-clients");
     statusMessage.textContent = `Editando cliente ${client.name}.`;
     return;
   }
@@ -6647,7 +7523,7 @@ if (dashboardClientsContainer) {
       return;
     }
 
-    window.location.hash = "comercial";
+    window.location.hash = "administracion";
     loadClientDetail(clientId);
   });
 }
@@ -6711,14 +7587,41 @@ if (pendingListContainer) {
 }
 
 productsListContainer.addEventListener("click", (event) => {
+  const closeButton = event.target.closest("[data-close-inline-product-detail]");
+  if (closeButton) {
+    state.productInlineDetailId = null;
+    state.productInlineDetail = null;
+    renderProductsManaged(state.products);
+    return;
+  }
+
+  const useDetailButton = event.target.closest("[data-use-product-detail]");
+  if (useDetailButton) {
+    const productId = useDetailButton.getAttribute("data-use-product-detail");
+    const product = state.products.find((item) => String(item.id) === String(productId));
+    if (!product) {
+      statusMessage.textContent = "No fue posible cargar este producto en la cotizacion.";
+      return;
+    }
+
+    if (!product.is_active) {
+      statusMessage.textContent = "Este producto esta inactivo y no puede usarse en nuevas cotizaciones.";
+      return;
+    }
+
+    applyProductToQuote(product);
+    statusMessage.textContent = "Producto cargado desde su ficha comercial.";
+    window.location.hash = "cotizacion";
+    return;
+  }
+
   const viewButton = event.target.closest("[data-view-product]");
   if (viewButton) {
     const productId = viewButton.getAttribute("data-view-product");
     if (!productId) {
       return;
     }
-    window.location.hash = "comercial";
-    loadProductDetail(productId);
+    void toggleProductInlineDetail(productId);
     return;
   }
 
@@ -6731,7 +7634,8 @@ productsListContainer.addEventListener("click", (event) => {
       return;
     }
     startProductEdit(product);
-    window.location.hash = "productos";
+    window.location.hash = "administracion";
+    openCollapsiblePanel("admin-products");
     statusMessage.textContent = `Editando producto ${product.name}.`;
     return;
   }
@@ -6774,6 +7678,40 @@ productsListContainer.addEventListener("click", (event) => {
 
     applyProductToQuote(product);
     statusMessage.textContent = "Producto cargado desde el catálogo.";
+  }
+});
+
+productsListContainer.addEventListener("submit", async (event) => {
+  const form = event.target.closest("[data-product-inventory-form]");
+  if (!form) {
+    return;
+  }
+
+  event.preventDefault();
+  const productId = form.getAttribute("data-product-inventory-form");
+  if (!productId) {
+    statusMessage.textContent = "No fue posible identificar el producto para el inventario.";
+    return;
+  }
+
+  const formData = new FormData(form);
+  try {
+    await requestJson(`/api/products/${encodeURIComponent(productId)}/inventory`, {
+      method: "POST",
+      body: JSON.stringify({
+        movement_type: String(formData.get("movement_type") || "").trim(),
+        quantity: Number(formData.get("quantity") || 0),
+        note: String(formData.get("note") || "").trim(),
+      }),
+    });
+    await loadCatalog();
+    const payload = await requestJson(`/api/products/${encodeURIComponent(productId)}`);
+    state.productInlineDetailId = String(productId);
+    state.productInlineDetail = payload.item || null;
+    renderProductsManaged(state.products);
+    statusMessage.textContent = "Movimiento de inventario registrado.";
+  } catch (error) {
+    statusMessage.textContent = error.message;
   }
 });
 
@@ -6871,7 +7809,7 @@ if (dashboardProductsContainer) {
       return;
     }
 
-    window.location.hash = "comercial";
+    window.location.hash = "administracion";
     loadProductDetail(productId);
   });
 }
@@ -7070,6 +8008,34 @@ ordersListContainer.addEventListener("click", async (event) => {
   } finally {
     triggerButton.disabled = false;
     triggerButton.textContent = originalText;
+  }
+});
+
+ordersListContainer.addEventListener("change", async (event) => {
+  const imageInput = event.target.closest("[data-order-image-input]");
+  if (!imageInput) {
+    return;
+  }
+
+  const orderId = imageInput.getAttribute("data-order-image-input");
+  const file = imageInput.files?.[0];
+  if (!orderId || !file) {
+    return;
+  }
+
+  try {
+    const imageDataUrl = await readFileAsDataUrl(file);
+    await requestJson(`/api/orders/${orderId}/image`, {
+      method: "POST",
+      body: JSON.stringify({ image_data_url: imageDataUrl }),
+    });
+    await Promise.all([loadOrders(), loadDashboard()]);
+    await refreshActiveClientDetail();
+    await refreshActiveProductDetail();
+    statusMessage.textContent = "Imagen de la compra actualizada.";
+  } catch (error) {
+    statusMessage.textContent = error.message;
+    imageInput.value = "";
   }
 });
 

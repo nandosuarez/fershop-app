@@ -31,6 +31,7 @@ def _to_int(value: Any, field_name: str, *, required: bool = True) -> int | None
 @dataclass(slots=True)
 class ClientInput:
     name: str
+    identification: str = ""
     description: str = ""
     phone: str = ""
     email: str = ""
@@ -52,6 +53,7 @@ class ClientInput:
 
         return cls(
             name=name,
+            identification=str(payload.get("identification", "")).strip(),
             description=str(payload.get("description", "")).strip(),
             phone=str(payload.get("phone", "")).strip(),
             email=str(payload.get("email", "")).strip(),
@@ -73,6 +75,7 @@ class ClientInput:
 @dataclass(slots=True)
 class ProductInput:
     name: str
+    image_data_url: str = ""
     description: str = ""
     reference: str = ""
     category: str = ""
@@ -92,6 +95,7 @@ class ProductInput:
 
         product = cls(
             name=name,
+            image_data_url=str(payload.get("image_data_url", "")).strip(),
             description=str(payload.get("description", "")).strip(),
             reference=str(payload.get("reference", "")).strip(),
             category=str(payload.get("category", "")).strip(),

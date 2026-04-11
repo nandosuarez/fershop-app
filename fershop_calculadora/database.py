@@ -135,6 +135,19 @@ def _normalize_catalog_name(value: Any) -> str:
     return " ".join(ascii_only.casefold().split())
 
 
+def _normalize_client_identification(value: Any) -> str:
+    return " ".join(str(value or "").strip().split())
+
+
+def _sanitize_image_data_url(value: Any) -> str:
+    image_data_url = str(value or "").strip()
+    if not image_data_url:
+        return ""
+    if not image_data_url.startswith("data:image/"):
+        raise ValueError("La imagen debe enviarse como una imagen valida.")
+    return image_data_url
+
+
 def _to_bool_flag(value: Any) -> int:
     if isinstance(value, str):
         return 1 if value.strip().lower() in {"1", "true", "yes", "si", "on"} else 0
@@ -1401,6 +1414,7 @@ def init_db(skip_defaults: bool = False) -> None:
                     created_at TEXT NOT NULL,
                     company_id INTEGER NOT NULL DEFAULT 1,
                     name TEXT NOT NULL,
+                    identification TEXT NOT NULL DEFAULT '',
                     description TEXT NOT NULL DEFAULT '',
                     phone TEXT NOT NULL,
                     email TEXT NOT NULL,
@@ -1423,6 +1437,7 @@ def init_db(skip_defaults: bool = False) -> None:
                 "clients",
                 {
                     "company_id": "INTEGER NOT NULL DEFAULT 1",
+                    "identification": "TEXT NOT NULL DEFAULT ''",
                     "description": "TEXT NOT NULL DEFAULT ''",
                     "address": "TEXT NOT NULL DEFAULT ''",
                     "neighborhood": "TEXT NOT NULL DEFAULT ''",
@@ -1503,6 +1518,7 @@ def init_db(skip_defaults: bool = False) -> None:
                     created_at TEXT NOT NULL,
                     company_id INTEGER NOT NULL DEFAULT 1,
                     name TEXT NOT NULL,
+                    image_data_url TEXT NOT NULL DEFAULT '',
                     description TEXT NOT NULL DEFAULT '',
                     reference TEXT NOT NULL,
                     category TEXT NOT NULL DEFAULT '',
@@ -1524,6 +1540,7 @@ def init_db(skip_defaults: bool = False) -> None:
                 "products",
                 {
                     "company_id": "INTEGER NOT NULL DEFAULT 1",
+                    "image_data_url": "TEXT NOT NULL DEFAULT ''",
                     "description": "TEXT NOT NULL DEFAULT ''",
                     "category": "TEXT NOT NULL DEFAULT ''",
                     "store": "TEXT NOT NULL DEFAULT ''",
@@ -1674,6 +1691,7 @@ def init_db(skip_defaults: bool = False) -> None:
                     second_payment_amount_cop REAL NOT NULL DEFAULT 0,
                     second_payment_received_at TEXT NOT NULL DEFAULT '',
                     travel_transport_type TEXT NOT NULL DEFAULT '',
+                    image_data_url TEXT NOT NULL DEFAULT '',
                     balance_due_cop REAL NOT NULL,
                     notes TEXT NOT NULL,
                     snapshot_json TEXT NOT NULL
@@ -1703,6 +1721,7 @@ def init_db(skip_defaults: bool = False) -> None:
                 connection,
                 "inventory_movements",
                 {
+                    "image_data_url": "TEXT NOT NULL DEFAULT ''",
                     "company_id": "INTEGER NOT NULL DEFAULT 1",
                     "unit_cost_cop": "REAL NOT NULL DEFAULT 0",
                     "total_cost_delta_cop": "REAL NOT NULL DEFAULT 0",
@@ -1804,6 +1823,9 @@ def init_db(skip_defaults: bool = False) -> None:
             )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_products_company_created ON products (company_id, id DESC)"
+            )
+            connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_company_identification_unique ON clients (company_id, identification) WHERE identification <> ''"
             )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_inventory_movements_company_product ON inventory_movements (company_id, product_id, id DESC)"
@@ -2690,6 +2712,7 @@ def _serialize_client_row(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "company_id": row["company_id"],
         "name": row["name"],
+        "identification": row["identification"],
         "description": row["description"],
         "phone": row["phone"],
         "email": row["email"],
@@ -2714,6 +2737,7 @@ def _serialize_product_row(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "company_id": row["company_id"],
         "name": row["name"],
+        "image_data_url": row["image_data_url"],
         "description": row["description"],
         "reference": row["reference"],
         "category": row["category"],
@@ -2745,6 +2769,7 @@ def save_client(client_data: dict[str, Any], company_id: int | None = None) -> d
     init_db()
     company_id = _normalize_company_id(company_id)
     created_at = datetime.now(timezone.utc).isoformat()
+    identification = _normalize_client_identification(client_data.get("identification", ""))
     whatsapp_phone = normalize_whatsapp_phone(client_data.get("whatsapp_phone", ""))
     whatsapp_opt_in = bool(client_data.get("whatsapp_opt_in")) and bool(whatsapp_phone)
     if client_data.get("whatsapp_opt_in") and not whatsapp_phone:
@@ -2752,6 +2777,20 @@ def save_client(client_data: dict[str, Any], company_id: int | None = None) -> d
     whatsapp_opt_in_at = created_at if whatsapp_opt_in else ""
 
     with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        if identification:
+            existing = connection.execute(
+                """
+                SELECT id
+                FROM clients
+                WHERE company_id = ? AND identification = ?
+                LIMIT 1
+                """,
+                (company_id, identification),
+            ).fetchone()
+            if existing is not None:
+                raise ValueError("Ya existe un cliente con esa identificacion.")
+
         client_id = _insert_and_get_id(
             connection,
             """
@@ -2759,6 +2798,7 @@ def save_client(client_data: dict[str, Any], company_id: int | None = None) -> d
                 created_at,
                 company_id,
                 name,
+                identification,
                 description,
                 phone,
                 email,
@@ -2774,12 +2814,13 @@ def save_client(client_data: dict[str, Any], company_id: int | None = None) -> d
                 notes,
                 is_active
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 created_at,
                 company_id,
                 client_data.get("name", ""),
+                identification,
                 client_data.get("description", ""),
                 client_data.get("phone", ""),
                 client_data.get("email", ""),
@@ -2813,6 +2854,7 @@ def get_client_summary(client_id: int, company_id: int | None = None) -> dict[st
                 created_at,
                 company_id,
                 name,
+                identification,
                 description,
                 phone,
                 email,
@@ -2845,12 +2887,13 @@ def update_client(
     init_db()
     company_id = _normalize_company_id(company_id)
     updated_at = datetime.now(timezone.utc).isoformat()
+    identification = _normalize_client_identification(client_data.get("identification", ""))
 
     with closing(_connect()) as connection:
         connection.row_factory = sqlite3.Row
         existing = connection.execute(
             """
-            SELECT whatsapp_phone, whatsapp_opt_in, whatsapp_opt_in_at, is_active
+            SELECT id, whatsapp_phone, whatsapp_opt_in, whatsapp_opt_in_at, is_active
             FROM clients
             WHERE id = ? AND company_id = ?
             """,
@@ -2858,6 +2901,19 @@ def update_client(
         ).fetchone()
         if existing is None:
             raise ValueError("Cliente no encontrado.")
+
+        if identification:
+            duplicate = connection.execute(
+                """
+                SELECT id
+                FROM clients
+                WHERE company_id = ? AND identification = ? AND id <> ?
+                LIMIT 1
+                """,
+                (company_id, identification, client_id),
+            ).fetchone()
+            if duplicate is not None:
+                raise ValueError("Ya existe un cliente con esa identificacion.")
 
         whatsapp_phone = normalize_whatsapp_phone(client_data.get("whatsapp_phone", ""))
         whatsapp_opt_in = bool(client_data.get("whatsapp_opt_in")) and bool(whatsapp_phone)
@@ -2876,6 +2932,7 @@ def update_client(
             UPDATE clients
             SET
                 name = ?,
+                identification = ?,
                 description = ?,
                 phone = ?,
                 email = ?,
@@ -2893,6 +2950,7 @@ def update_client(
             """,
             (
                 client_data.get("name", ""),
+                identification,
                 client_data.get("description", ""),
                 client_data.get("phone", ""),
                 client_data.get("email", ""),
@@ -2951,6 +3009,7 @@ def list_clients(
                 created_at,
                 company_id,
                 name,
+                identification,
                 description,
                 phone,
                 email,
@@ -3002,6 +3061,7 @@ def get_client_detail(client_id: int, company_id: int | None = None) -> dict[str
                 created_at,
                 company_id,
                 name,
+                identification,
                 description,
                 phone,
                 email,
@@ -3371,6 +3431,7 @@ def _get_product_row(
             created_at,
             company_id,
             name,
+            image_data_url,
             description,
             reference,
             category,
@@ -3625,6 +3686,7 @@ def save_product(product_data: dict[str, Any], company_id: int | None = None) ->
     init_db()
     company_id = _normalize_company_id(company_id)
     created_at = datetime.now(timezone.utc).isoformat()
+    image_data_url = _sanitize_image_data_url(product_data.get("image_data_url", ""))
     initial_stock_quantity = _coerce_inventory_quantity(
         product_data.get("initial_stock_quantity") or 0,
         field_name="initial_stock_quantity",
@@ -3636,6 +3698,7 @@ def save_product(product_data: dict[str, Any], company_id: int | None = None) ->
             "created_at",
             "company_id",
             "name",
+            "image_data_url",
             "description",
             "reference",
             "category",
@@ -3649,6 +3712,7 @@ def save_product(product_data: dict[str, Any], company_id: int | None = None) ->
             created_at,
             company_id,
             product_data.get("name", ""),
+            image_data_url,
             product_data.get("description", ""),
             product_data.get("reference", ""),
             product_data.get("category", ""),
@@ -3770,6 +3834,7 @@ def get_product_summary(product_id: int, company_id: int | None = None) -> dict[
                 created_at,
                 company_id,
                 name,
+                image_data_url,
                 description,
                 reference,
                 category,
@@ -3800,6 +3865,7 @@ def update_product(
 ) -> dict[str, Any]:
     init_db()
     company_id = _normalize_company_id(company_id)
+    image_data_url = _sanitize_image_data_url(product_data.get("image_data_url", ""))
     initial_stock_quantity = _coerce_inventory_quantity(
         product_data.get("initial_stock_quantity") or 0,
         field_name="initial_stock_quantity",
@@ -3826,6 +3892,7 @@ def update_product(
             UPDATE products
             SET
                 name = ?,
+                image_data_url = ?,
                 description = ?,
                 reference = ?,
                 category = ?,
@@ -3839,6 +3906,7 @@ def update_product(
             """,
             (
                 product_data.get("name", ""),
+                image_data_url,
                 product_data.get("description", ""),
                 product_data.get("reference", ""),
                 product_data.get("category", ""),
@@ -3905,6 +3973,7 @@ def list_products(
                 created_at,
                 company_id,
                 name,
+                image_data_url,
                 description,
                 reference,
                 category,
@@ -3969,6 +4038,7 @@ def get_product_detail(product_id: int, company_id: int | None = None) -> dict[s
                 created_at,
                 company_id,
                 name,
+                image_data_url,
                 description,
                 reference,
                 category,
@@ -4952,6 +5022,7 @@ def _serialize_order(
         "second_payment_received_at": row["second_payment_received_at"],
         "travel_transport_type": row["travel_transport_type"],
         "travel_transport_label": get_travel_transport_label(row["travel_transport_type"]),
+        "image_data_url": row["image_data_url"],
         "balance_due_cop": row["balance_due_cop"],
         "last_status_changed_at": events[-1]["created_at"] if events else row["created_at"],
         "notes": row["notes"],
@@ -5995,6 +6066,50 @@ def update_order_travel_transport(
                 existing["status_key"],
                 f"Ruta del producto actualizada a: {get_travel_transport_label(normalized_transport_type)}.",
             ),
+        )
+        connection.commit()
+
+        updated = connection.execute(
+            "SELECT * FROM orders WHERE id = ? AND company_id = ?",
+            (order_id, company_id),
+        ).fetchone()
+        events = _list_order_events(connection, [order_id], all_statuses, company_id).get(
+            order_id, []
+        )
+        return _serialize_order(updated, events, all_statuses, active_statuses)
+
+
+def update_order_image(
+    order_id: int,
+    image_data_url: str,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    normalized_image = _sanitize_image_data_url(image_data_url)
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        all_statuses = _list_status_rows(
+            connection,
+            company_id=company_id,
+            include_inactive=True,
+        )
+        active_statuses = [status for status in all_statuses if status["is_active"]]
+        existing = connection.execute(
+            "SELECT * FROM orders WHERE id = ? AND company_id = ?",
+            (order_id, company_id),
+        ).fetchone()
+        if existing is None:
+            raise ValueError("La compra no existe.")
+
+        connection.execute(
+            """
+            UPDATE orders
+            SET image_data_url = ?
+            WHERE id = ? AND company_id = ?
+            """,
+            (normalized_image, order_id, company_id),
         )
         connection.commit()
 

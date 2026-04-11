@@ -68,6 +68,7 @@ from .database import (
     update_quote,
     update_order_status,
     update_order_travel_transport,
+    update_order_image,
     update_whatsapp_notification_status,
 )
 from .documents import build_quote_message, generate_quote_pdf
@@ -169,6 +170,10 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
         if public_registration_slug is not None:
             self._serve_file(WEB_DIR / "customer-register.html", "text/html; charset=utf-8")
+            return
+
+        if parsed.path == "/calculadora-rapida":
+            self._serve_file(WEB_DIR / "quick-calculator.html", "text/html; charset=utf-8")
             return
 
         if public_company_slug is not None:
@@ -544,6 +549,10 @@ class FerShopHandler(BaseHTTPRequestHandler):
                 payload = self._read_json()
                 client = ClientInput.from_dict(payload)
                 client_data = client.to_dict()
+                if not str(client_data.get("identification", "")).strip():
+                    raise ValueError(
+                        "La identificacion es obligatoria para el registro publico."
+                    )
                 existing_notes = str(client_data.get("notes", "")).strip()
                 registration_note = "Registro publico desde formulario web."
                 client_data["notes"] = (
@@ -971,6 +980,15 @@ class FerShopHandler(BaseHTTPRequestHandler):
                     )
                     self._send_json(HTTPStatus.OK, {"item": item})
                     return
+                if action == "image":
+                    payload = self._read_json()
+                    item = update_order_image(
+                        order_id,
+                        str(payload.get("image_data_url", "")).strip(),
+                        company_id=session["company"]["id"],
+                    )
+                    self._send_json(HTTPStatus.OK, {"item": item})
+                    return
                 if action == "whatsapp":
                     payload = self._read_json()
                     trigger_key = str(payload.get("trigger_key", "")).strip() or None
@@ -1106,7 +1124,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
         raw_id = parts[2]
         action = parts[3]
-        if action not in {"status", "second-payment", "travel-transport", "whatsapp"}:
+        if action not in {"status", "second-payment", "travel-transport", "whatsapp", "image"}:
             return None
 
         try:

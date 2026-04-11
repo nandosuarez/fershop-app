@@ -1,0 +1,153 @@
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Calculadora rápida</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <style>
+      .quick-calc-shell {
+        max-width: 560px;
+        margin: 0 auto;
+        padding: 20px 16px 40px;
+        display: grid;
+        gap: 18px;
+      }
+
+      .quick-calc-result {
+        display: grid;
+        gap: 14px;
+      }
+
+      .quick-calc-result-hero {
+        padding: 22px;
+        border-radius: 26px;
+        background: linear-gradient(145deg, rgba(18, 17, 17, 0.96), rgba(76, 63, 55, 0.92));
+        color: #fffaf4;
+        box-shadow: 0 24px 48px rgba(18, 17, 17, 0.18);
+      }
+
+      .quick-calc-result-hero span {
+        display: block;
+        color: rgba(255, 250, 244, 0.72);
+        font-size: 0.88rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .quick-calc-result-hero strong {
+        display: block;
+        margin-top: 10px;
+        font-size: clamp(2rem, 7vw, 3.2rem);
+        line-height: 1.05;
+        font-family: "Didot", "Bodoni MT", "Times New Roman", serif;
+      }
+
+      .quick-calc-result-hero small {
+        display: block;
+        margin-top: 10px;
+        color: rgba(255, 250, 244, 0.84);
+        font-size: 1rem;
+      }
+
+      .quick-calc-metrics {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .quick-calc-metric {
+        padding: 16px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid rgba(18, 17, 17, 0.08);
+      }
+
+      .quick-calc-metric span {
+        display: block;
+        color: var(--ink-soft);
+        font-size: 0.86rem;
+      }
+
+      .quick-calc-metric strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 1.1rem;
+      }
+
+      .quick-calc-note {
+        margin: 0;
+        color: var(--ink-soft);
+        line-height: 1.55;
+      }
+
+      @media (max-width: 640px) {
+        .quick-calc-metrics {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="quick-calc-shell">
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Página rápida</p>
+            <h1>Calculadora sugerida</h1>
+            <p>Escribe el precio USD y la página te calcula al instante el valor sugerido a cobrar.</p>
+          </div>
+        </div>
+
+        <form id="quick-calculator-form" class="catalog-form">
+          <div class="field-grid">
+            <label>
+              <span>Precio USD</span>
+              <input name="price_usd" type="number" min="0" step="0.01" placeholder="Ej. 35" required />
+            </label>
+
+            <label>
+              <span>Envío / costo viaje USD</span>
+              <input name="shipping_usd" type="number" min="0" step="0.01" value="8" required />
+            </label>
+
+            <label>
+              <span>TRM COP</span>
+              <input name="exchange_rate_cop" type="number" min="1" step="1" value="3800" required />
+            </label>
+
+            <label>
+              <span>Utilidad %</span>
+              <input name="margin_percent" type="number" min="0" max="99" step="0.1" value="30" required />
+            </label>
+          </div>
+        </form>
+      </section>
+
+      <section class="quick-calc-result">
+        <article class="quick-calc-result-hero">
+          <span>Precio sugerido</span>
+          <strong id="quick-calc-suggested">$0</strong>
+          <small id="quick-calc-profit">Utilidad: $0</small>
+        </article>
+
+        <div class="quick-calc-metrics">
+          <article class="quick-calc-metric">
+            <span>Total USD a convertir</span>
+            <strong id="quick-calc-total-usd">US$0.00</strong>
+          </article>
+          <article class="quick-calc-metric">
+            <span>Base COP</span>
+            <strong id="quick-calc-total-cop">$0</strong>
+          </article>
+        </div>
+
+        <p class="quick-calc-note">
+          Fórmula usada: <strong>(precio USD + envío/costo viaje) × TRM</strong>.
+          Puedes cambiar los valores base cuando lo necesites.
+        </p>
+      </section>
+    </main>
+
+    <script src="/static/quick-calculator.js" defer></script>
+  </body>
+</html>

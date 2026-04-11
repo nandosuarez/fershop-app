@@ -67,8 +67,12 @@
               <span>Solicitudes por referencia que aun debes buscar antes de cotizar</span>
             </a>
             <a class="module-link" data-module-link="comercial" href="#comercial">
-              <strong>Cotizaciones y catalogo</strong>
-              <span>Cotiza, guarda historial y administra clientes y productos</span>
+              <strong>Cotizaciones</strong>
+              <span>Cotiza, guarda historial y convierte rapido a compra</span>
+            </a>
+            <a class="module-link" href="/calculadora-rapida" target="_blank" rel="noreferrer">
+              <strong>Calculadora rápida</strong>
+              <span>Página aparte para celular con cálculo inmediato</span>
             </a>
           </div>
 
@@ -96,7 +100,7 @@
             <p class="menu-group-title">Configuracion</p>
             <a class="module-link" data-module-link="administracion" href="#administracion">
               <strong>Administracion</strong>
-              <span>Define estados y orden del flujo operativo</span>
+              <span>Estados, clientes, productos, catalogos y ajustes generales</span>
             </a>
           </div>
         </aside>
@@ -243,10 +247,10 @@
           <section id="comercial" class="module-page" data-module-page="comercial">
             <header class="module-page-header">
               <p class="module-page-kicker">Operacion comercial</p>
-              <h2>Cotizaciones, clientes y productos</h2>
+              <h2>Cotizaciones</h2>
               <p>
-                En este modulo armas la cotizacion, revisas el historial y mantienes viva la
-                base comercial de clientes y productos.
+                En este modulo armas la cotizacion, revisas el historial pendiente y desde aqui
+                tambien puedes pasar directo a compra cuando el cliente ya confirmo.
               </p>
             </header>
 
@@ -474,249 +478,6 @@
               <div id="history" class="history-empty">
                 <p>Aun no hay cotizaciones guardadas.</p>
               </div>
-            </section>
-
-            <section id="client-detail-section" class="panel client-detail-panel">
-              <div class="panel-header">
-                <div>
-                  <h2>Ficha del cliente</h2>
-                  <p>Selecciona un cliente para ver su historia comercial, cartera y productos clave.</p>
-                </div>
-                <button id="client-detail-clear" class="secondary" type="button" disabled>Limpiar ficha</button>
-              </div>
-              <div id="client-detail" class="catalog-empty">
-                <p>Selecciona un cliente desde el listado o el dashboard para abrir su ficha comercial.</p>
-              </div>
-            </section>
-
-            <section id="product-detail-section" class="panel client-detail-panel">
-              <div class="panel-header">
-                <div>
-                  <h2>Ficha del producto</h2>
-                  <p>Selecciona un producto para ver ventas, utilidad, clientes y comportamiento comercial.</p>
-                </div>
-                <button id="product-detail-clear" class="secondary" type="button" disabled>Limpiar ficha</button>
-              </div>
-              <div id="product-detail" class="catalog-empty">
-                <p>Selecciona un producto desde el catalogo o el dashboard para abrir su ficha comercial.</p>
-              </div>
-            </section>
-
-            <section class="catalog-layout catalog-layout-single">
-              <section id="clientes" class="panel catalog-panel">
-                <div class="panel-header panel-header-stackable">
-                  <div>
-                    <h2>Clientes</h2>
-                    <p>Crea tu base comercial y luego seleccionalos desde la calculadora.</p>
-                  </div>
-                  <div class="view-toggle-group" aria-label="Vista de clientes">
-                    <button type="button" class="view-toggle-button is-active" data-client-view="list" aria-pressed="true">
-                      Lista
-                    </button>
-                    <button type="button" class="view-toggle-button" data-client-view="cards" aria-pressed="false">
-                      Tarjetas
-                    </button>
-                  </div>
-                </div>
-
-                <form id="client-form" class="catalog-form">
-                  <input name="id" type="hidden" />
-                  <div class="field-grid">
-                    <label>
-                      <span>Nombre</span>
-                      <input name="name" type="text" placeholder="Ej. Laura Ramirez" required />
-                    </label>
-
-                    <label>
-                      <span>Telefono</span>
-                      <input name="phone" type="text" placeholder="Ej. 3001234567" />
-                    </label>
-
-                    <label>
-                      <span>Email</span>
-                      <input name="email" type="email" placeholder="Opcional" />
-                    </label>
-
-                    <label>
-                      <span>Ciudad</span>
-                      <input name="city" type="text" placeholder="Ej. Bogota" />
-                    </label>
-
-                    <label>
-                      <span>Direccion</span>
-                      <input name="address" type="text" placeholder="Ej. Cra 15 # 93 - 40" />
-                    </label>
-
-                    <label>
-                      <span>Barrio / zona</span>
-                      <input name="neighborhood" type="text" placeholder="Ej. Chico, Laureles, Cedritos" />
-                    </label>
-
-                    <label>
-                      <span>WhatsApp</span>
-                      <input
-                        name="whatsapp_phone"
-                        type="text"
-                        placeholder="Ej. +573001234567 o 3001234567"
-                        autocomplete="off"
-                      />
-                    </label>
-
-                    <label>
-                      <span>Canal preferido</span>
-                      <input
-                        name="preferred_contact_channel"
-                        type="text"
-                        placeholder="Ej. WhatsApp, llamada, Instagram"
-                      />
-                    </label>
-
-                    <label>
-                      <span>Pago preferido</span>
-                      <input
-                        name="preferred_payment_method"
-                        type="text"
-                        placeholder="Ej. transferencia, efectivo, anticipo 50%"
-                      />
-                    </label>
-                  </div>
-
-                  <label class="full-width">
-                    <span>Descripcion comercial</span>
-                    <textarea
-                      name="description"
-                      rows="3"
-                      placeholder="Resumen corto para identificar al cliente, su perfil o contexto comercial."
-                    ></textarea>
-                  </label>
-
-                  <label class="checkbox-field">
-                    <input name="whatsapp_opt_in" type="checkbox" />
-                    <span>Autorizo notificaciones de compra por WhatsApp</span>
-                  </label>
-
-                  <label class="full-width">
-                    <span>Intereses del cliente</span>
-                    <textarea
-                      name="interests"
-                      rows="3"
-                      placeholder="Ej. Apple, gama premium, regalos, combos, tecnologia, accesorios"
-                    ></textarea>
-                  </label>
-
-                  <label class="full-width">
-                    <span>Notas del cliente</span>
-                    <textarea name="notes" rows="3" placeholder="Preferencias, tiempos, historial o acuerdos."></textarea>
-                  </label>
-
-                  <div class="actions">
-                    <button type="submit" class="primary" data-client-submit-button>Guardar cliente</button>
-                    <button type="button" class="secondary" data-client-cancel-button hidden>Cancelar edicion</button>
-                  </div>
-                </form>
-
-                <div id="clients-list" class="catalog-empty">
-                  <p>Aun no hay clientes guardados.</p>
-                </div>
-              </section>
-            </section>
-
-            <section class="catalog-layout catalog-layout-single">
-              <section id="productos" class="panel catalog-panel">
-                <div class="panel-header">
-                  <h2>Productos</h2>
-                  <p>Guarda costos base para cotizar mas rapido sin volver a escribir todo.</p>
-                </div>
-
-                <form id="product-form" class="catalog-form">
-                  <input name="id" type="hidden" />
-                  <div class="field-grid">
-                    <label>
-                      <span>Nombre</span>
-                      <input name="name" type="text" placeholder="Ej. iPhone 15 Pro Max" required />
-                    </label>
-
-                    <label>
-                      <span>Referencia</span>
-                      <input name="reference" type="text" placeholder="Opcional" />
-                    </label>
-
-                    <label>
-                      <span>Categoria</span>
-                      <input
-                        id="product-category-input"
-                        name="category"
-                        type="text"
-                        placeholder="Busca o selecciona una categoria"
-                        autocomplete="off"
-                      />
-                    </label>
-
-                    <label>
-                      <span>Tienda</span>
-                      <input
-                        id="product-store-input"
-                        name="store"
-                        type="text"
-                        placeholder="Busca o selecciona una tienda"
-                        autocomplete="off"
-                      />
-                    </label>
-
-                    <label>
-                      <span>Precio USD neto</span>
-                      <input name="price_usd_net" type="number" min="0" step="0.01" required />
-                    </label>
-
-                    <label>
-                      <span>Tax USA %</span>
-                      <input name="tax_usa_percent" type="number" min="0" step="0.01" value="0" required />
-                    </label>
-
-                    <label>
-                      <span>Envio casillero USD</span>
-                      <input name="locker_shipping_usd" type="number" min="0" step="0.01" value="0" required />
-                    </label>
-
-                    <label class="checkbox-field">
-                      <input name="inventory_enabled" type="checkbox" />
-                      <span>Manejar inventario de tienda</span>
-                    </label>
-
-                    <label>
-                      <span>Stock inicial</span>
-                      <input name="initial_stock_quantity" type="number" min="0" step="1" value="0" />
-                    </label>
-                  </div>
-
-                  <label class="full-width">
-                    <span>Descripcion comercial</span>
-                    <textarea
-                      name="description"
-                      rows="3"
-                      placeholder="Resumen corto del producto, publico ideal, coleccion o contexto comercial."
-                    ></textarea>
-                  </label>
-
-                  <label class="full-width">
-                    <span>Notas del producto</span>
-                    <textarea
-                      name="notes"
-                      rows="3"
-                      placeholder="Capacidad, color, proveedor, version o consideraciones."
-                    ></textarea>
-                  </label>
-
-                  <div class="actions">
-                    <button type="submit" class="primary" data-product-submit-button>Guardar producto</button>
-                    <button type="button" class="secondary" data-product-cancel-button hidden>Cancelar edicion</button>
-                  </div>
-                </form>
-
-                <div id="products-list" class="catalog-empty">
-                  <p>Aun no hay productos guardados.</p>
-                </div>
-              </section>
             </section>
           </section>
 
@@ -1092,10 +853,10 @@
           <section id="administracion" class="module-page" data-module-page="administracion">
             <header class="module-page-header">
               <p class="module-page-kicker">Configuracion</p>
-              <h2>Administracion de estados</h2>
+              <h2>Administracion general</h2>
               <p>
-                Crea nuevos pasos del flujo y ordenalos para que la operacion avance de forma
-                secuencial.
+                Desde aqui administras estados, clientes, productos, catalogos, enlaces publicos y
+                configuraciones operativas de la empresa.
               </p>
             </header>
 
@@ -1265,6 +1026,296 @@
                 <div id="product-stores-list" class="catalog-empty">
                   <p>Aun no hay tiendas creadas.</p>
                 </div>
+                </div>
+              </section>
+
+              <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-clients">
+                <button
+                  class="panel-header collapsible-toggle"
+                  type="button"
+                  data-collapsible-target="admin-clients"
+                  data-default-open="false"
+                  aria-expanded="false"
+                >
+                  <div>
+                    <h2>Clientes</h2>
+                    <p>Ingresa, edita, consulta e inactiva toda tu base comercial desde un solo lugar.</p>
+                  </div>
+                  <span class="collapsible-indicator" aria-hidden="true"></span>
+                </button>
+
+                <div class="collapsible-body" data-collapsible-body="admin-clients">
+                  <section id="clientes" class="admin-embedded-section">
+                    <div class="panel-header panel-header-stackable">
+                      <div>
+                        <h3>Base de clientes</h3>
+                        <p>Crea tu base comercial y luego seleccionalos desde la calculadora.</p>
+                      </div>
+                      <div class="view-toggle-group" aria-label="Vista de clientes">
+                        <button type="button" class="view-toggle-button is-active" data-client-view="list" aria-pressed="true">
+                          Lista
+                        </button>
+                        <button type="button" class="view-toggle-button" data-client-view="cards" aria-pressed="false">
+                          Tarjetas
+                        </button>
+                      </div>
+                    </div>
+
+                    <form id="client-form" class="catalog-form">
+                      <input name="id" type="hidden" />
+                      <div class="field-grid">
+                        <label>
+                          <span>Nombre</span>
+                          <input name="name" type="text" placeholder="Ej. Laura Ramirez" required />
+                        </label>
+
+                        <label>
+                          <span>Identificacion</span>
+                          <input name="identification" type="text" placeholder="Ej. 123456789" autocomplete="off" />
+                        </label>
+
+                        <label>
+                          <span>Telefono</span>
+                          <input name="phone" type="text" placeholder="Ej. 3001234567" />
+                        </label>
+
+                        <label>
+                          <span>Email</span>
+                          <input name="email" type="email" placeholder="Opcional" />
+                        </label>
+
+                        <label>
+                          <span>Ciudad</span>
+                          <input name="city" type="text" placeholder="Ej. Bogota" />
+                        </label>
+
+                        <label>
+                          <span>Direccion</span>
+                          <input name="address" type="text" placeholder="Ej. Cra 15 # 93 - 40" />
+                        </label>
+
+                        <label>
+                          <span>Barrio / zona</span>
+                          <input name="neighborhood" type="text" placeholder="Ej. Chico, Laureles, Cedritos" />
+                        </label>
+
+                        <label>
+                          <span>WhatsApp</span>
+                          <input
+                            name="whatsapp_phone"
+                            type="text"
+                            placeholder="Ej. +573001234567 o 3001234567"
+                            autocomplete="off"
+                          />
+                        </label>
+
+                        <label>
+                          <span>Canal preferido</span>
+                          <input
+                            name="preferred_contact_channel"
+                            type="text"
+                            placeholder="Ej. WhatsApp, llamada, Instagram"
+                          />
+                        </label>
+
+                        <label>
+                          <span>Pago preferido</span>
+                          <input
+                            name="preferred_payment_method"
+                            type="text"
+                            placeholder="Ej. transferencia, efectivo, anticipo 50%"
+                          />
+                        </label>
+                      </div>
+
+                      <label class="full-width">
+                        <span>Descripcion comercial</span>
+                        <textarea
+                          name="description"
+                          rows="3"
+                          placeholder="Resumen corto para identificar al cliente, su perfil o contexto comercial."
+                        ></textarea>
+                      </label>
+
+                      <label class="checkbox-field">
+                        <input name="whatsapp_opt_in" type="checkbox" />
+                        <span>Autorizo notificaciones de compra por WhatsApp</span>
+                      </label>
+
+                      <label class="full-width">
+                        <span>Intereses del cliente</span>
+                        <textarea
+                          name="interests"
+                          rows="3"
+                          placeholder="Ej. Apple, gama premium, regalos, combos, tecnologia, accesorios"
+                        ></textarea>
+                      </label>
+
+                      <label class="full-width">
+                        <span>Notas del cliente</span>
+                        <textarea name="notes" rows="3" placeholder="Preferencias, tiempos, historial o acuerdos."></textarea>
+                      </label>
+
+                      <div class="actions">
+                        <button type="submit" class="primary" data-client-submit-button>Guardar cliente</button>
+                        <button type="button" class="secondary" data-client-cancel-button hidden>Cancelar edicion</button>
+                      </div>
+                    </form>
+
+                    <div id="clients-list" class="catalog-empty">
+                      <p>Aun no hay clientes guardados.</p>
+                    </div>
+                  </section>
+
+                  <section id="client-detail-section" class="panel client-detail-panel admin-detail-panel">
+                    <div class="panel-header">
+                      <div>
+                        <h3>Ficha del cliente</h3>
+                        <p>Selecciona un cliente para ver su historia comercial, cartera y productos clave.</p>
+                      </div>
+                      <button id="client-detail-clear" class="secondary" type="button" disabled>Limpiar ficha</button>
+                    </div>
+                    <div id="client-detail" class="catalog-empty">
+                      <p>Selecciona un cliente desde el listado o el dashboard para abrir su ficha comercial.</p>
+                    </div>
+                  </section>
+                </div>
+              </section>
+
+              <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-products">
+                <button
+                  class="panel-header collapsible-toggle"
+                  type="button"
+                  data-collapsible-target="admin-products"
+                  data-default-open="false"
+                  aria-expanded="false"
+                >
+                  <div>
+                    <h2>Productos</h2>
+                    <p>Administra el catalogo base, sus costos, imagenes e inventario desde administracion.</p>
+                  </div>
+                  <span class="collapsible-indicator" aria-hidden="true"></span>
+                </button>
+
+                <div class="collapsible-body" data-collapsible-body="admin-products">
+                  <section id="productos" class="admin-embedded-section">
+                    <div class="panel-header">
+                      <h3>Catalogo de productos</h3>
+                      <p>Guarda costos base para cotizar mas rapido sin volver a escribir todo.</p>
+                    </div>
+
+                    <form id="product-form" class="catalog-form">
+                      <input name="id" type="hidden" />
+                      <input name="image_data_url" type="hidden" />
+                      <div class="field-grid">
+                        <label>
+                          <span>Nombre</span>
+                          <input name="name" type="text" placeholder="Ej. iPhone 15 Pro Max" required />
+                        </label>
+
+                        <label>
+                          <span>Referencia</span>
+                          <input name="reference" type="text" placeholder="Opcional" />
+                        </label>
+
+                        <label>
+                          <span>Categoria</span>
+                          <input
+                            id="product-category-input"
+                            name="category"
+                            type="text"
+                            placeholder="Busca o selecciona una categoria"
+                            autocomplete="off"
+                          />
+                        </label>
+
+                        <label>
+                          <span>Tienda</span>
+                          <input
+                            id="product-store-input"
+                            name="store"
+                            type="text"
+                            placeholder="Busca o selecciona una tienda"
+                            autocomplete="off"
+                          />
+                        </label>
+
+                        <label>
+                          <span>Precio USD neto</span>
+                          <input name="price_usd_net" type="number" min="0" step="0.01" required />
+                        </label>
+
+                        <label>
+                          <span>Tax USA %</span>
+                          <input name="tax_usa_percent" type="number" min="0" step="0.01" value="0" required />
+                        </label>
+
+                        <label>
+                          <span>Envio casillero USD</span>
+                          <input name="locker_shipping_usd" type="number" min="0" step="0.01" value="0" required />
+                        </label>
+
+                        <label class="checkbox-field">
+                          <input name="inventory_enabled" type="checkbox" />
+                          <span>Manejar inventario de tienda</span>
+                        </label>
+
+                        <label>
+                          <span>Stock inicial</span>
+                          <input name="initial_stock_quantity" type="number" min="0" step="1" value="0" />
+                        </label>
+
+                        <label class="full-width">
+                          <span>Imagen del producto</span>
+                          <input id="product-image-file" type="file" accept="image/*" />
+                        </label>
+                      </div>
+
+                      <div id="product-image-preview" class="image-preview-card image-preview-card-empty">
+                        <p>Aun no has cargado imagen para este producto.</p>
+                      </div>
+
+                      <label class="full-width">
+                        <span>Descripcion comercial</span>
+                        <textarea
+                          name="description"
+                          rows="3"
+                          placeholder="Resumen corto del producto, publico ideal, coleccion o contexto comercial."
+                        ></textarea>
+                      </label>
+
+                      <label class="full-width">
+                        <span>Notas del producto</span>
+                        <textarea
+                          name="notes"
+                          rows="3"
+                          placeholder="Capacidad, color, proveedor, version o consideraciones."
+                        ></textarea>
+                      </label>
+
+                      <div class="actions">
+                        <button type="submit" class="primary" data-product-submit-button>Guardar producto</button>
+                        <button type="button" class="secondary" data-product-cancel-button hidden>Cancelar edicion</button>
+                      </div>
+                    </form>
+
+                    <div id="products-list" class="catalog-empty">
+                      <p>Aun no hay productos guardados.</p>
+                    </div>
+                  </section>
+
+                  <section id="product-detail-section" class="panel client-detail-panel admin-detail-panel">
+                    <div class="panel-header">
+                      <div>
+                        <h3>Ficha del producto</h3>
+                        <p>Selecciona un producto para ver ventas, utilidad, clientes y comportamiento comercial.</p>
+                      </div>
+                      <button id="product-detail-clear" class="secondary" type="button" disabled>Limpiar ficha</button>
+                    </div>
+                    <div id="product-detail" class="catalog-empty">
+                      <p>Selecciona un producto desde el catalogo o el dashboard para abrir su ficha comercial.</p>
+                    </div>
+                  </section>
                 </div>
               </section>
 

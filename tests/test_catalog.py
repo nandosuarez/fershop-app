@@ -13,6 +13,7 @@ class CatalogTests(unittest.TestCase):
         client = ClientInput.from_dict(
             {
                 "name": "Laura",
+                "identification": "123456789",
                 "description": "Cliente premium",
                 "phone": "3001234567",
                 "email": "laura@example.com",
@@ -28,6 +29,7 @@ class CatalogTests(unittest.TestCase):
 
         self.assertEqual(client.address, "Cra 15 # 93 - 40")
         self.assertEqual(client.description, "Cliente premium")
+        self.assertEqual(client.identification, "123456789")
         self.assertEqual(client.preferred_contact_channel, "WhatsApp")
         self.assertEqual(client.interests, "Apple, premium")
 
@@ -50,6 +52,7 @@ class CatalogTests(unittest.TestCase):
                 "reference": "USB-C",
                 "category": "Accesorios",
                 "store": "Apple",
+                "image_data_url": "data:image/png;base64,AAAA",
                 "price_usd_net": 220,
                 "tax_usa_percent": 7,
                 "locker_shipping_usd": 12,
@@ -60,6 +63,7 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(product.description, "Accesorio premium")
         self.assertEqual(product.category, "Accesorios")
         self.assertEqual(product.store, "Apple")
+        self.assertEqual(product.image_data_url, "data:image/png;base64,AAAA")
         self.assertEqual(product.locker_shipping_usd, 12)
 
     def test_quote_accepts_catalog_ids(self) -> None:

@@ -75,6 +75,11 @@ class WsgiAppTests(unittest.TestCase):
         self.assertIn(("Content-Type", "text/html; charset=utf-8"), headers)
         self.assertIn(b"public-register-form", body)
 
+        status, headers, body = self._call_app("/calculadora-rapida")
+        self.assertEqual(status, "200 OK")
+        self.assertIn(("Content-Type", "text/html; charset=utf-8"), headers)
+        self.assertIn(b"quick-calculator-form", body)
+
         status, headers, body = self._call_app("/api/public/company/fershop")
         self.assertEqual(status, "200 OK")
         self.assertIn(("Content-Type", "application/json; charset=utf-8"), headers)
@@ -84,6 +89,7 @@ class WsgiAppTests(unittest.TestCase):
         payload = json.dumps(
             {
                 "name": "Cliente Web",
+                "identification": "123456789",
                 "whatsapp_phone": "3001234567",
                 "whatsapp_opt_in": True,
                 "notes": "Le interesa ropa.",
@@ -99,6 +105,36 @@ class WsgiAppTests(unittest.TestCase):
         self.assertIn(("Content-Type", "application/json; charset=utf-8"), headers)
         self.assertIn(b"Cliente Web", body)
         self.assertIn(b"Registro publico desde formulario web.", body)
+
+    def test_public_registration_rejects_duplicate_identification(self) -> None:
+        first_payload = json.dumps(
+            {
+                "name": "Cliente Web",
+                "identification": "555001",
+            }
+        ).encode("utf-8")
+        duplicate_payload = json.dumps(
+            {
+                "name": "Cliente Repetido",
+                "identification": "555001",
+            }
+        ).encode("utf-8")
+
+        status, _, _ = self._call_app(
+            "/api/public/register/fershop",
+            method="POST",
+            body=first_payload,
+        )
+        self.assertEqual(status, "201 Created")
+
+        status, headers, body = self._call_app(
+            "/api/public/register/fershop",
+            method="POST",
+            body=duplicate_payload,
+        )
+        self.assertEqual(status, "400 Bad Request")
+        self.assertIn(("Content-Type", "application/json; charset=utf-8"), headers)
+        self.assertIn(b"identificacion", body.lower())
 
 
 if __name__ == "__main__":

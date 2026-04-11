@@ -247,6 +247,9 @@ def _handle_get(environ: dict[str, Any]):
             )
         return _json_response(HTTPStatus.OK, {"item": company})
 
+    if path == "/calculadora-rapida":
+        return _serve_file(WEB_DIR / "quick-calculator.html", "text/html; charset=utf-8")
+
     if path == "/":
         session = _current_session(environ)
         target = WEB_DIR / ("index.html" if session else "login.html")
@@ -412,6 +415,8 @@ def _handle_post(environ: dict[str, Any]):
             payload = _read_json(environ)
             client = ClientInput.from_dict(payload)
             client_data = client.to_dict()
+            if not str(client_data.get("identification", "")).strip():
+                raise ValueError("La identificacion es obligatoria para el registro publico.")
             existing_notes = str(client_data.get("notes", "")).strip()
             registration_note = "Registro publico desde formulario web."
             client_data["notes"] = (

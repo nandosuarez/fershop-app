@@ -173,6 +173,7 @@ class QuoteCatalogPersistenceTests(unittest.TestCase):
         client = save_client(
             {
                 "name": "Laura",
+                "identification": "1001",
                 "description": "Cliente inicial",
                 "phone": "3001234567",
             }
@@ -181,6 +182,7 @@ class QuoteCatalogPersistenceTests(unittest.TestCase):
             client["id"],
             {
                 "name": "Laura",
+                "identification": "1001",
                 "description": "Cliente premium",
                 "phone": "3001234567",
                 "email": "",
@@ -232,6 +234,24 @@ class QuoteCatalogPersistenceTests(unittest.TestCase):
         self.assertEqual(updated_product["description"], "Coleccion invierno renovada")
         self.assertEqual(len(list_clients(include_inactive=False)), 0)
         self.assertEqual(len(list_products(include_inactive=False)), 0)
+
+    def test_client_identification_must_be_unique_per_company(self) -> None:
+        save_client(
+            {
+                "name": "Laura",
+                "identification": "900123",
+                "phone": "3001234567",
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "identificacion"):
+            save_client(
+                {
+                    "name": "Luisa",
+                    "identification": "900123",
+                    "phone": "3009998888",
+                }
+            )
 
     def test_categories_and_stores_support_description_update_and_inactivation(self) -> None:
         category = create_product_category("Sueters", description="Tejidos y basicos")
