@@ -148,6 +148,13 @@ def _sanitize_image_data_url(value: Any) -> str:
     return image_data_url
 
 
+def _row_value(row: Any, key: str, default: Any = None) -> Any:
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+
+
 def _to_bool_flag(value: Any) -> int:
     if isinstance(value, str):
         return 1 if value.strip().lower() in {"1", "true", "yes", "si", "on"} else 0
@@ -492,6 +499,20 @@ def _ensure_company_id_column(
     connection.execute(
         f"UPDATE {table_name} SET company_id = ? WHERE company_id IS NULL OR company_id <= 0",
         (default_company_id,),
+    )
+
+
+def _ensure_orders_runtime_columns(
+    connection: sqlite3.Connection | CompatConnection,
+) -> None:
+    if not _table_exists(connection, "orders"):
+        return
+    _ensure_table_columns(
+        connection,
+        "orders",
+        {
+            "image_data_url": "TEXT NOT NULL DEFAULT ''",
+        },
     )
 
 
@@ -5022,7 +5043,7 @@ def _serialize_order(
         "second_payment_received_at": row["second_payment_received_at"],
         "travel_transport_type": row["travel_transport_type"],
         "travel_transport_label": get_travel_transport_label(row["travel_transport_type"]),
-        "image_data_url": row["image_data_url"],
+        "image_data_url": _row_value(row, "image_data_url", ""),
         "balance_due_cop": row["balance_due_cop"],
         "last_status_changed_at": events[-1]["created_at"] if events else row["created_at"],
         "notes": row["notes"],
@@ -5233,6 +5254,7 @@ def create_order_from_quote(
 
     with closing(_connect()) as connection:
         connection.row_factory = sqlite3.Row
+        _ensure_orders_runtime_columns(connection)
         all_statuses = _list_status_rows(
             connection,
             company_id=company_id,
@@ -5893,6 +5915,7 @@ def list_orders(
     company_id = _normalize_company_id(company_id)
     with closing(_connect()) as connection:
         connection.row_factory = sqlite3.Row
+        _ensure_orders_runtime_columns(connection)
         all_statuses = _list_status_rows(
             connection,
             company_id=company_id,
@@ -5940,6 +5963,7 @@ def update_order_status(
 
     with closing(_connect()) as connection:
         connection.row_factory = sqlite3.Row
+        _ensure_orders_runtime_columns(connection)
         all_statuses = _list_status_rows(
             connection,
             company_id=company_id,
@@ -6017,6 +6041,7 @@ def update_order_travel_transport(
 
     with closing(_connect()) as connection:
         connection.row_factory = sqlite3.Row
+        _ensure_orders_runtime_columns(connection)
         all_statuses = _list_status_rows(
             connection,
             company_id=company_id,
@@ -6090,6 +6115,7 @@ def update_order_image(
 
     with closing(_connect()) as connection:
         connection.row_factory = sqlite3.Row
+        _ensure_orders_runtime_columns(connection)
         all_statuses = _list_status_rows(
             connection,
             company_id=company_id,
@@ -6135,6 +6161,7 @@ def register_second_payment(
 
     with closing(_connect()) as connection:
         connection.row_factory = sqlite3.Row
+        _ensure_orders_runtime_columns(connection)
         all_statuses = _list_status_rows(
             connection,
             company_id=company_id,
