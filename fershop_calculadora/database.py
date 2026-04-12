@@ -418,6 +418,114 @@ def _apply_actual_purchase_prices_to_quote_record(
     return updated_record
 
 
+def _recalculate_confirmed_order_quote_record(
+    quote_record: dict[str, Any],
+    *,
+    exchange_rate_cop: float | None = None,
+    notes: str | None = None,
+    actual_purchase_prices: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    updated_record = json.loads(json.dumps(quote_record, ensure_ascii=False))
+    input_data = (
+        updated_record.get("input", {})
+        if isinstance(updated_record.get("input"), dict)
+        else {}
+    )
+
+    if notes is not None:
+        clean_notes = str(notes or "").strip()
+        updated_record["notes"] = clean_notes
+        input_data["notes"] = clean_notes
+
+    quote_items = input_data.get("quote_items")
+    if isinstance(quote_items, list) and quote_items:
+        updated_quote_items = json.loads(json.dumps(quote_items, ensure_ascii=False))
+        for quote_item in updated_quote_items:
+            if not isinstance(quote_item, dict):
+                continue
+            item_input = (
+                json.loads(json.dumps(quote_item.get("input"), ensure_ascii=False))
+                if isinstance(quote_item.get("input"), dict)
+                else json.loads(json.dumps(quote_item, ensure_ascii=False))
+            )
+            if exchange_rate_cop is not None:
+                item_input["exchange_rate_cop"] = exchange_rate_cop
+
+            sale_price_cop = float(
+                quote_item.get("sale_price_cop")
+                or item_input.get("final_sale_price_cop")
+                or 0
+            )
+            advance_cop = float(
+                quote_item.get("advance_cop")
+                or item_input.get("final_advance_cop")
+                or 0
+            )
+            if sale_price_cop > 0:
+                item_input["final_sale_price_cop"] = sale_price_cop
+            item_input["final_advance_cop"] = advance_cop
+            quote_item["input"] = item_input
+
+        updated_record["input"]["quote_items"] = updated_quote_items
+        if actual_purchase_prices:
+            updated_record = _apply_actual_purchase_prices_to_quote_record(
+                updated_record,
+                actual_purchase_prices,
+            )
+        else:
+            recalculated = calculate_quote_bundle(
+                {
+                    "pending_request_id": input_data.get("pending_request_id"),
+                    "client_id": input_data.get("client_id"),
+                    "client_name": input_data.get("client_name"),
+                    "notes": input_data.get("notes"),
+                    "client_quote_items_text": input_data.get("client_quote_items_text"),
+                    "quote_items": updated_quote_items,
+                }
+            )
+            updated_record["input"] = recalculated["input"]
+            updated_record["result"] = recalculated
+            updated_record["client_name"] = recalculated.get("input", {}).get(
+                "client_name", updated_record.get("client_name", "")
+            )
+            updated_record["product_name"] = recalculated.get("input", {}).get(
+                "product_name", updated_record.get("product_name", "")
+            )
+
+        if notes is not None:
+            updated_record["notes"] = str(notes or "").strip()
+            updated_record.setdefault("input", {})["notes"] = str(notes or "").strip()
+        return updated_record
+
+    single_input = json.loads(json.dumps(input_data, ensure_ascii=False))
+    if exchange_rate_cop is not None:
+        single_input["exchange_rate_cop"] = exchange_rate_cop
+    if notes is not None:
+        single_input["notes"] = str(notes or "").strip()
+
+    existing_final = updated_record.get("result", {}).get("final", {})
+    final_sale_price_cop = float(existing_final.get("sale_price_cop") or 0)
+    final_advance_cop = float(existing_final.get("advance_cop") or 0)
+    if final_sale_price_cop > 0:
+        single_input["final_sale_price_cop"] = final_sale_price_cop
+    single_input["final_advance_cop"] = final_advance_cop
+
+    normalized_prices = _normalize_actual_purchase_prices(actual_purchase_prices)
+    if normalized_prices:
+        single_input["price_usd_net"] = normalized_prices[0]["price_usd_net"]
+
+    recalculated_quote = QuoteInput.from_dict(single_input)
+    recalculated_result = calculate_quote(recalculated_quote)
+    updated_record["input"] = recalculated_quote.to_dict()
+    updated_record["result"] = recalculated_result
+    updated_record["client_name"] = recalculated_quote.client_name
+    updated_record["product_name"] = recalculated_quote.product_name
+    if notes is not None:
+        updated_record["notes"] = str(notes or "").strip()
+        updated_record.setdefault("input", {})["notes"] = str(notes or "").strip()
+    return updated_record
+
+
 def _ensure_table_columns(
     connection: sqlite3.Connection | CompatConnection,
     table_name: str,
@@ -1162,6 +1270,61 @@ def _record_payment_event(
             amount_cop,
             payment_date,
             note,
+        ),
+    )
+
+
+def _sync_advance_payment_event(
+    connection: sqlite3.Connection | CompatConnection,
+    *,
+    company_id: int,
+    order_id: int,
+    amount_cop: float,
+    payment_date: str,
+) -> None:
+    connection.row_factory = sqlite3.Row
+    existing = connection.execute(
+        """
+        SELECT id
+        FROM payment_events
+        WHERE order_id = ? AND company_id = ? AND payment_kind = 'advance'
+        ORDER BY id ASC
+        LIMIT 1
+        """,
+        (order_id, company_id),
+    ).fetchone()
+
+    if amount_cop <= 0:
+        if existing is not None:
+            connection.execute(
+                "DELETE FROM payment_events WHERE order_id = ? AND company_id = ? AND payment_kind = 'advance'",
+                (order_id, company_id),
+            )
+        return
+
+    if existing is None:
+        _record_payment_event(
+            connection,
+            company_id=company_id,
+            order_id=order_id,
+            payment_kind="advance",
+            amount_cop=amount_cop,
+            payment_date=payment_date,
+            note="Anticipo actualizado desde la compra.",
+        )
+        return
+
+    connection.execute(
+        """
+        UPDATE payment_events
+        SET amount_cop = ?, payment_date = ?, note = ?
+        WHERE id = ?
+        """,
+        (
+            amount_cop,
+            payment_date,
+            "Anticipo actualizado desde la compra.",
+            existing["id"],
         ),
     )
 
@@ -6136,6 +6299,152 @@ def update_order_image(
             WHERE id = ? AND company_id = ?
             """,
             (normalized_image, order_id, company_id),
+        )
+        connection.commit()
+
+        updated = connection.execute(
+            "SELECT * FROM orders WHERE id = ? AND company_id = ?",
+            (order_id, company_id),
+        ).fetchone()
+        events = _list_order_events(connection, [order_id], all_statuses, company_id).get(
+            order_id, []
+        )
+        return _serialize_order(updated, events, all_statuses, active_statuses)
+
+
+def update_confirmed_order(
+    order_id: int,
+    *,
+    exchange_rate_cop: float | None = None,
+    advance_paid_cop: float | None = None,
+    notes: str | None = None,
+    actual_purchase_prices: list[dict[str, Any]] | None = None,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    now = datetime.now(timezone.utc).isoformat()
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        _ensure_orders_runtime_columns(connection)
+        all_statuses = _list_status_rows(
+            connection,
+            company_id=company_id,
+            include_inactive=True,
+        )
+        active_statuses = [status for status in all_statuses if status["is_active"]]
+        existing = connection.execute(
+            "SELECT * FROM orders WHERE id = ? AND company_id = ?",
+            (order_id, company_id),
+        ).fetchone()
+        if existing is None:
+            raise ValueError("La compra no existe.")
+
+        snapshot = json.loads(existing["snapshot_json"])
+        normalized_notes = str(existing["notes"] or "").strip() if notes is None else str(notes or "").strip()
+
+        normalized_exchange_rate: float | None = None
+        if exchange_rate_cop is not None:
+            try:
+                normalized_exchange_rate = float(exchange_rate_cop)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("La TRM debe ser numerica.") from exc
+            if normalized_exchange_rate <= 0:
+                raise ValueError("La TRM debe ser mayor a cero.")
+
+        recalculated_snapshot = _recalculate_confirmed_order_quote_record(
+            snapshot,
+            exchange_rate_cop=normalized_exchange_rate,
+            notes=normalized_notes,
+            actual_purchase_prices=actual_purchase_prices,
+        )
+        order_data = build_order_from_quote(
+            recalculated_snapshot,
+            advance_paid_cop=advance_paid_cop if advance_paid_cop is not None else float(existing["advance_paid_cop"] or 0),
+        )
+
+        second_payment_amount_cop = float(existing["second_payment_amount_cop"] or 0)
+        total_paid_cop = float(order_data["advance_paid_cop"] or 0) + second_payment_amount_cop
+        sale_price_cop = float(order_data["sale_price_cop"] or 0)
+        if total_paid_cop > sale_price_cop:
+            raise ValueError("La suma del anticipo y el segundo pago no puede ser mayor al valor de la compra.")
+
+        balance_due_cop = max(sale_price_cop - total_paid_cop, 0)
+        locked_statuses = {"second_payment_received", "shipped_to_client", "delivered_to_client", "cycle_closed"}
+        if str(existing["status_key"] or "").strip() in locked_statuses and balance_due_cop > 0:
+            raise ValueError(
+                "No puedes dejar saldo pendiente en una compra que ya avanzo mas alla del segundo pago recibido."
+            )
+
+        connection.execute(
+            """
+            UPDATE orders
+            SET client_id = ?,
+                product_id = ?,
+                client_name = ?,
+                product_name = ?,
+                sale_price_cop = ?,
+                advance_paid_cop = ?,
+                balance_due_cop = ?,
+                notes = ?,
+                snapshot_json = ?
+            WHERE id = ? AND company_id = ?
+            """,
+            (
+                order_data.get("client_id"),
+                order_data.get("product_id"),
+                order_data["client_name"],
+                order_data["product_name"],
+                sale_price_cop,
+                float(order_data["advance_paid_cop"] or 0),
+                balance_due_cop,
+                normalized_notes,
+                json.dumps(recalculated_snapshot, ensure_ascii=False),
+                order_id,
+                company_id,
+            ),
+        )
+        _sync_advance_payment_event(
+            connection,
+            company_id=company_id,
+            order_id=order_id,
+            amount_cop=float(order_data["advance_paid_cop"] or 0),
+            payment_date=normalize_date_input(existing["created_at"]).isoformat(),
+        )
+
+        changes: list[str] = []
+        if normalized_exchange_rate is not None:
+            changes.append(f"TRM: {int(round(normalized_exchange_rate))}")
+        if advance_paid_cop is not None:
+            changes.append(
+                f"Anticipo real: {_format_cop_plain(float(order_data['advance_paid_cop'] or 0))}"
+            )
+        if actual_purchase_prices:
+            changes.append("Precios reales de compra ajustados")
+        if notes is not None:
+            changes.append("Notas actualizadas")
+        change_note = "Compra editada."
+        if changes:
+            change_note = f"Compra editada. {' | '.join(changes)}."
+        connection.execute(
+            """
+            INSERT INTO order_events (
+                created_at,
+                company_id,
+                order_id,
+                status_key,
+                note
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                now,
+                company_id,
+                order_id,
+                existing["status_key"],
+                change_note,
+            ),
         )
         connection.commit()
 

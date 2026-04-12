@@ -7,6 +7,7 @@ from fershop_calculadora.database import (
     create_order_from_quote,
     list_order_statuses,
     register_second_payment,
+    update_confirmed_order,
     update_order_travel_transport,
     update_order_status,
 )
@@ -332,6 +333,47 @@ class OrderPersistenceTests(unittest.TestCase):
         self.assertEqual(updated["travel_transport_type"], "luggage")
         self.assertEqual(updated["travel_transport_label"], "Maleta")
         self.assertIn("Ruta del producto actualizada", updated["events"][-1]["note"])
+
+    def test_update_confirmed_order_can_adjust_trm_price_and_advance(self) -> None:
+        quote = QuoteInput.from_dict(
+            {
+                "product_name": "Bolso premium",
+                "client_name": "Andrea",
+                "price_usd_net": 100,
+                "tax_usa_percent": 7,
+                "travel_cost_usd": 0,
+                "locker_shipping_usd": 5,
+                "exchange_rate_cop": 4000,
+                "local_costs_cop": 0,
+                "desired_margin_percent": 25,
+                "advance_percent": 50,
+                "final_sale_price_cop": 850000,
+            }
+        )
+        result = calculate_quote(quote)
+        record = database.save_quote(quote.to_dict(), result)
+        order, _ = create_order_from_quote(record["id"], advance_paid_cop=300000)
+
+        updated = update_confirmed_order(
+            order["id"],
+            exchange_rate_cop=4200,
+            advance_paid_cop=320000,
+            notes="Compra ajustada por descuento final.",
+            actual_purchase_prices=[
+                {
+                    "product_name": "Bolso premium",
+                    "price_usd_net": 90,
+                }
+            ],
+        )
+
+        self.assertEqual(updated["advance_paid_cop"], 320000)
+        self.assertEqual(updated["notes"], "Compra ajustada por descuento final.")
+        self.assertAlmostEqual(updated["sale_price_cop"], 850000)
+        self.assertAlmostEqual(updated["balance_due_cop"], 530000)
+        self.assertAlmostEqual(updated["snapshot"]["input"]["exchange_rate_cop"], 4200)
+        self.assertAlmostEqual(updated["snapshot"]["input"]["price_usd_net"], 90)
+        self.assertIn("Compra editada", updated["events"][-1]["note"])
 
     def test_cannot_mark_second_payment_received_without_registering_it(self) -> None:
         quote = QuoteInput.from_dict(

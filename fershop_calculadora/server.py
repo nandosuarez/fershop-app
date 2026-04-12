@@ -69,6 +69,7 @@ from .database import (
     update_order_status,
     update_order_travel_transport,
     update_order_image,
+    update_confirmed_order,
     update_whatsapp_notification_status,
 )
 from .documents import build_quote_message, generate_quote_pdf
@@ -980,6 +981,40 @@ class FerShopHandler(BaseHTTPRequestHandler):
                     )
                     self._send_json(HTTPStatus.OK, {"item": item})
                     return
+                if action == "edit":
+                    payload = self._read_json()
+                    raw_advance_paid_cop = payload.get("advance_paid_cop")
+                    advance_paid_cop = None
+                    if raw_advance_paid_cop not in (None, ""):
+                        try:
+                            advance_paid_cop = float(raw_advance_paid_cop)
+                        except (TypeError, ValueError) as exc:
+                            raise ValueError("El anticipo real debe ser numerico.") from exc
+
+                    raw_exchange_rate = payload.get("exchange_rate_cop")
+                    exchange_rate_cop = None
+                    if raw_exchange_rate not in (None, ""):
+                        try:
+                            exchange_rate_cop = float(raw_exchange_rate)
+                        except (TypeError, ValueError) as exc:
+                            raise ValueError("La TRM debe ser numerica.") from exc
+
+                    actual_purchase_prices = payload.get("actual_purchase_prices")
+                    if actual_purchase_prices is not None and not isinstance(actual_purchase_prices, list):
+                        raise ValueError("Los precios reales de compra deben enviarse como lista.")
+
+                    item = update_confirmed_order(
+                        order_id,
+                        exchange_rate_cop=exchange_rate_cop,
+                        advance_paid_cop=advance_paid_cop,
+                        notes=str(payload.get("notes", "") if "notes" in payload else "").strip()
+                        if "notes" in payload
+                        else None,
+                        actual_purchase_prices=actual_purchase_prices,
+                        company_id=session["company"]["id"],
+                    )
+                    self._send_json(HTTPStatus.OK, {"item": item})
+                    return
                 if action == "image":
                     payload = self._read_json()
                     item = update_order_image(
@@ -1124,7 +1159,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
         raw_id = parts[2]
         action = parts[3]
-        if action not in {"status", "second-payment", "travel-transport", "whatsapp", "image"}:
+        if action not in {"status", "second-payment", "travel-transport", "whatsapp", "image", "edit"}:
             return None
 
         try:

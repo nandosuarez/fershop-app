@@ -6152,10 +6152,51 @@ function buildOrderPrimaryActionButton(order) {
   return '<span class="order-flow-complete">Sin accion</span>';
 }
 
+function getOrderEditExchangeRate(order) {
+  const quoteItems = order?.snapshot?.input?.quote_items;
+  if (Array.isArray(quoteItems) && quoteItems.length) {
+    const firstItemInput =
+      quoteItems[0] && typeof quoteItems[0].input === "object" ? quoteItems[0].input : quoteItems[0];
+    return Number(firstItemInput?.exchange_rate_cop || 0) || 0;
+  }
+  return Number(order?.snapshot?.input?.exchange_rate_cop || 0) || 0;
+}
+
+function getOrderEditPurchaseItems(order) {
+  const quoteItems = order?.snapshot?.input?.quote_items;
+  if (Array.isArray(quoteItems) && quoteItems.length) {
+    return quoteItems.map((item, index) => {
+      const itemInput = item && typeof item.input === "object" ? item.input : item;
+      return {
+        quoteItemIndex: index,
+        productId: item?.product_id ?? itemInput?.product_id ?? null,
+        productName: String(item?.product_name || itemInput?.product_name || "Producto"),
+        usesInventoryStock: Boolean(
+          item?.uses_inventory_stock ?? itemInput?.uses_inventory_stock ?? false
+        ),
+        priceUsdNet: Number(itemInput?.price_usd_net || 0) || 0,
+      };
+    });
+  }
+
+  return [
+    {
+      quoteItemIndex: 0,
+      productId: order?.snapshot?.input?.product_id ?? null,
+      productName: String(order?.snapshot?.input?.product_name || order?.product_name || "Producto"),
+      usesInventoryStock: Boolean(order?.snapshot?.input?.uses_inventory_stock),
+      priceUsdNet: Number(order?.snapshot?.input?.price_usd_net || 0) || 0,
+    },
+  ];
+}
+
 function renderOrderDetailPanel(order) {
   const nextAction = describeOrderNextAction(order);
   const secondPaymentBlocked =
     order.next_status_key === "second_payment_received" && Number(order.balance_due_cop || 0) > 0;
+  const editablePurchaseItems = getOrderEditPurchaseItems(order);
+  const editableImportedItems = editablePurchaseItems.filter((item) => !item.usesInventoryStock);
+  const exchangeRateCop = getOrderEditExchangeRate(order);
 
   return `
     <div class="order-detail-shell">
@@ -6186,6 +6227,67 @@ function renderOrderDetailPanel(order) {
             ? `<span>Ruta viaje: ${escapeHtml(order.travel_transport_label || "Por definir")}</span>`
             : ""
         }
+      </div>
+
+      <div class="order-payment-register">
+        <strong>Editar compra confirmada</strong>
+        <p class="catalog-card-note">
+          Ajusta TRM, anticipo real, notas y el precio real de compra para recalcular utilidad y saldo sin tocar el flujo.
+        </p>
+        <div class="order-payment-fields">
+          <label>
+            <span>TRM</span>
+            <input
+              type="text"
+              inputmode="numeric"
+              value="${escapeHtml(String(Math.round(exchangeRateCop || 0)))}"
+              data-order-edit-exchange-rate="${order.id}"
+            />
+          </label>
+          <label>
+            <span>Anticipo real</span>
+            <input
+              type="text"
+              inputmode="numeric"
+              value="${escapeHtml(String(Math.round(order.advance_paid_cop || 0)))}"
+              data-order-edit-advance="${order.id}"
+            />
+          </label>
+        </div>
+        <div class="order-payment-fields order-edit-price-grid">
+          ${
+            editableImportedItems.length
+              ? editableImportedItems
+                  .map(
+                    (item) => `
+                      <label>
+                        <span>Precio real USD · ${escapeHtml(item.productName)}</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value="${escapeHtml(String(item.priceUsdNet || 0))}"
+                          data-order-edit-price="${order.id}"
+                          data-quote-item-index="${item.quoteItemIndex}"
+                          data-product-id="${escapeHtml(String(item.productId ?? ""))}"
+                          data-product-name="${escapeHtml(item.productName)}"
+                        />
+                      </label>
+                    `
+                  )
+                  .join("")
+              : `<p class="catalog-card-note">Esta compra sale completamente de inventario; no necesita ajustar precio real de compra.</p>`
+          }
+        </div>
+        <label class="order-edit-notes-field">
+          <span>Notas de la compra</span>
+          <textarea rows="3" data-order-edit-notes="${order.id}">${escapeHtml(order.notes || "")}</textarea>
+        </label>
+        <div class="order-edit-actions">
+          <button class="secondary" type="button" data-save-order-edit="${order.id}">
+            Guardar ajustes
+          </button>
+        </div>
       </div>
 
       <div class="order-payment-register">
@@ -7970,6 +8072,84 @@ ordersListContainer.addEventListener("click", async (event) => {
     } finally {
       secondPaymentButton.disabled = false;
       secondPaymentButton.textContent = originalText;
+    }
+    return;
+  }
+
+  const saveOrderEditButton = event.target.closest("[data-save-order-edit]");
+  if (saveOrderEditButton) {
+    const orderId = saveOrderEditButton.getAttribute("data-save-order-edit");
+    if (!orderId) {
+      return;
+    }
+
+    const exchangeRateInput = ordersListContainer.querySelector(
+      `[data-order-edit-exchange-rate="${orderId}"]`
+    );
+    const advanceInput = ordersListContainer.querySelector(
+      `[data-order-edit-advance="${orderId}"]`
+    );
+    const notesInput = ordersListContainer.querySelector(
+      `[data-order-edit-notes="${orderId}"]`
+    );
+    const priceInputs = Array.from(
+      ordersListContainer.querySelectorAll(`[data-order-edit-price="${orderId}"]`)
+    );
+
+    const exchangeRateCop = parseCurrencyInput(exchangeRateInput ? exchangeRateInput.value : "");
+    if (exchangeRateCop === null || exchangeRateCop <= 0) {
+      statusMessage.textContent = "Ingresa una TRM valida para actualizar la compra.";
+      return;
+    }
+
+    const advancePaidCop = parseCurrencyInput(advanceInput ? advanceInput.value : "");
+    if (advancePaidCop === null || advancePaidCop < 0) {
+      statusMessage.textContent = "Ingresa un anticipo real valido.";
+      return;
+    }
+
+    const actualPurchasePrices = [];
+    for (const input of priceInputs) {
+      const rawValue = String(input.value || "").trim();
+      if (!rawValue) {
+        continue;
+      }
+      const parsedValue = parseUsdInput(rawValue);
+      if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+        statusMessage.textContent = "Revisa los precios reales USD de la compra.";
+        return;
+      }
+      actualPurchasePrices.push({
+        quote_item_index: Number(input.getAttribute("data-quote-item-index") || 0),
+        product_id: input.getAttribute("data-product-id") || null,
+        product_name: input.getAttribute("data-product-name") || "",
+        price_usd_net: parsedValue,
+      });
+    }
+
+    const originalText = saveOrderEditButton.textContent;
+    saveOrderEditButton.disabled = true;
+    saveOrderEditButton.textContent = "Guardando...";
+
+    try {
+      await requestJson(`/api/orders/${orderId}/edit`, {
+        method: "POST",
+        body: JSON.stringify({
+          exchange_rate_cop: exchangeRateCop,
+          advance_paid_cop: advancePaidCop,
+          notes: String(notesInput?.value || "").trim(),
+          actual_purchase_prices: actualPurchasePrices,
+        }),
+      });
+      await Promise.all([loadOrders(), loadDashboard(), loadFollowup()]);
+      await refreshActiveClientDetail();
+      await refreshActiveProductDetail();
+      statusMessage.textContent = "Compra actualizada con los datos corregidos.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    } finally {
+      saveOrderEditButton.disabled = false;
+      saveOrderEditButton.textContent = originalText;
     }
     return;
   }

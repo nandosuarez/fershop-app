@@ -1683,6 +1683,23 @@ button:disabled {
   gap: 6px;
 }
 
+.order-edit-price-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: stretch;
+}
+
+.order-edit-notes-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.order-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
 .order-image-fields {
   grid-template-columns: minmax(0, 1fr);
 }
