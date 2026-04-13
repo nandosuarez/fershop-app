@@ -2110,8 +2110,18 @@ button:disabled {
 
   .field-grid,
   .metrics-grid,
-  .catalog-picker-row {
+  .catalog-picker-row,
+  .direct-order-top-grid,
+  .direct-order-footer-grid {
     grid-template-columns: 1fr;
+  }
+
+  .direct-order-line-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .direct-order-line-product {
+    grid-column: auto;
   }
 
   .catalog-row {
@@ -2157,7 +2167,9 @@ button:disabled {
   .actions button,
   .dashboard-ranking-actions button,
   .history-action-button:not(.history-action-button-icon),
-  .history-action-button-secondary:not(.history-action-button-icon) {
+  .history-action-button-secondary:not(.history-action-button-icon),
+  .direct-order-line-actions button,
+  .direct-order-submit-bar button {
     width: 100%;
   }
 
@@ -2295,6 +2307,75 @@ button:disabled {
   border: 1px solid rgba(18, 17, 17, 0.08);
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.56);
+}
+
+.direct-order-panel {
+  gap: 22px;
+}
+
+.direct-order-form-linear {
+  gap: 20px;
+}
+
+.direct-order-top-grid {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1.35fr)
+    minmax(180px, 0.7fr)
+    minmax(180px, 0.7fr);
+  gap: 16px;
+}
+
+.direct-order-product-panel,
+.direct-order-results-block,
+.direct-order-advance-panel {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.direct-order-line-grid {
+  display: grid;
+  grid-template-columns:
+    minmax(240px, 2fr)
+    minmax(80px, 0.55fr)
+    repeat(4, minmax(130px, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
+.direct-order-line-product {
+  grid-column: span 2;
+}
+
+.direct-order-line-quantity input {
+  text-align: center;
+}
+
+.direct-order-line-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.direct-order-stock-toggle {
+  min-width: fit-content;
+}
+
+.direct-order-line-actions,
+.direct-order-submit-bar {
+  justify-content: flex-start;
+}
+
+.direct-order-line-actions button,
+.direct-order-submit-bar button {
+  flex: 0 0 auto;
+}
+
+.direct-order-footer-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.4fr);
+  gap: 16px;
 }
 
 .panel-header-inline {

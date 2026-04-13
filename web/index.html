@@ -281,7 +281,7 @@
                     </button>
                   </div>
 
-                  <div class="catalog-picker-row">
+                  <div class="direct-order-top-grid">
                     <label>
                       <span>Producto guardado</span>
                       <div class="inline-input-action">
@@ -388,7 +388,7 @@
                       <input name="exchange_rate_cop" type="number" min="1" step="1" value="3790" required />
                     </label>
 
-                    <label>
+                    <label hidden>
                       <span>Gastos locales asignados COP</span>
                       <input name="local_costs_cop" type="number" min="0" step="1" value="0" required />
                     </label>
@@ -765,10 +765,251 @@
               <p class="module-page-kicker">Operacion de compra</p>
               <h2>Compras y seguimiento</h2>
               <p>
-                Convierte una cotizacion confirmada en compra y sigue el pedido por estados hasta
-                cerrar el ciclo completo.
+                Crea compras directas o convierte una cotizacion confirmada en compra y sigue el
+                pedido por estados hasta cerrar el ciclo completo.
               </p>
             </header>
+
+            <section class="catalog-layout catalog-layout-single direct-order-layout">
+              <section class="panel catalog-panel direct-order-panel">
+                <div class="panel-header">
+                  <h2>Compra directa</h2>
+                  <p>
+                    Selecciona el cliente, define la TRM y arma la compra producto por producto en
+                    una sola secuencia.
+                  </p>
+                </div>
+
+                <form id="direct-order-form" class="quote-form direct-order-form-linear">
+                  <input name="product_id" type="hidden" />
+                  <input name="client_id" type="hidden" />
+                  <input name="product_name" type="hidden" />
+                  <input name="client_name" type="hidden" />
+                  <input name="reference" type="hidden" />
+                  <input name="category" type="hidden" />
+                  <input name="store" type="hidden" />
+                  <input name="advance_percent" type="hidden" value="50" />
+
+                  <div class="quote-mode-bar">
+                    <span class="catalog-chip">Nueva compra directa</span>
+                    <span id="direct-order-mode-badge" class="catalog-chip quote-origin-chip" hidden>
+                      Editando producto
+                    </span>
+                  </div>
+
+                  <div class="direct-order-top-grid">
+                    <label>
+                      <span>Cliente guardado</span>
+                      <input
+                        id="direct-order-client-select"
+                        type="text"
+                        placeholder="Busca un cliente guardado"
+                        autocomplete="off"
+                        required
+                      />
+                    </label>
+
+                    <label>
+                      <span>TRM general COP por USD</span>
+                      <input name="exchange_rate_cop" type="number" min="1" step="1" value="3790" required />
+                    </label>
+                  </div>
+
+                  <section
+                    id="direct-order-live-summary"
+                    class="quote-live-summary quote-live-summary-empty"
+                  >
+                    <p>Selecciona cliente y producto para empezar a armar la compra directa.</p>
+                  </section>
+
+                  <section class="quote-items-panel direct-order-product-panel">
+                    <div class="panel-header panel-header-inline">
+                      <div>
+                        <h3>Linea de producto</h3>
+                        <p>Carga el producto y luego ajusta los valores reales en la linea de abajo.</p>
+                      </div>
+                    </div>
+                    <label class="direct-order-line-product">
+                      <span>Producto guardado</span>
+                      <div class="inline-input-action">
+                        <input
+                          id="direct-order-product-select"
+                          type="text"
+                          placeholder="Busca un producto del catalogo"
+                          autocomplete="off"
+                        />
+                        <button type="button" id="direct-order-load-product-button" class="secondary">
+                          Cargar
+                        </button>
+                      </div>
+                    </label>
+                  </section>
+
+                  <section class="quote-items-panel">
+                    <div class="panel-header panel-header-inline">
+                      <div>
+                        <h3>Productos de esta compra</h3>
+                        <p>
+                          Calcula cada producto con su valor real y luego agrégalo para consolidar
+                          la compra completa.
+                        </p>
+                      </div>
+                    </div>
+                    <div id="direct-order-line-items" class="catalog-empty">
+                      <p>Aun no has agregado productos a esta compra directa.</p>
+                    </div>
+                  </section>
+
+                  <div class="field-grid">
+                    <label>
+                      <span>Tipo de compra general</span>
+                      <select name="purchase_type" id="direct-order-purchase-type" required>
+                        <option value="online" selected>Online</option>
+                        <option value="travel">En viaje</option>
+                      </select>
+                    </label>
+
+                    <label hidden>
+                      <span>TRM general COP por USD</span>
+                      <input name="exchange_rate_cop_legacy" type="number" min="1" step="1" value="3790" />
+                    </label>
+
+                    <label>
+                      <span>Anticipo real del cliente COP</span>
+                      <input
+                        name="advance_paid_cop"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value="0"
+                        required
+                      />
+                    </label>
+
+                    <label hidden>
+                      <span>Margen objetivo %</span>
+                      <input
+                        name="desired_margin_percent"
+                        type="number"
+                        min="0"
+                        max="99.99"
+                        step="0.01"
+                        value="30"
+                        required
+                      />
+                    </label>
+
+                    <label>
+                      <span>Cantidad</span>
+                      <input name="quantity" type="number" min="1" step="1" value="1" required />
+                    </label>
+
+                    <label class="checkbox-field quote-checkbox-field">
+                      <input name="uses_inventory_stock" type="checkbox" />
+                      <span>Sale de inventario de tienda</span>
+                    </label>
+
+                    <label>
+                      <span>Precio USD neto</span>
+                      <input
+                        name="price_usd_net"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value="0"
+                        required
+                      />
+                    </label>
+
+                    <label>
+                      <span>Tax USA %</span>
+                      <input
+                        name="tax_usa_percent"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value="0"
+                        required
+                      />
+                    </label>
+
+                    <label>
+                      <span>Costo viaje asignado USD</span>
+                      <input name="travel_cost_usd" type="number" min="0" step="0.01" value="0" required />
+                    </label>
+
+                    <label>
+                      <span>Envio / casillero USD</span>
+                      <input
+                        name="locker_shipping_usd"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value="0"
+                        required
+                      />
+                    </label>
+
+                    <label>
+                      <span>Gastos locales asignados COP</span>
+                      <input name="local_costs_cop" type="number" min="0" step="1" value="0" required />
+                    </label>
+
+                    <label>
+                      <span>Precio final del producto COP</span>
+                      <input name="final_sale_price_cop" type="number" min="0" step="1" placeholder="Opcional" />
+                    </label>
+                  </div>
+
+                  <p id="direct-order-purchase-type-helper" class="field-helper">
+                    El tipo de compra y la TRM general se aplicaran a todos los productos al crear la compra.
+                  </p>
+                  <p id="direct-order-inventory-helper" class="field-helper">
+                    Activa esta opcion solo cuando el producto ya esta disponible en tienda para entrega inmediata.
+                  </p>
+
+                  <label class="full-width">
+                    <span>Productos para PDF / WhatsApp</span>
+                    <textarea
+                      name="client_quote_items_text"
+                      rows="4"
+                      placeholder="Opcional. Escribe una linea por producto, por ejemplo:&#10;Sueter basico - $220.000 COP&#10;Zapatos casuales - $490.000 COP"
+                    ></textarea>
+                  </label>
+
+                  <label class="full-width">
+                    <span>Observaciones de la compra</span>
+                    <textarea
+                      name="notes"
+                      rows="4"
+                      placeholder="Descuentos reales, proveedor, talla, color o cualquier detalle importante."
+                    ></textarea>
+                  </label>
+
+                  <div class="actions quote-actions-bar">
+                    <button type="button" id="direct-order-add-item-button">Agregar producto a la compra</button>
+                    <button type="button" id="direct-order-create-button">Crear compra directa</button>
+                    <button type="submit" class="secondary">Recalcular manual</button>
+                    <button type="button" id="direct-order-clear-button" class="secondary">
+                      Limpiar compra
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              <section class="panel result-panel quote-result-panel">
+                <div class="panel-header">
+                  <h2>Resultado de la compra</h2>
+                  <p id="direct-order-status-message">
+                    Ajusta los valores del producto actual y luego agrégalo a la compra.
+                  </p>
+                </div>
+
+                <div id="direct-order-results" class="results-empty">
+                  <p>Cuando calcules, aqui veras el costo real, el precio sugerido y el cierre del producto actual.</p>
+                </div>
+              </section>
+            </section>
 
             <section class="panel purchases-panel">
               <div class="panel-header">

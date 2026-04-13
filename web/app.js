@@ -74,6 +74,20 @@ const pendingStoreInput = document.getElementById("pending-store-input");
 const pendingListContainer = document.getElementById("pending-list");
 const pendingOriginBadge = document.getElementById("pending-origin-badge");
 const saveButton = document.getElementById("save-button");
+const directOrderForm = document.getElementById("direct-order-form");
+const directOrderClientSelect = document.getElementById("direct-order-client-select");
+const directOrderProductSelect = document.getElementById("direct-order-product-select");
+const directOrderLoadProductButton = document.getElementById("direct-order-load-product-button");
+const directOrderAddItemButton = document.getElementById("direct-order-add-item-button");
+const directOrderCreateButton = document.getElementById("direct-order-create-button");
+const directOrderClearButton = document.getElementById("direct-order-clear-button");
+const directOrderLineItemsContainer = document.getElementById("direct-order-line-items");
+const directOrderLiveSummaryContainer = document.getElementById("direct-order-live-summary");
+const directOrderResultsContainer = document.getElementById("direct-order-results");
+const directOrderStatusMessage = document.getElementById("direct-order-status-message");
+const directOrderModeBadge = document.getElementById("direct-order-mode-badge");
+const directOrderPurchaseTypeHelper = document.getElementById("direct-order-purchase-type-helper");
+const directOrderInventoryHelper = document.getElementById("direct-order-inventory-helper");
 const clientViewButtons = Array.from(document.querySelectorAll("[data-client-view]"));
 const brandLogo = document.querySelector(".brand-logo");
 const brandKicker = document.querySelector(".brand-kicker");
@@ -132,9 +146,15 @@ const state = {
   quoteCalculationRequestId: 0,
   quoteHistory: [],
   quoteLineItems: [],
+  directOrderLastPayload: null,
+  directOrderLastResult: null,
+  directOrderLineItems: [],
+  directOrderCalculationTimer: 0,
+  directOrderCalculationRequestId: 0,
   inventoryPurchaseLineItems: [],
   editingQuoteId: null,
   editingQuoteItemIndex: null,
+  editingDirectOrderItemIndex: null,
   activeOrderId: null,
   editingClientId: null,
   editingProductId: null,
@@ -161,6 +181,19 @@ const QUOTE_AUTO_CALC_FIELDS = new Set([
   "advance_percent",
   "final_sale_price_cop",
   "final_advance_cop",
+]);
+const DIRECT_ORDER_AUTO_CALC_FIELDS = new Set([
+  "purchase_type",
+  "quantity",
+  "uses_inventory_stock",
+  "price_usd_net",
+  "tax_usa_percent",
+  "travel_cost_usd",
+  "locker_shipping_usd",
+  "exchange_rate_cop",
+  "local_costs_cop",
+  "desired_margin_percent",
+  "final_sale_price_cop",
 ]);
 
 const copFormatter = new Intl.NumberFormat("es-CO", {
@@ -635,6 +668,1103 @@ function prepareQuoteCalculatorForNextProduct() {
   resultsContainer.innerHTML =
     "<p>Producto agregado. Carga el siguiente y aqui veras el nuevo calculo.</p>";
   statusMessage.textContent = "Producto agregado a la cotizacion. La calculadora quedo lista para el siguiente.";
+}
+
+function getDirectOrderField(name) {
+  return directOrderForm?.elements?.namedItem(name) || null;
+}
+
+function setDirectOrderField(name, value) {
+  const field = getDirectOrderField(name);
+  if (field) {
+    field.value = value ?? "";
+  }
+}
+
+function getDirectOrderPurchaseType() {
+  return (
+    String(getDirectOrderField("purchase_type")?.value || "online").trim().toLowerCase() || "online"
+  );
+}
+
+function getCurrentDirectOrderProduct() {
+  const productId = String(getDirectOrderField("product_id")?.value || "").trim();
+  if (!productId) {
+    return null;
+  }
+  return state.products.find((item) => String(item.id) === productId) || null;
+}
+
+function invalidateDirectOrderCalculation() {
+  if (state.directOrderCalculationTimer) {
+    window.clearTimeout(state.directOrderCalculationTimer);
+    state.directOrderCalculationTimer = 0;
+  }
+  state.directOrderCalculationRequestId += 1;
+}
+
+function clearDirectOrderClientSelection() {
+  setDirectOrderField("client_id", "");
+  setDirectOrderField("client_name", "");
+  if (directOrderClientSelect) {
+    directOrderClientSelect.value = "";
+  }
+  renderDirectOrderLiveSummary();
+}
+
+function applyClientToDirectOrder(client) {
+  if (!client) {
+    clearDirectOrderClientSelection();
+    return;
+  }
+  setDirectOrderField("client_id", client.id);
+  setDirectOrderField("client_name", client.name || "");
+  if (directOrderClientSelect) {
+    directOrderClientSelect.value = clientSearchLabel(client);
+  }
+  renderDirectOrderLiveSummary();
+}
+
+function clearDirectOrderProductSelection() {
+  setDirectOrderField("product_id", "");
+  setDirectOrderField("product_name", "");
+  setDirectOrderField("reference", "");
+  setDirectOrderField("category", "");
+  setDirectOrderField("store", "");
+  setDirectOrderField("quantity", 1);
+  setDirectOrderField("price_usd_net", "");
+  setDirectOrderField("tax_usa_percent", "");
+  setDirectOrderField("travel_cost_usd", "");
+  setDirectOrderField("locker_shipping_usd", "");
+  setDirectOrderField("local_costs_cop", "");
+  setDirectOrderField("final_sale_price_cop", "");
+  const inventoryField = getDirectOrderField("uses_inventory_stock");
+  if (inventoryField) {
+    inventoryField.checked = false;
+  }
+  if (directOrderProductSelect) {
+    directOrderProductSelect.value = "";
+  }
+  syncDirectOrderInventoryUi(null);
+  renderDirectOrderLiveSummary();
+}
+
+function setDirectOrderItemEditorState(index = null) {
+  state.editingDirectOrderItemIndex = Number.isInteger(index) && index >= 0 ? index : null;
+  if (directOrderModeBadge) {
+    directOrderModeBadge.hidden = state.editingDirectOrderItemIndex === null;
+    directOrderModeBadge.textContent =
+      state.editingDirectOrderItemIndex === null
+        ? "Editando producto"
+        : `Editando item ${state.editingDirectOrderItemIndex + 1}`;
+  }
+  if (directOrderAddItemButton) {
+    directOrderAddItemButton.textContent =
+      state.editingDirectOrderItemIndex === null
+        ? "Agregar producto a la compra"
+        : "Actualizar producto en la compra";
+  }
+  renderDirectOrderLiveSummary();
+}
+
+function setCalculationResultsEmpty(container, message) {
+  if (!container) {
+    return;
+  }
+  container.className = "results-empty";
+  container.innerHTML = `<p>${escapeHtml(message)}</p>`;
+}
+
+function renderCalculationResults(result, container) {
+  if (!container) {
+    return;
+  }
+
+  const costs = result.costs;
+  const suggested = result.suggested;
+  const finalData = result.final;
+  container.className = "results-ready";
+  container.innerHTML = `
+    <div class="metrics-grid">
+      ${makeMetricCard("Costo real total", formatCop(costs.real_total_cost_cop), "Base total de la operación en COP")}
+      ${makeMetricCard("Precio sugerido", formatCop(suggested.sale_price_cop), "Calculado según el margen objetivo")}
+      ${makeMetricCard("Ganancia estimada", formatCop(suggested.profit_cop), "Antes de negociar ajustes finales")}
+      ${makeMetricCard("ROI estimado", formatPercent(suggested.roi_percent), "Rentabilidad sobre tu capital")}
+    </div>
+
+    <div class="detail-grid">
+      <section class="detail-panel">
+        <h3>Desglose de costos</h3>
+        <div class="detail-item">
+          <span>Modalidad</span>
+          <strong>${escapeHtml(costs.purchase_type_label || "Compra online")}</strong>
+        </div>
+        ${makeDetailList(
+          [
+            ["Precio con tax", costs.price_with_tax_usd],
+            ["Costo total USD", costs.total_usd],
+          ],
+          formatUsd
+        )}
+        ${makeDetailList(
+          [
+            ["Viaje aplicado", costs.applied_travel_cost_usd],
+            ["Envio aplicado", costs.applied_locker_shipping_usd],
+          ],
+          formatUsd
+        )}
+        ${makeDetailList(
+          [
+            ["Gastos locales", costs.applied_local_costs_cop],
+            ["Viaje en COP", costs.travel_cost_cop],
+            ["Casillero en COP", costs.locker_shipping_cop],
+            ["Costo convertido en COP", costs.cost_in_cop],
+            ["Costo real total", costs.real_total_cost_cop],
+          ],
+          formatCop
+        )}
+      </section>
+
+      <section class="detail-panel">
+        <h3>Escenario sugerido</h3>
+        ${makeDetailList(
+          [
+            ["Precio sugerido", suggested.sale_price_cop],
+            ["Ganancia", suggested.profit_cop],
+            ["Anticipo sugerido", suggested.advance_cop],
+            ["Capital propio", suggested.own_capital_cop],
+          ],
+          formatCop
+        )}
+        ${makeDetailList(
+          [
+            ["% capital propio", suggested.own_capital_percent],
+            ["Markup", suggested.markup_percent],
+            ["ROI", suggested.roi_percent],
+          ],
+          formatPercent
+        )}
+      </section>
+
+      <section class="detail-panel detail-panel-highlight">
+        <h3>Escenario final</h3>
+        <p class="detail-note">
+          ${
+            finalData.uses_custom_sale_price || finalData.uses_custom_advance
+              ? "Se aplicaron ajustes manuales al cierre comercial."
+              : "Sin ajustes manuales: coincide con el escenario sugerido."
+          }
+        </p>
+        ${makeDetailList(
+          [
+            ["Precio final", finalData.sale_price_cop],
+            ["Ganancia final", finalData.profit_cop],
+            ["Margen final", finalData.margin_percent],
+            ["Anticipo final", finalData.advance_cop],
+            ["Capital propio final", finalData.own_capital_cop],
+            ["Markup final", finalData.markup_percent],
+            ["ROI final", finalData.roi_percent],
+          ],
+          (value, label) => {
+            if (["Margen final", "Markup final", "ROI final"].includes(label)) {
+              return formatPercent(value);
+            }
+            return formatCop(value);
+          }
+        )}
+      </section>
+    </div>
+  `;
+}
+
+function syncDirectOrderPurchaseTypeUi() {
+  const purchaseType = getDirectOrderPurchaseType();
+  const isTravel = purchaseType === "travel";
+  const purchaseTypeField = getDirectOrderField("purchase_type");
+  const travelField = getDirectOrderField("travel_cost_usd");
+  const localCostsField = getDirectOrderField("local_costs_cop");
+  if (purchaseTypeField) {
+    purchaseTypeField.value = purchaseType;
+  }
+  if (travelField && !isTravel) {
+    travelField.value = "0";
+  }
+  if (localCostsField && !isTravel) {
+    localCostsField.value = "0";
+  }
+  if (directOrderPurchaseTypeHelper) {
+    directOrderPurchaseTypeHelper.textContent = isTravel
+      ? "La compra quedara en modo viaje. Puedes usar costo de viaje y tambien envio si una parte viene por casillero."
+      : "La compra quedara en modo online. Usa envio/casillero y deja costo de viaje en cero.";
+  }
+}
+
+function shouldAutoCalculateDirectOrder(target) {
+  const fieldName = String(target?.name || "").trim();
+  return DIRECT_ORDER_AUTO_CALC_FIELDS.has(fieldName);
+}
+
+function syncDirectOrderInventoryUi(product = getCurrentDirectOrderProduct()) {
+  const inventoryField = getDirectOrderField("uses_inventory_stock");
+  if (!inventoryField) {
+    return;
+  }
+
+  const inventoryEnabled = Boolean(product?.inventory_enabled);
+  const currentStock = Number(product?.current_stock || 0);
+  if (!inventoryEnabled) {
+    inventoryField.checked = false;
+  }
+  inventoryField.disabled = !inventoryEnabled || currentStock <= 0;
+
+  if (!directOrderInventoryHelper) {
+    return;
+  }
+
+  if (!product) {
+    directOrderInventoryHelper.textContent =
+      "Activa esta opcion solo cuando el producto ya esta disponible en tienda para entrega inmediata.";
+    return;
+  }
+
+  if (!inventoryEnabled) {
+    directOrderInventoryHelper.textContent =
+      "Este producto no tiene inventario de tienda activo. Puedes venderlo por importacion normal.";
+    return;
+  }
+
+  if (currentStock <= 0) {
+    directOrderInventoryHelper.textContent =
+      "Este producto maneja inventario, pero hoy no tiene unidades disponibles para salida inmediata.";
+    return;
+  }
+
+  const inventoryUnitCost = getCurrentInventoryUnitCost(product);
+  if (inventoryUnitCost <= 0) {
+    directOrderInventoryHelper.textContent =
+      "Este producto tiene stock, pero aun no tiene costo promedio registrado. Usa Abastecimiento para cargar el costo real.";
+    return;
+  }
+
+  directOrderInventoryHelper.textContent = `Stock disponible: ${currentStock} unidad${
+    currentStock === 1 ? "" : "es"
+  }. Costo promedio: ${formatCop(inventoryUnitCost)}.`;
+}
+
+function renderDirectOrderLiveSummary() {
+  if (!directOrderLiveSummaryContainer || !directOrderForm) {
+    return;
+  }
+
+  const clientName = String(getDirectOrderField("client_name")?.value || directOrderClientSelect?.value || "").trim();
+  const productName = String(
+    getDirectOrderField("product_name")?.value || directOrderProductSelect?.value || ""
+  ).trim();
+  const totalSale = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.sale_price_cop || 0),
+    0
+  );
+  const totalProfit = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.profit_cop || 0),
+    0
+  );
+  const totalShippingUsd = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.result?.costs?.applied_locker_shipping_usd || 0),
+    0
+  );
+  const totalShippingCop = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.result?.costs?.locker_shipping_cop || 0),
+    0
+  );
+  const totalTravelUsd = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.result?.costs?.applied_travel_cost_usd || 0),
+    0
+  );
+  const totalTravelCop = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.result?.costs?.travel_cost_cop || 0),
+    0
+  );
+  const exchangeRateCop = Number(getDirectOrderField("exchange_rate_cop")?.value || 0);
+  const finalData = state.directOrderLastResult?.final || null;
+  const workingValue = finalData ? formatCop(finalData.sale_price_cop) : "Sin calcular";
+  const itemsLabel = state.directOrderLineItems.length
+    ? `${state.directOrderLineItems.length} item${state.directOrderLineItems.length === 1 ? "" : "s"}`
+    : "Sin items";
+
+  if (!clientName && !productName && !state.directOrderLineItems.length && !finalData) {
+    directOrderLiveSummaryContainer.className = "quote-live-summary quote-live-summary-empty";
+    directOrderLiveSummaryContainer.innerHTML =
+      "<p>Selecciona cliente y producto para empezar a armar la compra directa.</p>";
+    return;
+  }
+
+  directOrderLiveSummaryContainer.className = "quote-live-summary";
+  directOrderLiveSummaryContainer.innerHTML = `
+    <div class="quote-live-summary-grid">
+      <article class="quote-live-summary-card">
+        <span>Cliente</span>
+        <strong>${escapeHtml(clientName || "Sin seleccionar")}</strong>
+      </article>
+      <article class="quote-live-summary-card">
+        <span>Producto actual</span>
+        <strong>${escapeHtml(productName || "Carga un producto")}</strong>
+      </article>
+      <article class="quote-live-summary-card">
+        <span>TRM general</span>
+        <strong>${exchangeRateCop ? formatCop(exchangeRateCop) : "Sin TRM"}</strong>
+      </article>
+      <article class="quote-live-summary-card">
+        <span>Calculo actual</span>
+        <strong>${workingValue}</strong>
+      </article>
+      <article class="quote-live-summary-card">
+        <span>Compra armada</span>
+        <strong>${escapeHtml(itemsLabel)}</strong>
+        <small>${state.directOrderLineItems.length ? formatCop(totalSale) : "Aun no hay total acumulado"}</small>
+      </article>
+      <article class="quote-live-summary-card">
+        <span>Utilidad estimada</span>
+        <strong>${formatCop(totalProfit)}</strong>
+        <small>Sobre los productos ya agregados</small>
+      </article>
+      <article class="quote-live-summary-card">
+        <span>Envio / casillero</span>
+        <strong>${formatCop(totalShippingCop)}</strong>
+        <small>${formatUsd(totalShippingUsd)} acumulado</small>
+      </article>
+      <article class="quote-live-summary-card">
+        <span>Costo de viaje</span>
+        <strong>${formatCop(totalTravelCop)}</strong>
+        <small>${formatUsd(totalTravelUsd)} acumulado</small>
+      </article>
+    </div>
+  `;
+}
+
+function ensureDirectOrderItemText() {
+  const field = getDirectOrderField("client_quote_items_text");
+  if (!field) {
+    return;
+  }
+  const shouldAutofill = !field.value.trim() || field.dataset.autoGenerated === "true";
+  if (!shouldAutofill) {
+    return;
+  }
+  field.value = state.directOrderLineItems
+    .map((item) => {
+      const quantityPrefix = item.quantity > 1 ? `${item.quantity} x ` : "";
+      return `${quantityPrefix}${productLabel(item)}`;
+    })
+    .join("\n");
+  field.dataset.autoGenerated = state.directOrderLineItems.length ? "true" : "";
+}
+
+function readDirectOrderCurrentPayload() {
+  const data = new FormData(directOrderForm);
+  const currentProduct = state.products.find(
+    (item) => String(item.id) === String(data.get("product_id") || "").trim()
+  );
+  const usesInventoryStock = data.get("uses_inventory_stock") === "on";
+  return {
+    product_id: toNumberOrNull(data.get("product_id")),
+    client_id: toNumberOrNull(data.get("client_id")),
+    product_name: String(data.get("product_name") || "").trim(),
+    client_name: String(data.get("client_name") || "").trim(),
+    reference: String(data.get("reference") || "").trim(),
+    category: String(data.get("category") || "").trim(),
+    store: String(data.get("store") || "").trim(),
+    quantity: Number(data.get("quantity") || 1),
+    purchase_type: getDirectOrderPurchaseType(),
+    uses_inventory_stock: usesInventoryStock,
+    inventory_unit_cost_cop: usesInventoryStock ? Number(currentProduct?.inventory_unit_cost_cop || 0) : 0,
+    notes: String(data.get("notes") || "").trim(),
+    client_quote_items_text: String(data.get("client_quote_items_text") || "").trim(),
+    price_usd_net: Number(data.get("price_usd_net") || 0),
+    tax_usa_percent: Number(data.get("tax_usa_percent") || 0),
+    travel_cost_usd: Number(data.get("travel_cost_usd") || 0),
+    locker_shipping_usd: Number(data.get("locker_shipping_usd") || 0),
+    exchange_rate_cop: Number(data.get("exchange_rate_cop") || 0),
+    local_costs_cop: Number(data.get("local_costs_cop") || 0),
+    desired_margin_percent: Number(data.get("desired_margin_percent") || 0),
+    advance_percent: 50,
+    final_sale_price_cop: toNumberOrNull(data.get("final_sale_price_cop")),
+  };
+}
+
+function ensureDirectOrderSelection(payload) {
+  if (!payload.client_id || !payload.client_name) {
+    throw new Error("Selecciona un cliente guardado para la compra.");
+  }
+  if (!payload.product_id || !payload.product_name) {
+    throw new Error("Selecciona un producto guardado del catalogo.");
+  }
+  if (payload.uses_inventory_stock && Number(payload.inventory_unit_cost_cop || 0) <= 0) {
+    throw new Error(
+      "Este producto aun no tiene costo promedio de inventario. Registra primero el abastecimiento real."
+    );
+  }
+}
+
+function renderDirectOrderResults(result) {
+  renderCalculationResults(result, directOrderResultsContainer);
+}
+
+async function calculateDirectOrderFromForm({ manual = false } = {}) {
+  if (!directOrderForm) {
+    return false;
+  }
+  if (state.directOrderCalculationTimer) {
+    window.clearTimeout(state.directOrderCalculationTimer);
+    state.directOrderCalculationTimer = 0;
+  }
+
+  if (!directOrderForm.checkValidity()) {
+    if (manual) {
+      directOrderForm.reportValidity();
+      if (directOrderStatusMessage) {
+        directOrderStatusMessage.textContent = "Completa los datos requeridos para calcular el producto.";
+      }
+    }
+    syncDirectOrderCreateState();
+    return false;
+  }
+
+  const payload = readDirectOrderCurrentPayload();
+  try {
+    ensureDirectOrderSelection(payload);
+  } catch (error) {
+    if (manual && directOrderStatusMessage) {
+      directOrderStatusMessage.textContent = error.message;
+    }
+    syncDirectOrderCreateState();
+    return false;
+  }
+
+  const requestId = state.directOrderCalculationRequestId + 1;
+  state.directOrderCalculationRequestId = requestId;
+  if (directOrderCreateButton) {
+    directOrderCreateButton.disabled = true;
+  }
+  if (directOrderStatusMessage) {
+    directOrderStatusMessage.textContent = manual
+      ? "Calculando producto para la compra..."
+      : "Actualizando producto automaticamente...";
+  }
+
+  try {
+    const response = await requestJson("/api/calculate", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    if (requestId !== state.directOrderCalculationRequestId) {
+      return false;
+    }
+
+    state.directOrderLastPayload = payload;
+    state.directOrderLastResult = response.result;
+    renderDirectOrderResults(state.directOrderLastResult);
+    if (directOrderStatusMessage) {
+      directOrderStatusMessage.textContent = manual
+        ? "Resultado actualizado. Ya puedes agregar el producto a la compra."
+        : "Producto recalculado automaticamente.";
+    }
+    renderDirectOrderLiveSummary();
+    syncDirectOrderCreateState();
+    return true;
+  } catch (error) {
+    if (requestId !== state.directOrderCalculationRequestId) {
+      return false;
+    }
+    state.directOrderLastPayload = null;
+    state.directOrderLastResult = null;
+    setCalculationResultsEmpty(
+      directOrderResultsContainer,
+      "No fue posible calcular este producto con los valores actuales."
+    );
+    if (directOrderStatusMessage) {
+      directOrderStatusMessage.textContent = error.message;
+    }
+    syncDirectOrderCreateState();
+    return false;
+  }
+}
+
+function scheduleDirectOrderCalculation({ immediate = false } = {}) {
+  if (state.directOrderCalculationTimer) {
+    window.clearTimeout(state.directOrderCalculationTimer);
+    state.directOrderCalculationTimer = 0;
+  }
+
+  const runCalculation = () => {
+    state.directOrderCalculationTimer = 0;
+    void calculateDirectOrderFromForm();
+  };
+
+  if (immediate) {
+    runCalculation();
+    return;
+  }
+
+  state.directOrderCalculationTimer = window.setTimeout(runCalculation, 320);
+}
+
+function loadProductIntoDirectOrderCalculator(product) {
+  if (!product) {
+    return;
+  }
+
+  invalidateDirectOrderCalculation();
+  setDirectOrderItemEditorState(null);
+  setDirectOrderField("product_id", product.id);
+  setDirectOrderField("product_name", product.name);
+  setDirectOrderField("reference", product.reference || "");
+  setDirectOrderField("category", product.category || "");
+  setDirectOrderField("store", product.store || "");
+  setDirectOrderField("quantity", 1);
+  const inventoryField = getDirectOrderField("uses_inventory_stock");
+  if (inventoryField) {
+    inventoryField.checked = false;
+  }
+  setDirectOrderField("price_usd_net", Number(product.price_usd_net || 0).toFixed(2));
+  setDirectOrderField("tax_usa_percent", Number(product.tax_usa_percent || 0).toFixed(2));
+  setDirectOrderField("travel_cost_usd", "0.00");
+  setDirectOrderField("locker_shipping_usd", Number(product.locker_shipping_usd || 0).toFixed(2));
+  setDirectOrderField("final_sale_price_cop", "");
+  if (directOrderProductSelect) {
+    directOrderProductSelect.value = productSearchLabel(product);
+  }
+  syncDirectOrderInventoryUi(product);
+  syncDirectOrderPurchaseTypeUi();
+  renderDirectOrderLiveSummary();
+  scheduleDirectOrderCalculation({ immediate: true });
+}
+
+function createDirectOrderItemFromCurrentCalculation() {
+  if (!state.directOrderLastPayload || !state.directOrderLastResult) {
+    throw new Error("Primero calcula el producto actual antes de agregarlo a la compra.");
+  }
+
+  const snapshotInput = JSON.parse(JSON.stringify(state.directOrderLastPayload));
+  const quantity = Number(snapshotInput.quantity || 1);
+  if (snapshotInput.uses_inventory_stock) {
+    const currentProduct = state.products.find(
+      (item) => String(item.id) === String(snapshotInput.product_id)
+    );
+    if (!currentProduct || !currentProduct.inventory_enabled) {
+      throw new Error("Este producto no tiene inventario de tienda activo.");
+    }
+    const availableStock = Number(currentProduct.current_stock || 0);
+    if (availableStock < quantity) {
+      throw new Error(
+        `No hay suficiente inventario para este producto. Disponible: ${availableStock}.`
+      );
+    }
+  }
+
+  return normalizeStoredQuoteItem({
+    input: snapshotInput,
+    result: JSON.parse(JSON.stringify(state.directOrderLastResult)),
+  });
+}
+
+function prepareDirectOrderCalculatorForNextProduct() {
+  clearDirectOrderProductSelection();
+  invalidateDirectOrderCalculation();
+  state.directOrderLastPayload = null;
+  state.directOrderLastResult = null;
+  setCalculationResultsEmpty(
+    directOrderResultsContainer,
+    "Producto agregado. Carga el siguiente y aqui veras el nuevo calculo."
+  );
+  if (directOrderStatusMessage) {
+    directOrderStatusMessage.textContent =
+      "Producto agregado a la compra. La calculadora quedo lista para el siguiente.";
+  }
+}
+
+function addCurrentCalculationToDirectOrder() {
+  const item = createDirectOrderItemFromCurrentCalculation();
+  if (state.editingDirectOrderItemIndex === null) {
+    state.directOrderLineItems = [...state.directOrderLineItems, item];
+  } else {
+    const nextItems = [...state.directOrderLineItems];
+    nextItems[state.editingDirectOrderItemIndex] = item;
+    state.directOrderLineItems = nextItems;
+  }
+  setDirectOrderItemEditorState(null);
+  renderDirectOrderLineItems();
+  ensureDirectOrderItemText();
+  prepareDirectOrderCalculatorForNextProduct();
+  syncDirectOrderCreateState();
+}
+
+function removeDirectOrderLineItem(index) {
+  if (!state.directOrderLineItems[index]) {
+    return;
+  }
+
+  state.directOrderLineItems = state.directOrderLineItems.filter(
+    (_, itemIndex) => itemIndex !== index
+  );
+  if (state.editingDirectOrderItemIndex === index) {
+    setDirectOrderItemEditorState(null);
+  } else if (
+    state.editingDirectOrderItemIndex !== null &&
+    state.editingDirectOrderItemIndex > index
+  ) {
+    setDirectOrderItemEditorState(state.editingDirectOrderItemIndex - 1);
+  }
+  renderDirectOrderLineItems();
+  ensureDirectOrderItemText();
+  syncDirectOrderCreateState();
+}
+
+function loadDirectOrderItemIntoCalculator(index) {
+  const item = state.directOrderLineItems[index];
+  if (!item) {
+    return;
+  }
+
+  const input = item.input || {};
+  setDirectOrderItemEditorState(index);
+  setDirectOrderField("product_id", input.product_id || item.product_id || "");
+  setDirectOrderField("product_name", input.product_name || item.product_name || "");
+  setDirectOrderField("reference", input.reference || item.reference || "");
+  setDirectOrderField("category", input.category || item.category || "");
+  setDirectOrderField("store", input.store || item.store || "");
+  setDirectOrderField("quantity", input.quantity || item.quantity || 1);
+  setDirectOrderField("purchase_type", input.purchase_type || item.purchase_type || "online");
+  const inventoryField = getDirectOrderField("uses_inventory_stock");
+  if (inventoryField) {
+    inventoryField.checked = Boolean(input.uses_inventory_stock || item.uses_inventory_stock);
+  }
+  setDirectOrderField("price_usd_net", input.price_usd_net || 0);
+  setDirectOrderField("tax_usa_percent", input.tax_usa_percent || 0);
+  setDirectOrderField("travel_cost_usd", input.travel_cost_usd || 0);
+  setDirectOrderField("locker_shipping_usd", input.locker_shipping_usd || 0);
+  setDirectOrderField("exchange_rate_cop", input.exchange_rate_cop || getDirectOrderField("exchange_rate_cop")?.value || 0);
+  setDirectOrderField("local_costs_cop", input.local_costs_cop || 0);
+  setDirectOrderField("desired_margin_percent", input.desired_margin_percent || 30);
+  setDirectOrderField("final_sale_price_cop", input.final_sale_price_cop ?? "");
+  if (directOrderProductSelect) {
+    const product = state.products.find((entry) => String(entry.id) === String(input.product_id));
+    directOrderProductSelect.value = product ? productSearchLabel(product) : item.product_name || "";
+  }
+  syncDirectOrderInventoryUi(
+    state.products.find((entry) => String(entry.id) === String(input.product_id)) || null
+  );
+  syncDirectOrderPurchaseTypeUi();
+  if (item.result) {
+    state.directOrderLastPayload = input;
+    state.directOrderLastResult = item.result;
+    renderDirectOrderResults(item.result);
+  } else {
+    invalidateDirectOrderCalculation();
+    scheduleDirectOrderCalculation({ immediate: true });
+  }
+  renderDirectOrderLiveSummary();
+  syncDirectOrderCreateState();
+}
+
+function renderDirectOrderLineItems() {
+  if (!directOrderLineItemsContainer) {
+    return;
+  }
+
+  if (!state.directOrderLineItems.length) {
+    directOrderLineItemsContainer.className = "catalog-empty";
+    directOrderLineItemsContainer.innerHTML = "<p>Aun no has agregado productos a esta compra directa.</p>";
+    renderDirectOrderLiveSummary();
+    return;
+  }
+
+  const totalSale = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.sale_price_cop || 0),
+    0
+  );
+  const totalProfit = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.profit_cop || 0),
+    0
+  );
+  const totalShippingUsd = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.result?.costs?.applied_locker_shipping_usd || 0),
+    0
+  );
+  const totalShippingCop = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.result?.costs?.locker_shipping_cop || 0),
+    0
+  );
+  const totalTravelUsd = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.result?.costs?.applied_travel_cost_usd || 0),
+    0
+  );
+  const totalTravelCop = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.result?.costs?.travel_cost_cop || 0),
+    0
+  );
+  const actualAdvance = parseCurrencyInput(getDirectOrderField("advance_paid_cop")?.value || "0") || 0;
+  const balance = Math.max(totalSale - actualAdvance, 0);
+
+  directOrderLineItemsContainer.className = "quote-line-items";
+  directOrderLineItemsContainer.innerHTML = `
+    <article class="quote-line-summary-card">
+      <div class="quote-line-summary-metric">
+        <span>Total compra</span>
+        <strong>${formatCop(totalSale)}</strong>
+      </div>
+      <div class="quote-line-summary-metric">
+        <span>Utilidad estimada</span>
+        <strong>${formatCop(totalProfit)}</strong>
+      </div>
+      <div class="quote-line-summary-metric">
+        <span>Envio / casillero</span>
+        <strong>${formatCop(totalShippingCop)}</strong>
+        <small>${formatUsd(totalShippingUsd)}</small>
+      </div>
+      <div class="quote-line-summary-metric">
+        <span>Costo de viaje</span>
+        <strong>${formatCop(totalTravelCop)}</strong>
+        <small>${formatUsd(totalTravelUsd)}</small>
+      </div>
+      <div class="quote-line-summary-metric">
+        <span>Saldo estimado</span>
+        <strong>${formatCop(balance)}</strong>
+        <small>Con anticipo actual: ${formatCop(actualAdvance)}</small>
+      </div>
+    </article>
+    ${state.directOrderLineItems
+      .map(
+        (item, index) => `
+          <article class="quote-line-card">
+            <div>
+              <strong>${escapeHtml(productLabel(item))}</strong>
+              <p>
+                ${escapeHtml(item.category || "Sin categoria")}
+                ${item.store ? ` · ${escapeHtml(item.store)}` : ""}
+              </p>
+            </div>
+            <div class="quote-line-meta">
+              <span>${escapeHtml(item.purchase_type === "travel" ? "En viaje" : "Online")}</span>
+              <span>${item.quantity} unidad${item.quantity === 1 ? "" : "es"}</span>
+              ${item.uses_inventory_stock ? "<span>Salida de inventario</span>" : ""}
+              <span>${formatCop(item.sale_price_cop)} venta</span>
+              <span>${formatCop(item.real_cost_cop)} costo real</span>
+              <span>Envio: ${formatUsd(item.result?.costs?.applied_locker_shipping_usd || 0)}</span>
+              <span>Viaje: ${formatUsd(item.result?.costs?.applied_travel_cost_usd || 0)}</span>
+            </div>
+            <div class="quote-line-actions">
+              <button
+                type="button"
+                class="history-action-button history-action-button-secondary"
+                data-edit-direct-order-line="${index}"
+              >
+                Editar
+              </button>
+              <button
+                type="button"
+                class="history-action-button history-action-button-secondary"
+                data-remove-direct-order-line="${index}"
+              >
+                Quitar
+              </button>
+            </div>
+          </article>
+        `
+      )
+      .join("")}
+  `;
+  renderDirectOrderLiveSummary();
+}
+
+function enhanceDirectOrderComposerLayout() {
+  if (!directOrderForm || directOrderForm.dataset.layoutEnhanced === "true") {
+    return;
+  }
+
+  directOrderForm.dataset.layoutEnhanced = "true";
+
+    const productPanel = directOrderForm.querySelector(".direct-order-product-panel");
+    const productLabel = productPanel?.querySelector("label");
+    const fieldGrid = directOrderForm.querySelector(".field-grid");
+    const topGrid = directOrderForm.querySelector(".direct-order-top-grid");
+    const listPanel = directOrderLineItemsContainer?.closest(".quote-items-panel");
+    const legacyResultPanel = directOrderResultsContainer?.closest(".panel");
+    const legacyActionsBar = directOrderForm.querySelector(".actions.quote-actions-bar");
+    const notesLabel = getDirectOrderField("notes")?.closest("label");
+    const advanceLabel = getDirectOrderField("advance_paid_cop")?.closest("label");
+    const inventoryLabel = getDirectOrderField("uses_inventory_stock")?.closest("label");
+    const purchaseTypeLabel = getDirectOrderField("purchase_type")?.closest("label");
+    const hiddenFieldNames = [
+      "exchange_rate_cop_legacy",
+      "tax_usa_percent",
+      "desired_margin_percent",
+      "local_costs_cop",
+    ];
+    const removeFieldNames = new Set(hiddenFieldNames);
+
+  hiddenFieldNames.forEach((fieldName) => {
+      const label = getDirectOrderField(fieldName)?.closest("label");
+      if (label) {
+        label.hidden = true;
+      }
+    });
+
+  const clientQuoteItemsInput = getDirectOrderField("client_quote_items_text");
+  const clientQuoteItemsLabel = clientQuoteItemsInput?.closest("label");
+    if (clientQuoteItemsLabel) {
+      clientQuoteItemsLabel.hidden = true;
+    } else if (clientQuoteItemsInput) {
+      clientQuoteItemsInput.hidden = true;
+    }
+
+    if (topGrid && purchaseTypeLabel && !topGrid.contains(purchaseTypeLabel)) {
+      topGrid.insertBefore(purchaseTypeLabel, topGrid.lastElementChild || null);
+    }
+
+    if (productPanel && fieldGrid) {
+      fieldGrid.classList.add("direct-order-line-grid");
+      if (productLabel && !fieldGrid.contains(productLabel)) {
+        fieldGrid.prepend(productLabel);
+    }
+
+    const keepFieldNames = new Set([
+      "quantity",
+      "price_usd_net",
+      "locker_shipping_usd",
+      "travel_cost_usd",
+      "final_sale_price_cop",
+    ]);
+    fieldGrid.querySelectorAll("label").forEach((label) => {
+        const input = label.querySelector("input, select, textarea");
+        const fieldName = input?.getAttribute("name") || "";
+        if (productLabel === label || keepFieldNames.has(fieldName)) {
+          return;
+        }
+        if (label === purchaseTypeLabel) {
+          return;
+        }
+        if (removeFieldNames.has(fieldName)) {
+          if (input instanceof HTMLInputElement) {
+            input.type = "hidden";
+            directOrderForm.insertBefore(input, directOrderForm.firstChild);
+          }
+          label.remove();
+          return;
+        }
+        if (label !== inventoryLabel && label !== advanceLabel && label !== notesLabel) {
+          label.hidden = true;
+        }
+      });
+
+    if (fieldGrid.parentElement !== productPanel) {
+      productPanel.append(fieldGrid);
+    }
+
+    let metaRow = productPanel.querySelector(".direct-order-line-meta-row");
+    if (!metaRow) {
+      metaRow = document.createElement("div");
+      metaRow.className = "direct-order-line-meta-row";
+      productPanel.append(metaRow);
+    }
+    if (inventoryLabel) {
+      inventoryLabel.classList.add("direct-order-stock-toggle");
+      metaRow.append(inventoryLabel);
+    }
+    if (directOrderPurchaseTypeHelper) {
+      metaRow.append(directOrderPurchaseTypeHelper);
+    }
+    if (directOrderInventoryHelper) {
+      productPanel.append(directOrderInventoryHelper);
+    }
+  }
+
+  if (productPanel && legacyActionsBar) {
+    let lineActions = productPanel.querySelector(".direct-order-line-actions");
+    if (!lineActions) {
+      lineActions = document.createElement("div");
+      lineActions.className = "actions quote-actions-bar direct-order-line-actions";
+      productPanel.append(lineActions);
+    }
+
+    const recalcButton = legacyActionsBar.querySelector('button[type="submit"]');
+    if (directOrderAddItemButton) {
+      lineActions.append(directOrderAddItemButton);
+    }
+    if (recalcButton) {
+      lineActions.append(recalcButton);
+    }
+  }
+
+  if (directOrderForm && legacyResultPanel) {
+    const resultSection = document.createElement("section");
+    resultSection.className = "quote-items-panel direct-order-results-block";
+
+    const header = legacyResultPanel.querySelector(".panel-header");
+    if (header) {
+      const title = header.querySelector("h2");
+      if (title) {
+        title.textContent = "Resultado de la linea actual";
+      }
+      resultSection.append(header);
+    }
+    if (directOrderResultsContainer) {
+      resultSection.append(directOrderResultsContainer);
+    }
+
+    if (listPanel) {
+      directOrderForm.insertBefore(resultSection, listPanel);
+    } else if (productPanel) {
+      productPanel.insertAdjacentElement("afterend", resultSection);
+    } else {
+      directOrderForm.append(resultSection);
+    }
+
+    legacyResultPanel.remove();
+  }
+
+  if (directOrderForm && (advanceLabel || notesLabel)) {
+    const advanceSection = document.createElement("section");
+    advanceSection.className = "quote-items-panel direct-order-advance-panel";
+    advanceSection.innerHTML = `
+      <div class="panel-header panel-header-inline">
+        <div>
+          <h3>Cierre de la compra</h3>
+          <p>Despues de armar los productos, registra el anticipo real del cliente.</p>
+        </div>
+      </div>
+    `;
+    const footerGrid = document.createElement("div");
+    footerGrid.className = "direct-order-footer-grid";
+    if (advanceLabel) {
+      footerGrid.append(advanceLabel);
+    }
+    if (notesLabel) {
+      footerGrid.append(notesLabel);
+    }
+    advanceSection.append(footerGrid);
+
+    if (listPanel) {
+      listPanel.insertAdjacentElement("afterend", advanceSection);
+    } else {
+      directOrderForm.append(advanceSection);
+    }
+  }
+
+  if (directOrderForm && legacyActionsBar) {
+    const submitBar = document.createElement("div");
+    submitBar.className = "actions quote-actions-bar direct-order-submit-bar";
+    if (directOrderCreateButton) {
+      submitBar.append(directOrderCreateButton);
+    }
+    if (directOrderClearButton) {
+      submitBar.append(directOrderClearButton);
+    }
+    directOrderForm.append(submitBar);
+    legacyActionsBar.remove();
+  }
+}
+
+function buildDirectOrderSavePayload() {
+  const currentPayload = readDirectOrderCurrentPayload();
+  if (!currentPayload.client_id || !currentPayload.client_name) {
+    throw new Error("Selecciona un cliente guardado para la compra.");
+  }
+
+  const quoteItems = state.directOrderLineItems.length
+      ? state.directOrderLineItems.map((item) => ({
+        product_id: item.product_id,
+        product_name: item.product_name,
+        reference: item.reference || "",
+        category: item.category || "",
+        store: item.store || "",
+        quantity: Number(item.quantity || 1),
+        purchase_type: currentPayload.purchase_type,
+        uses_inventory_stock: Boolean(item.uses_inventory_stock ?? item.input?.uses_inventory_stock),
+        input: {
+          ...(item.input || {}),
+          client_id: currentPayload.client_id,
+          client_name: currentPayload.client_name,
+          purchase_type: currentPayload.purchase_type,
+          exchange_rate_cop: currentPayload.exchange_rate_cop,
+        },
+        result: item.result || null,
+      }))
+    : state.directOrderLastResult
+      ? [
+          {
+            ...createDirectOrderItemFromCurrentCalculation(),
+            input: {
+              ...(state.directOrderLastPayload || {}),
+              client_id: currentPayload.client_id,
+              client_name: currentPayload.client_name,
+              purchase_type: currentPayload.purchase_type,
+              exchange_rate_cop: currentPayload.exchange_rate_cop,
+            },
+          },
+        ]
+      : [];
+
+  if (!quoteItems.length) {
+    throw new Error("Agrega al menos un producto calculado antes de crear la compra.");
+  }
+
+  const advancePaidCop = parseCurrencyInput(getDirectOrderField("advance_paid_cop")?.value || "");
+  if (advancePaidCop === null || advancePaidCop < 0) {
+    throw new Error("Ingresa un anticipo real valido para esta compra.");
+  }
+
+  return {
+    client_id: currentPayload.client_id,
+    client_name: currentPayload.client_name,
+    notes: currentPayload.notes,
+    client_quote_items_text: currentPayload.client_quote_items_text,
+    quote_items: quoteItems,
+    advance_paid_cop: advancePaidCop,
+  };
+}
+
+function syncDirectOrderCreateState() {
+  const isReady = Boolean(state.directOrderLineItems.length || state.directOrderLastResult);
+  if (directOrderCreateButton) {
+    directOrderCreateButton.disabled = !isReady;
+  }
+}
+
+function resetDirectOrderComposerState(
+  { statusText = "La compra directa quedo lista para empezar una nueva." } = {}
+) {
+  if (!directOrderForm) {
+    return;
+  }
+  state.directOrderLineItems = [];
+  state.directOrderLastPayload = null;
+  state.directOrderLastResult = null;
+  state.editingDirectOrderItemIndex = null;
+  directOrderForm.reset();
+  setDirectOrderField("exchange_rate_cop", 3790);
+  setDirectOrderField("desired_margin_percent", 30);
+  setDirectOrderField("advance_paid_cop", 0);
+  setDirectOrderField("quantity", 1);
+  clearDirectOrderClientSelection();
+  clearDirectOrderProductSelection();
+  const clientQuoteItemsField = getDirectOrderField("client_quote_items_text");
+  if (clientQuoteItemsField) {
+    clientQuoteItemsField.dataset.autoGenerated = "";
+  }
+  setDirectOrderItemEditorState(null);
+  syncDirectOrderPurchaseTypeUi();
+  renderDirectOrderLineItems();
+  setCalculationResultsEmpty(
+    directOrderResultsContainer,
+    "Cuando calcules, aqui veras el costo real, el precio sugerido y el cierre del producto actual."
+  );
+  if (directOrderStatusMessage) {
+    directOrderStatusMessage.textContent = "Ajusta los valores del producto actual y luego agregalo a la compra.";
+  }
+  invalidateDirectOrderCalculation();
+  statusMessage.textContent = statusText;
+  renderDirectOrderLiveSummary();
+  syncDirectOrderCreateState();
 }
 
 function syncSaveButtonState() {
@@ -4371,6 +5501,9 @@ function renderInventoryPurchases(items) {
 const dashboardChartPalette = ["#111111", "#51433b", "#8a7567", "#b79f8f", "#dbcabc", "#efe4da"];
 
 function collapseChartItems(items, limit = 5, otherLabel = "Otros") {
+  if (!otherLabel) {
+    return items.slice(0, limit);
+  }
   if (items.length <= limit) {
     return items;
   }
@@ -4598,6 +5731,8 @@ function renderDashboardClients(insights) {
           meta: `${formatInteger(item.orders_count || 0)} compra(s) - Ticket ${formatCop(item.average_ticket_cop)}`,
         })),
         valueFormatter: formatCop,
+        maxItems: 6,
+        otherLabel: "",
       })}
       ${renderRankingList(
         topBuyers,
@@ -4641,6 +5776,8 @@ function renderDashboardClients(insights) {
           meta: `${formatInteger(item.open_orders_count || 0)} compra(s) notificadas`,
         })),
         valueFormatter: formatCop,
+        maxItems: 6,
+        otherLabel: "",
       })}
       ${renderRankingList(
         receivables,
@@ -4698,6 +5835,8 @@ function renderDashboardProducts(insights) {
           meta: `Vendido ${formatCop(item.sales_total_cop)} - Recaudado ${formatCop(item.cash_in_total_cop)}`,
         })),
         valueFormatter: (value) => `${formatInteger(value)} und`,
+        maxItems: 6,
+        otherLabel: "",
       })}
       ${renderRankingList(
         topSellers,
@@ -4739,6 +5878,8 @@ function renderDashboardProducts(insights) {
           meta: `Margen ${formatPercent(item.gross_margin_percent)} - Vendido ${formatCop(item.sales_total_cop)}`,
         })),
         valueFormatter: formatCop,
+        maxItems: 6,
+        otherLabel: "",
       })}
       ${renderRankingList(
         mostProfitable,
@@ -6806,6 +7947,142 @@ if (addQuoteItemButton) {
   });
 }
 
+if (directOrderForm) {
+  directOrderForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await calculateDirectOrderFromForm({ manual: true });
+  });
+}
+
+if (directOrderClientSelect) {
+  directOrderClientSelect.addEventListener("change", () => {
+    const client = findClientBySearchValue(directOrderClientSelect.value);
+    if (client) {
+      applyClientToDirectOrder(client);
+      if (directOrderStatusMessage) {
+        directOrderStatusMessage.textContent = "Cliente aplicado a la compra directa.";
+      }
+      return;
+    }
+    directOrderClientSelect.value = "";
+    clearDirectOrderClientSelection();
+  });
+}
+
+if (directOrderProductSelect) {
+  directOrderProductSelect.addEventListener("change", () => {
+    const product = findProductBySearchValue(directOrderProductSelect.value);
+    if (product) {
+      loadProductIntoDirectOrderCalculator(product);
+      if (directOrderStatusMessage) {
+        directOrderStatusMessage.textContent = "Producto cargado en la compra directa.";
+      }
+      return;
+    }
+    directOrderProductSelect.value = "";
+    clearDirectOrderProductSelection();
+  });
+}
+
+if (directOrderLoadProductButton) {
+  directOrderLoadProductButton.addEventListener("click", () => {
+    const product = findProductBySearchValue(directOrderProductSelect?.value || "");
+    if (!product) {
+      if (directOrderStatusMessage) {
+        directOrderStatusMessage.textContent =
+          "Busca un producto valido del catalogo y luego cargalo en la compra.";
+      }
+      return;
+    }
+    loadProductIntoDirectOrderCalculator(product);
+    if (directOrderStatusMessage) {
+      directOrderStatusMessage.textContent = "Producto listo para calcular dentro de la compra.";
+    }
+  });
+}
+
+if (directOrderAddItemButton) {
+  directOrderAddItemButton.addEventListener("click", async () => {
+    const calculated = await calculateDirectOrderFromForm({ manual: true });
+    if (!calculated) {
+      return;
+    }
+
+    try {
+      const wasEditing = state.editingDirectOrderItemIndex !== null;
+      addCurrentCalculationToDirectOrder();
+      if (directOrderStatusMessage) {
+        directOrderStatusMessage.textContent = wasEditing
+          ? "Producto actualizado dentro de la compra y listo para continuar."
+          : "Producto agregado a la compra. Ya puedes cargar el siguiente.";
+      }
+    } catch (error) {
+      if (directOrderStatusMessage) {
+        directOrderStatusMessage.textContent = error.message;
+      }
+    }
+  });
+}
+
+if (directOrderClearButton) {
+  directOrderClearButton.addEventListener("click", () => {
+    resetDirectOrderComposerState({
+      statusText: "Compra directa limpiada. Ya puedes empezar una nueva.",
+    });
+  });
+}
+
+enhanceDirectOrderComposerLayout();
+
+if (directOrderCreateButton) {
+  directOrderCreateButton.addEventListener("click", async () => {
+    let payload;
+    try {
+      payload = buildDirectOrderSavePayload();
+    } catch (error) {
+      if (directOrderStatusMessage) {
+        directOrderStatusMessage.textContent = error.message;
+      }
+      return;
+    }
+
+    directOrderCreateButton.disabled = true;
+    if (directOrderAddItemButton) {
+      directOrderAddItemButton.disabled = true;
+    }
+    if (directOrderStatusMessage) {
+      directOrderStatusMessage.textContent = "Creando compra directa...";
+    }
+
+    try {
+      const response = await requestJson("/api/orders/direct", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      await Promise.all([loadOrders(), loadDashboard(), loadFollowup(), loadCatalog(), loadHistory()]);
+      await refreshActiveClientDetail();
+      await refreshActiveProductDetail();
+      resetDirectOrderComposerState({
+        statusText: `Compra #${response.item.id} creada desde el modulo de compras.`,
+      });
+      if (directOrderStatusMessage) {
+        directOrderStatusMessage.textContent =
+          "Compra creada correctamente. Ya puedes armar una nueva.";
+      }
+      window.location.hash = "compras";
+    } catch (error) {
+      if (directOrderStatusMessage) {
+        directOrderStatusMessage.textContent = error.message;
+      }
+    } finally {
+      if (directOrderAddItemButton) {
+        directOrderAddItemButton.disabled = false;
+      }
+      syncDirectOrderCreateState();
+    }
+  });
+}
+
 ["price_usd_net", "tax_usa_percent", "locker_shipping_usd"].forEach((fieldName) => {
   const field = quoteElements.namedItem(fieldName);
   if (!field || typeof field.addEventListener !== "function") {
@@ -6820,6 +8097,45 @@ if (addQuoteItemButton) {
     }
   });
 });
+
+if (directOrderForm) {
+  directOrderForm.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement)) {
+      return;
+    }
+
+    if (target.name === "advance_paid_cop") {
+      renderDirectOrderLineItems();
+      return;
+    }
+
+    if (shouldAutoCalculateDirectOrder(target)) {
+      if (target.name === "purchase_type") {
+        syncDirectOrderPurchaseTypeUi();
+      }
+      if (target.name === "uses_inventory_stock") {
+        syncDirectOrderInventoryUi();
+      }
+      scheduleDirectOrderCalculation();
+    }
+  });
+
+  directOrderForm.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement)) {
+      return;
+    }
+
+    if (target.name === "purchase_type") {
+      syncDirectOrderPurchaseTypeUi();
+      renderDirectOrderLineItems();
+    }
+    if (target.name === "uses_inventory_stock") {
+      syncDirectOrderInventoryUi();
+    }
+  });
+}
 
 saveButton.addEventListener("click", async () => {
   if (!state.lastResult && !state.quoteLineItems.length) {
@@ -7356,6 +8672,38 @@ if (quoteLineItemsContainer) {
     }
     removeQuoteLineItem(index);
     statusMessage.textContent = "Producto quitado de la cotizacion.";
+  });
+}
+
+if (directOrderLineItemsContainer) {
+  directOrderLineItemsContainer.addEventListener("click", (event) => {
+    const editButton = event.target.closest("[data-edit-direct-order-line]");
+    if (editButton) {
+      const index = Number(editButton.getAttribute("data-edit-direct-order-line"));
+      if (Number.isNaN(index)) {
+        return;
+      }
+      loadDirectOrderItemIntoCalculator(index);
+      if (directOrderStatusMessage) {
+        directOrderStatusMessage.textContent =
+          "Producto cargado para editar dentro de la compra.";
+      }
+      return;
+    }
+
+    const removeButton = event.target.closest("[data-remove-direct-order-line]");
+    if (!removeButton) {
+      return;
+    }
+
+    const index = Number(removeButton.getAttribute("data-remove-direct-order-line"));
+    if (Number.isNaN(index)) {
+      return;
+    }
+    removeDirectOrderLineItem(index);
+    if (directOrderStatusMessage) {
+      directOrderStatusMessage.textContent = "Producto retirado de la compra.";
+    }
   });
 }
 
@@ -8404,6 +9752,18 @@ function setupAutocomplete() {
       },
       emptyMessage: "No hay clientes con esas letras",
     }),
+    createAutocompleteController(directOrderClientSelect, {
+      getItems: () => getActiveClients(),
+      getLabel: clientSearchLabel,
+      getSearchText: clientSearchLabel,
+      onSelect: (client) => {
+        applyClientToDirectOrder(client);
+        if (directOrderStatusMessage) {
+          directOrderStatusMessage.textContent = "Cliente aplicado a la compra directa.";
+        }
+      },
+      emptyMessage: "No hay clientes con esas letras",
+    }),
     createAutocompleteController(productSelect, {
       getItems: () => getActiveProducts(),
       getLabel: productSearchLabel,
@@ -8411,6 +9771,18 @@ function setupAutocomplete() {
       onSelect: (product) => {
         applyProductToQuote(product);
         statusMessage.textContent = "Producto cargado en la calculadora.";
+      },
+      emptyMessage: "No hay productos con esas letras",
+    }),
+    createAutocompleteController(directOrderProductSelect, {
+      getItems: () => getActiveProducts(),
+      getLabel: productSearchLabel,
+      getSearchText: productSearchLabel,
+      onSelect: (product) => {
+        loadProductIntoDirectOrderCalculator(product);
+        if (directOrderStatusMessage) {
+          directOrderStatusMessage.textContent = "Producto cargado en la compra directa.";
+        }
       },
       emptyMessage: "No hay productos con esas letras",
     }),
@@ -8512,6 +9884,7 @@ async function initApp() {
   syncModuleFromHash();
   syncResponsiveShell();
   syncPurchaseTypeUi();
+  resetDirectOrderComposerState();
   resetQuoteEditingState();
   renderQuoteLineItems();
   renderQuoteLiveSummary();
