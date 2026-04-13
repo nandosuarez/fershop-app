@@ -18,9 +18,11 @@ from .database import (
     build_dashboard_summary,
     create_product_category,
     create_product_store,
+    create_direct_order,
     create_order_status,
     create_order_from_quote,
     create_session_for_user,
+    delete_order,
     delete_session,
     get_company_by_slug,
     get_company_whatsapp_settings,
@@ -56,6 +58,7 @@ from .database import (
     save_whatsapp_template,
     send_order_whatsapp_notification,
     set_client_active,
+    invalidate_order,
     set_product_active,
     set_product_category_active,
     set_product_store_active,
@@ -94,6 +97,78 @@ class FerShopHandler(BaseHTTPRequestHandler):
         quote = QuoteInput.from_dict(payload)
         result = calculate_quote(quote)
         return quote.to_dict(), result
+
+    @staticmethod
+    def _get_direct_order_item_payload(raw_item: dict) -> dict:
+        if isinstance(raw_item.get("input"), dict):
+            return raw_item["input"]
+        return raw_item
+
+    @staticmethod
+    def _get_direct_order_item_sale_price(raw_item: dict) -> float:
+        item_payload = FerShopHandler._get_direct_order_item_payload(raw_item)
+        try:
+            explicit_final_price = item_payload.get("final_sale_price_cop")
+        except AttributeError:
+            explicit_final_price = None
+        if explicit_final_price not in (None, ""):
+            try:
+                return max(float(explicit_final_price), 0.0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        item_result = raw_item.get("result") if isinstance(raw_item.get("result"), dict) else {}
+        try:
+            return max(float(item_result.get("final", {}).get("sale_price_cop") or 0), 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _apply_direct_order_advance(
+        payload: dict[str, object],
+        advance_paid_cop: float,
+    ) -> dict[str, object]:
+        normalized = json.loads(json.dumps(payload, ensure_ascii=False))
+        quote_items = normalized.get("quote_items")
+        if isinstance(quote_items, list) and quote_items:
+            sale_prices = [
+                FerShopHandler._get_direct_order_item_sale_price(item if isinstance(item, dict) else {})
+                for item in quote_items
+            ]
+            total_sale_price = sum(sale_prices)
+            remaining_advance = float(advance_paid_cop)
+            for index, raw_item in enumerate(quote_items):
+                if not isinstance(raw_item, dict):
+                    continue
+                item_payload = FerShopHandler._get_direct_order_item_payload(raw_item)
+                item_sale_price = sale_prices[index]
+                if index == len(quote_items) - 1:
+                    allocated_advance = remaining_advance
+                else:
+                    allocated_advance = round(
+                        advance_paid_cop * (item_sale_price / total_sale_price),
+                        2,
+                    ) if total_sale_price > 0 else 0.0
+                    remaining_advance -= allocated_advance
+                item_payload["final_advance_cop"] = max(float(allocated_advance), 0.0)
+                item_payload["advance_percent"] = (
+                    (allocated_advance / item_sale_price) * 100 if item_sale_price > 0 else 0.0
+                )
+                if isinstance(raw_item.get("input"), dict):
+                    raw_item["input"] = item_payload
+                else:
+                    raw_item.update(item_payload)
+            return normalized
+
+        normalized["final_advance_cop"] = max(float(advance_paid_cop), 0.0)
+        try:
+            sale_price = float(normalized.get("final_sale_price_cop") or 0)
+        except (TypeError, ValueError):
+            sale_price = 0.0
+        normalized["advance_percent"] = (
+            (advance_paid_cop / sale_price) * 100 if sale_price > 0 else 0.0
+        )
+        return normalized
 
     def _current_session(self) -> dict | None:
         raw_cookie = self.headers.get("Cookie", "")
@@ -921,6 +996,46 @@ class FerShopHandler(BaseHTTPRequestHandler):
                 )
                 return
 
+            if self.path == "/api/orders/direct":
+                payload = self._read_json()
+                raw_advance_paid_cop = payload.get("advance_paid_cop")
+                advance_paid_cop = None
+                if raw_advance_paid_cop not in (None, ""):
+                    try:
+                        advance_paid_cop = float(raw_advance_paid_cop)
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError(
+                            "Debes enviar un valor numerico valido para el anticipo real."
+                        ) from exc
+                    if advance_paid_cop < 0:
+                        raise ValueError("El anticipo real no puede ser negativo.")
+
+                quote_payload = json.loads(json.dumps(payload, ensure_ascii=False))
+                quote_payload.pop("advance_paid_cop", None)
+                if advance_paid_cop is not None:
+                    quote_payload = self._apply_direct_order_advance(
+                        quote_payload,
+                        advance_paid_cop,
+                    )
+
+                input_data, result = self._build_quote_record(quote_payload)
+                item, quote_record = create_direct_order(
+                    input_data,
+                    result,
+                    advance_paid_cop=advance_paid_cop,
+                    company_id=session["company"]["id"],
+                )
+                notification = maybe_auto_send_order_whatsapp_notification(
+                    item["id"],
+                    trigger_key="order_status:quote_confirmed",
+                    company_id=session["company"]["id"],
+                )
+                self._send_json(
+                    HTTPStatus.CREATED,
+                    {"item": item, "quote": quote_record, "notification": notification},
+                )
+                return
+
             order_route = self._parse_order_route(self.path)
             if order_route is not None:
                 order_id, action = order_route
@@ -1002,6 +1117,9 @@ class FerShopHandler(BaseHTTPRequestHandler):
                     actual_purchase_prices = payload.get("actual_purchase_prices")
                     if actual_purchase_prices is not None and not isinstance(actual_purchase_prices, list):
                         raise ValueError("Los precios reales de compra deben enviarse como lista.")
+                    quote_item_updates = payload.get("quote_item_updates")
+                    if quote_item_updates is not None and not isinstance(quote_item_updates, list):
+                        raise ValueError("Los ajustes por producto deben enviarse como lista.")
 
                     item = update_confirmed_order(
                         order_id,
@@ -1011,6 +1129,25 @@ class FerShopHandler(BaseHTTPRequestHandler):
                         if "notes" in payload
                         else None,
                         actual_purchase_prices=actual_purchase_prices,
+                        quote_item_updates=quote_item_updates,
+                        company_id=session["company"]["id"],
+                    )
+                    self._send_json(HTTPStatus.OK, {"item": item})
+                    return
+                if action == "invalidate":
+                    payload = self._read_json()
+                    item = invalidate_order(
+                        order_id,
+                        reason=str(payload.get("reason", "")).strip(),
+                        company_id=session["company"]["id"],
+                    )
+                    self._send_json(HTTPStatus.OK, {"item": item})
+                    return
+                if action == "delete":
+                    payload = self._read_json()
+                    item = delete_order(
+                        order_id,
+                        reason=str(payload.get("reason", "")).strip(),
                         company_id=session["company"]["id"],
                     )
                     self._send_json(HTTPStatus.OK, {"item": item})
@@ -1159,7 +1296,16 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
         raw_id = parts[2]
         action = parts[3]
-        if action not in {"status", "second-payment", "travel-transport", "whatsapp", "image", "edit"}:
+        if action not in {
+            "status",
+            "second-payment",
+            "travel-transport",
+            "whatsapp",
+            "image",
+            "edit",
+            "invalidate",
+            "delete",
+        }:
             return None
 
         try:

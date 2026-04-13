@@ -1688,6 +1688,30 @@ button:disabled {
   align-items: stretch;
 }
 
+.order-edit-product-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(18, 17, 17, 0.08);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.order-edit-product-card strong {
+  margin: 0;
+}
+
+.order-edit-product-card small {
+  color: var(--ink-soft);
+}
+
+.order-edit-product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
 .order-edit-notes-field {
   display: grid;
   gap: 6px;
@@ -1697,7 +1721,19 @@ button:disabled {
 .order-edit-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-top: 12px;
+}
+
+.danger-button {
+  border-color: rgba(145, 62, 62, 0.22);
+  background: rgba(145, 62, 62, 0.12);
+  color: #6a2c2c;
+}
+
+.danger-button-outline {
+  background: rgba(255, 255, 255, 0.78);
 }
 
 .order-image-fields {

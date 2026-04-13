@@ -3,10 +3,16 @@ import unittest
 
 from fershop_calculadora.calculations import QuoteInput, calculate_quote, calculate_quote_bundle
 from fershop_calculadora.database import (
+    create_direct_order,
+    delete_order,
     create_order_status,
     create_order_from_quote,
+    get_quote,
+    invalidate_order,
+    list_orders,
     list_order_statuses,
     register_second_payment,
+    save_product,
     update_confirmed_order,
     update_order_travel_transport,
     update_order_status,
@@ -306,6 +312,72 @@ class OrderPersistenceTests(unittest.TestCase):
         self.assertEqual(order["product_name"], "2 productos / 4 unidades")
         self.assertEqual(len(order["snapshot"]["input"]["quote_items"]), 2)
 
+    def test_create_direct_order_creates_internal_quote_and_order(self) -> None:
+        bundle_result = calculate_quote_bundle(
+            {
+                "client_name": "Andrea",
+                "quote_items": [
+                    {
+                        "product_name": "Sueter basico",
+                        "quantity": 2,
+                        "input": QuoteInput.from_dict(
+                            {
+                                "product_name": "Sueter basico",
+                                "client_name": "Andrea",
+                                "quantity": 2,
+                                "purchase_type": "travel",
+                                "price_usd_net": 18,
+                                "tax_usa_percent": 0,
+                                "travel_cost_usd": 5,
+                                "locker_shipping_usd": 2,
+                                "exchange_rate_cop": 4000,
+                                "local_costs_cop": 10000,
+                                "desired_margin_percent": 25,
+                                "advance_percent": 40,
+                                "final_sale_price_cop": 280000,
+                            }
+                        ).to_dict(),
+                    },
+                    {
+                        "product_name": "Zapato casual",
+                        "quantity": 1,
+                        "input": QuoteInput.from_dict(
+                            {
+                                "product_name": "Zapato casual",
+                                "client_name": "Andrea",
+                                "quantity": 1,
+                                "purchase_type": "travel",
+                                "price_usd_net": 35,
+                                "tax_usa_percent": 0,
+                                "travel_cost_usd": 6,
+                                "locker_shipping_usd": 3,
+                                "exchange_rate_cop": 4000,
+                                "local_costs_cop": 12000,
+                                "desired_margin_percent": 25,
+                                "advance_percent": 40,
+                                "final_sale_price_cop": 360000,
+                            }
+                        ).to_dict(),
+                    },
+                ],
+            }
+        )
+
+        order, quote_record = create_direct_order(
+            bundle_result["input"],
+            bundle_result,
+            advance_paid_cop=256000,
+        )
+
+        self.assertGreater(quote_record["id"], 0)
+        self.assertEqual(order["quote_id"], quote_record["id"])
+        self.assertEqual(order["status_key"], "quote_confirmed")
+        self.assertEqual(order["product_name"], "2 productos / 3 unidades")
+        self.assertAlmostEqual(order["sale_price_cop"], 640000)
+        self.assertAlmostEqual(order["advance_paid_cop"], 256000)
+        self.assertAlmostEqual(order["balance_due_cop"], 384000)
+        self.assertEqual(len(order["snapshot"]["input"]["quote_items"]), 2)
+
     def test_travel_purchase_can_store_transport_route(self) -> None:
         quote = QuoteInput.from_dict(
             {
@@ -359,8 +431,19 @@ class OrderPersistenceTests(unittest.TestCase):
             exchange_rate_cop=4200,
             advance_paid_cop=320000,
             notes="Compra ajustada por descuento final.",
+            quote_item_updates=[
+                {
+                    "quote_item_index": 0,
+                    "product_name": "Bolso premium",
+                    "price_usd_net": 90,
+                    "tax_usa_percent": 5,
+                    "locker_shipping_usd": 8,
+                    "final_sale_price_cop": 900000,
+                }
+            ],
             actual_purchase_prices=[
                 {
+                    "quote_item_index": 0,
                     "product_name": "Bolso premium",
                     "price_usd_net": 90,
                 }
@@ -369,11 +452,71 @@ class OrderPersistenceTests(unittest.TestCase):
 
         self.assertEqual(updated["advance_paid_cop"], 320000)
         self.assertEqual(updated["notes"], "Compra ajustada por descuento final.")
-        self.assertAlmostEqual(updated["sale_price_cop"], 850000)
-        self.assertAlmostEqual(updated["balance_due_cop"], 530000)
+        self.assertAlmostEqual(updated["sale_price_cop"], 900000)
+        self.assertAlmostEqual(updated["balance_due_cop"], 580000)
         self.assertAlmostEqual(updated["snapshot"]["input"]["exchange_rate_cop"], 4200)
         self.assertAlmostEqual(updated["snapshot"]["input"]["price_usd_net"], 90)
+        self.assertAlmostEqual(updated["snapshot"]["input"]["tax_usa_percent"], 5)
+        self.assertAlmostEqual(updated["snapshot"]["input"]["locker_shipping_usd"], 8)
         self.assertIn("Compra editada", updated["events"][-1]["note"])
+
+    def test_invalidate_order_removes_it_from_active_flow_and_reopens_quote(self) -> None:
+        quote = QuoteInput.from_dict(
+            {
+                "product_name": "Jordan 1",
+                "client_name": "Laura",
+                "price_usd_net": 120,
+                "tax_usa_percent": 7,
+                "travel_cost_usd": 0,
+                "locker_shipping_usd": 10,
+                "exchange_rate_cop": 4000,
+                "local_costs_cop": 0,
+                "desired_margin_percent": 25,
+                "advance_percent": 50,
+            }
+        )
+        result = calculate_quote(quote)
+        record = database.save_quote(quote.to_dict(), result)
+        order, _ = create_order_from_quote(record["id"], advance_paid_cop=350000)
+
+        archived = invalidate_order(order["id"], reason="El cliente cancelo la compra.")
+
+        self.assertEqual(archived["archive_action"], "invalidated")
+        self.assertEqual(len(list_orders()), 0)
+        quote_after = get_quote(record["id"])
+        self.assertIsNotNone(quote_after)
+        self.assertFalse(quote_after["has_order"])
+
+        recreated, existing = create_order_from_quote(record["id"], advance_paid_cop=200000)
+        self.assertFalse(existing)
+        self.assertNotEqual(recreated["id"], order["id"])
+
+    def test_delete_order_removes_it_from_active_flow_and_archives_it(self) -> None:
+        quote = QuoteInput.from_dict(
+            {
+                "product_name": "Cartera",
+                "client_name": "Sofia",
+                "price_usd_net": 80,
+                "tax_usa_percent": 7,
+                "travel_cost_usd": 0,
+                "locker_shipping_usd": 6,
+                "exchange_rate_cop": 3900,
+                "local_costs_cop": 0,
+                "desired_margin_percent": 25,
+                "advance_percent": 50,
+            }
+        )
+        result = calculate_quote(quote)
+        record = database.save_quote(quote.to_dict(), result)
+        order, _ = create_order_from_quote(record["id"], advance_paid_cop=180000)
+
+        archived = delete_order(order["id"], reason="Se registro por error duplicado.")
+
+        self.assertEqual(archived["archive_action"], "deleted")
+        self.assertEqual(len(list_orders()), 0)
+        quote_after = get_quote(record["id"])
+        self.assertIsNotNone(quote_after)
+        self.assertFalse(quote_after["has_order"])
 
     def test_cannot_mark_second_payment_received_without_registering_it(self) -> None:
         quote = QuoteInput.from_dict(

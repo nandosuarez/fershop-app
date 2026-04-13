@@ -155,6 +155,17 @@ def _row_value(row: Any, key: str, default: Any = None) -> Any:
         return default
 
 
+def _row_to_dict(row: Any) -> dict[str, Any]:
+    if row is None:
+        return {}
+    if isinstance(row, dict):
+        return dict(row)
+    keys = getattr(row, "keys", None)
+    if callable(keys):
+        return {key: row[key] for key in keys()}
+    return {}
+
+
 def _to_bool_flag(value: Any) -> int:
     if isinstance(value, str):
         return 1 if value.strip().lower() in {"1", "true", "yes", "si", "on"} else 0
@@ -320,6 +331,93 @@ def _normalize_actual_purchase_prices(
     return normalized_items
 
 
+def _normalize_order_item_updates(raw_items: Any) -> list[dict[str, Any]]:
+    if raw_items in (None, ""):
+        return []
+    if not isinstance(raw_items, list):
+        raise ValueError("Los ajustes por producto deben enviarse como una lista valida.")
+
+    normalized_items: list[dict[str, Any]] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            raise ValueError("Cada ajuste por producto debe tener un formato valido.")
+
+        quote_item_index = raw_item.get("quote_item_index")
+        if quote_item_index in (None, ""):
+            normalized_index = None
+        else:
+            try:
+                normalized_index = int(quote_item_index)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("El indice del producto ajustado no es valido.") from exc
+            if normalized_index < 0:
+                raise ValueError("El indice del producto ajustado no es valido.")
+
+        product_id = raw_item.get("product_id")
+        if product_id in (None, "", 0):
+            normalized_product_id = None
+        else:
+            try:
+                normalized_product_id = int(product_id)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("El producto ajustado no es valido.") from exc
+
+        normalized_item: dict[str, Any] = {
+            "quote_item_index": normalized_index,
+            "product_id": normalized_product_id,
+            "product_name": str(raw_item.get("product_name") or "").strip(),
+        }
+
+        numeric_fields = {
+            "price_usd_net": "El precio USD ajustado debe ser numerico.",
+            "tax_usa_percent": "El tax ajustado debe ser numerico.",
+            "travel_cost_usd": "El costo de viaje ajustado debe ser numerico.",
+            "locker_shipping_usd": "El envio/casillero ajustado debe ser numerico.",
+            "final_sale_price_cop": "El precio final ajustado debe ser numerico.",
+        }
+        for field_name, error_message in numeric_fields.items():
+            raw_value = raw_item.get(field_name)
+            if raw_value in (None, ""):
+                continue
+            try:
+                normalized_value = float(raw_value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(error_message) from exc
+            if normalized_value < 0:
+                raise ValueError(f"El campo '{field_name}' no puede ser negativo.")
+            if field_name == "final_sale_price_cop" and normalized_value <= 0:
+                raise ValueError("El precio final ajustado debe ser mayor a cero.")
+            normalized_item[field_name] = normalized_value
+
+        normalized_items.append(normalized_item)
+
+    return normalized_items
+
+
+def _find_order_item_update(
+    item_updates: list[dict[str, Any]],
+    *,
+    quote_item_index: int,
+    product_id: Any,
+    product_name: Any,
+) -> dict[str, Any] | None:
+    for update in item_updates:
+        candidate_index = update.get("quote_item_index")
+        if candidate_index is not None and int(candidate_index) == quote_item_index:
+            return update
+
+    clean_product_id = str(product_id or "").strip()
+    clean_product_name = str(product_name or "").strip().casefold()
+    for update in item_updates:
+        candidate_product_id = str(update.get("product_id") or "").strip()
+        if clean_product_id and candidate_product_id and candidate_product_id == clean_product_id:
+            return update
+        candidate_product_name = str(update.get("product_name") or "").strip().casefold()
+        if clean_product_name and candidate_product_name and candidate_product_name == clean_product_name:
+            return update
+    return None
+
+
 def _apply_actual_purchase_prices_to_quote_record(
     quote_record: dict[str, Any],
     actual_purchase_prices: list[dict[str, Any]] | None = None,
@@ -424,6 +522,7 @@ def _recalculate_confirmed_order_quote_record(
     exchange_rate_cop: float | None = None,
     notes: str | None = None,
     actual_purchase_prices: list[dict[str, Any]] | None = None,
+    quote_item_updates: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     updated_record = json.loads(json.dumps(quote_record, ensure_ascii=False))
     input_data = (
@@ -440,7 +539,9 @@ def _recalculate_confirmed_order_quote_record(
     quote_items = input_data.get("quote_items")
     if isinstance(quote_items, list) and quote_items:
         updated_quote_items = json.loads(json.dumps(quote_items, ensure_ascii=False))
-        for quote_item in updated_quote_items:
+        normalized_item_updates = _normalize_order_item_updates(quote_item_updates)
+        normalized_purchase_prices = _normalize_actual_purchase_prices(actual_purchase_prices)
+        for index, quote_item in enumerate(updated_quote_items):
             if not isinstance(quote_item, dict):
                 continue
             item_input = (
@@ -451,46 +552,79 @@ def _recalculate_confirmed_order_quote_record(
             if exchange_rate_cop is not None:
                 item_input["exchange_rate_cop"] = exchange_rate_cop
 
-            sale_price_cop = float(
+            current_sale_price_cop = float(
                 quote_item.get("sale_price_cop")
                 or item_input.get("final_sale_price_cop")
                 or 0
             )
-            advance_cop = float(
+            current_advance_cop = float(
                 quote_item.get("advance_cop")
                 or item_input.get("final_advance_cop")
                 or 0
             )
-            if sale_price_cop > 0:
-                item_input["final_sale_price_cop"] = sale_price_cop
-            item_input["final_advance_cop"] = advance_cop
+
+            matching_update = _find_order_item_update(
+                normalized_item_updates,
+                quote_item_index=index,
+                product_id=quote_item.get("product_id") or item_input.get("product_id"),
+                product_name=quote_item.get("product_name") or item_input.get("product_name"),
+            )
+            matching_purchase_override = _find_order_item_update(
+                normalized_purchase_prices,
+                quote_item_index=index,
+                product_id=quote_item.get("product_id") or item_input.get("product_id"),
+                product_name=quote_item.get("product_name") or item_input.get("product_name"),
+            )
+
+            if matching_purchase_override and "price_usd_net" in matching_purchase_override:
+                item_input["price_usd_net"] = matching_purchase_override["price_usd_net"]
+
+            if matching_update:
+                for field_name in (
+                    "price_usd_net",
+                    "tax_usa_percent",
+                    "travel_cost_usd",
+                    "locker_shipping_usd",
+                ):
+                    if field_name in matching_update:
+                        item_input[field_name] = matching_update[field_name]
+
+            effective_sale_price_cop = current_sale_price_cop
+            if matching_update and "final_sale_price_cop" in matching_update:
+                effective_sale_price_cop = float(matching_update["final_sale_price_cop"] or 0)
+
+            current_advance_rate = (
+                _safe_ratio(current_advance_cop, current_sale_price_cop)
+                if current_sale_price_cop > 0
+                else _safe_ratio(item_input.get("final_advance_cop") or 0, item_input.get("final_sale_price_cop") or 0)
+            )
+            if current_advance_rate is None:
+                current_advance_rate = float(item_input.get("advance_percent") or 50.0) / 100
+
+            if effective_sale_price_cop > 0:
+                item_input["final_sale_price_cop"] = effective_sale_price_cop
+            item_input["final_advance_cop"] = effective_sale_price_cop * current_advance_rate
             quote_item["input"] = item_input
 
         updated_record["input"]["quote_items"] = updated_quote_items
-        if actual_purchase_prices:
-            updated_record = _apply_actual_purchase_prices_to_quote_record(
-                updated_record,
-                actual_purchase_prices,
-            )
-        else:
-            recalculated = calculate_quote_bundle(
-                {
-                    "pending_request_id": input_data.get("pending_request_id"),
-                    "client_id": input_data.get("client_id"),
-                    "client_name": input_data.get("client_name"),
-                    "notes": input_data.get("notes"),
-                    "client_quote_items_text": input_data.get("client_quote_items_text"),
-                    "quote_items": updated_quote_items,
-                }
-            )
-            updated_record["input"] = recalculated["input"]
-            updated_record["result"] = recalculated
-            updated_record["client_name"] = recalculated.get("input", {}).get(
-                "client_name", updated_record.get("client_name", "")
-            )
-            updated_record["product_name"] = recalculated.get("input", {}).get(
-                "product_name", updated_record.get("product_name", "")
-            )
+        recalculated = calculate_quote_bundle(
+            {
+                "pending_request_id": input_data.get("pending_request_id"),
+                "client_id": input_data.get("client_id"),
+                "client_name": input_data.get("client_name"),
+                "notes": input_data.get("notes"),
+                "client_quote_items_text": input_data.get("client_quote_items_text"),
+                "quote_items": updated_quote_items,
+            }
+        )
+        updated_record["input"] = recalculated["input"]
+        updated_record["result"] = recalculated
+        updated_record["client_name"] = recalculated.get("input", {}).get(
+            "client_name", updated_record.get("client_name", "")
+        )
+        updated_record["product_name"] = recalculated.get("input", {}).get(
+            "product_name", updated_record.get("product_name", "")
+        )
 
         if notes is not None:
             updated_record["notes"] = str(notes or "").strip()
@@ -513,6 +647,18 @@ def _recalculate_confirmed_order_quote_record(
     normalized_prices = _normalize_actual_purchase_prices(actual_purchase_prices)
     if normalized_prices:
         single_input["price_usd_net"] = normalized_prices[0]["price_usd_net"]
+    normalized_item_updates = _normalize_order_item_updates(quote_item_updates)
+    if normalized_item_updates:
+        single_update = normalized_item_updates[0]
+        for field_name in (
+            "price_usd_net",
+            "tax_usa_percent",
+            "travel_cost_usd",
+            "locker_shipping_usd",
+            "final_sale_price_cop",
+        ):
+            if field_name in single_update:
+                single_input[field_name] = single_update[field_name]
 
     recalculated_quote = QuoteInput.from_dict(single_input)
     recalculated_result = calculate_quote(recalculated_quote)
@@ -1879,6 +2025,20 @@ def init_db(skip_defaults: bool = False) -> None:
                     balance_due_cop REAL NOT NULL,
                     notes TEXT NOT NULL,
                     snapshot_json TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS order_archives (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    company_id INTEGER NOT NULL DEFAULT 1,
+                    original_order_id INTEGER NOT NULL,
+                    original_quote_id INTEGER,
+                    archive_action TEXT NOT NULL,
+                    reason TEXT NOT NULL DEFAULT '',
+                    payload_json TEXT NOT NULL
                 )
                 """
             )
@@ -5555,6 +5715,24 @@ def create_order_from_quote(
         return _serialize_order(created, events, all_statuses, active_statuses), False
 
 
+def create_direct_order(
+    input_data: dict[str, Any],
+    result_data: dict[str, Any],
+    *,
+    advance_paid_cop: float | None = None,
+    company_id: int | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    quote_record = save_quote(input_data, result_data, company_id=company_id)
+    order_record, _ = create_order_from_quote(
+        int(quote_record["id"]),
+        advance_paid_cop=advance_paid_cop,
+        company_id=company_id,
+    )
+    return order_record, quote_record
+
+
 def _get_client_whatsapp_row(
     connection: sqlite3.Connection | CompatConnection,
     client_id: int | None,
@@ -6312,6 +6490,284 @@ def update_order_image(
         return _serialize_order(updated, events, all_statuses, active_statuses)
 
 
+def _list_payment_events_for_order(
+    connection: sqlite3.Connection | CompatConnection,
+    *,
+    order_id: int,
+    company_id: int,
+) -> list[dict[str, Any]]:
+    connection.row_factory = sqlite3.Row
+    rows = connection.execute(
+        """
+        SELECT id, created_at, company_id, order_id, payment_kind, amount_cop, payment_date, note
+        FROM payment_events
+        WHERE company_id = ? AND order_id = ?
+        ORDER BY id ASC
+        """,
+        (company_id, order_id),
+    ).fetchall()
+    return [_row_to_dict(row) for row in rows]
+
+
+def _list_inventory_movements_for_order(
+    connection: sqlite3.Connection | CompatConnection,
+    *,
+    order_id: int,
+    company_id: int,
+) -> list[dict[str, Any]]:
+    connection.row_factory = sqlite3.Row
+    rows = connection.execute(
+        """
+        SELECT
+            id,
+            created_at,
+            company_id,
+            product_id,
+            movement_type,
+            quantity_delta,
+            quantity_after,
+            unit_cost_cop,
+            total_cost_delta_cop,
+            stock_value_after_cop,
+            note,
+            related_order_id,
+            source
+        FROM inventory_movements
+        WHERE company_id = ? AND related_order_id = ?
+        ORDER BY id ASC
+        """,
+        (company_id, order_id),
+    ).fetchall()
+    return [_row_to_dict(row) for row in rows]
+
+
+def _list_whatsapp_notifications_for_order(
+    connection: sqlite3.Connection | CompatConnection,
+    *,
+    order_id: int,
+    company_id: int,
+) -> list[dict[str, Any]]:
+    connection.row_factory = sqlite3.Row
+    rows = connection.execute(
+        """
+        SELECT
+            id,
+            created_at,
+            updated_at,
+            company_id,
+            order_id,
+            quote_id,
+            client_id,
+            trigger_key,
+            template_id,
+            template_label,
+            recipient_phone,
+            message_text,
+            provider,
+            external_message_id,
+            status,
+            error_message,
+            source,
+            sent_at,
+            delivered_at,
+            read_at,
+            failed_at,
+            response_json
+        FROM whatsapp_notifications
+        WHERE company_id = ? AND order_id = ?
+        ORDER BY id ASC
+        """,
+        (company_id, order_id),
+    ).fetchall()
+    return [_row_to_dict(row) for row in rows]
+
+
+def _restore_inventory_after_order_exception(
+    connection: sqlite3.Connection | CompatConnection,
+    *,
+    order_id: int,
+    company_id: int,
+    action_label: str,
+    reason: str,
+) -> list[dict[str, Any]]:
+    original_movements = _list_inventory_movements_for_order(
+        connection,
+        order_id=order_id,
+        company_id=company_id,
+    )
+    reversal_rows: list[dict[str, Any]] = []
+    for movement in original_movements:
+        if str(movement.get("movement_type") or "").strip().lower() != INVENTORY_MOVEMENT_SALE_OUT:
+            continue
+        quantity = abs(int(movement.get("quantity_delta") or 0))
+        if quantity <= 0:
+            continue
+        reversal_note = f"Reversion por {action_label.lower()} de compra #{order_id}."
+        if reason:
+            reversal_note = f"{reversal_note} Motivo: {reason}."
+        reversal_row, _ = _record_inventory_movement(
+            connection,
+            product_id=int(movement.get("product_id") or 0),
+            company_id=company_id,
+            movement_type=INVENTORY_MOVEMENT_STOCK_IN,
+            quantity=quantity,
+            unit_cost_cop=float(movement.get("unit_cost_cop") or 0),
+            note=reversal_note,
+            related_order_id=order_id,
+            source=f"order_{action_label.lower()}",
+        )
+        reversal_rows.append(reversal_row)
+    return reversal_rows
+
+
+def _archive_and_remove_order(
+    order_id: int,
+    *,
+    archive_action: str,
+    reason: str,
+    company_id: int,
+) -> dict[str, Any]:
+    clean_action = str(archive_action or "").strip().lower()
+    if clean_action not in {"invalidated", "deleted"}:
+        raise ValueError("La accion extraordinaria de la compra no es valida.")
+
+    clean_reason = str(reason or "").strip()
+    if not clean_reason:
+        raise ValueError("Debes indicar el motivo de la accion extraordinaria.")
+
+    action_label = "invalidacion" if clean_action == "invalidated" else "eliminacion"
+    now = datetime.now(timezone.utc).isoformat()
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        _ensure_orders_runtime_columns(connection)
+        existing = connection.execute(
+            "SELECT * FROM orders WHERE id = ? AND company_id = ?",
+            (order_id, company_id),
+        ).fetchone()
+        if existing is None:
+            raise ValueError("La compra no existe.")
+
+        all_statuses = _list_status_rows(
+            connection,
+            company_id=company_id,
+            include_inactive=True,
+        )
+        events = _list_order_events(connection, [order_id], all_statuses, company_id).get(order_id, [])
+        payment_rows = _list_payment_events_for_order(
+            connection,
+            order_id=order_id,
+            company_id=company_id,
+        )
+        inventory_rows = _list_inventory_movements_for_order(
+            connection,
+            order_id=order_id,
+            company_id=company_id,
+        )
+        whatsapp_rows = _list_whatsapp_notifications_for_order(
+            connection,
+            order_id=order_id,
+            company_id=company_id,
+        )
+        reversal_rows = _restore_inventory_after_order_exception(
+            connection,
+            order_id=order_id,
+            company_id=company_id,
+            action_label=action_label,
+            reason=clean_reason,
+        )
+
+        archived_payload = {
+            "order": _row_to_dict(existing),
+            "events": events,
+            "payment_events": payment_rows,
+            "inventory_movements": inventory_rows,
+            "inventory_reversals": reversal_rows,
+            "whatsapp_notifications": whatsapp_rows,
+        }
+        _insert_and_get_id(
+            connection,
+            """
+            INSERT INTO order_archives (
+                created_at,
+                company_id,
+                original_order_id,
+                original_quote_id,
+                archive_action,
+                reason,
+                payload_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                now,
+                company_id,
+                order_id,
+                existing["quote_id"],
+                clean_action,
+                clean_reason,
+                json.dumps(archived_payload, ensure_ascii=False),
+            ),
+        )
+
+        connection.execute(
+            "DELETE FROM whatsapp_notifications WHERE company_id = ? AND order_id = ?",
+            (company_id, order_id),
+        )
+        connection.execute(
+            "DELETE FROM payment_events WHERE company_id = ? AND order_id = ?",
+            (company_id, order_id),
+        )
+        connection.execute(
+            "DELETE FROM order_events WHERE company_id = ? AND order_id = ?",
+            (company_id, order_id),
+        )
+        connection.execute(
+            "DELETE FROM orders WHERE company_id = ? AND id = ?",
+            (company_id, order_id),
+        )
+        connection.commit()
+
+    return {
+        "order_id": order_id,
+        "quote_id": _row_value(existing, "quote_id"),
+        "client_name": _row_value(existing, "client_name", ""),
+        "product_name": _row_value(existing, "product_name", ""),
+        "archive_action": clean_action,
+        "reason": clean_reason,
+    }
+
+
+def invalidate_order(
+    order_id: int,
+    *,
+    reason: str,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    return _archive_and_remove_order(
+        order_id,
+        archive_action="invalidated",
+        reason=reason,
+        company_id=_normalize_company_id(company_id),
+    )
+
+
+def delete_order(
+    order_id: int,
+    *,
+    reason: str,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    return _archive_and_remove_order(
+        order_id,
+        archive_action="deleted",
+        reason=reason,
+        company_id=_normalize_company_id(company_id),
+    )
+
+
 def update_confirmed_order(
     order_id: int,
     *,
@@ -6319,6 +6775,7 @@ def update_confirmed_order(
     advance_paid_cop: float | None = None,
     notes: str | None = None,
     actual_purchase_prices: list[dict[str, Any]] | None = None,
+    quote_item_updates: list[dict[str, Any]] | None = None,
     company_id: int | None = None,
 ) -> dict[str, Any]:
     init_db()
@@ -6358,6 +6815,7 @@ def update_confirmed_order(
             exchange_rate_cop=normalized_exchange_rate,
             notes=normalized_notes,
             actual_purchase_prices=actual_purchase_prices,
+            quote_item_updates=quote_item_updates,
         )
         order_data = build_order_from_quote(
             recalculated_snapshot,
@@ -6422,6 +6880,8 @@ def update_confirmed_order(
             )
         if actual_purchase_prices:
             changes.append("Precios reales de compra ajustados")
+        if quote_item_updates:
+            changes.append("Detalle comercial ajustado")
         if notes is not None:
             changes.append("Notas actualizadas")
         change_note = "Compra editada."

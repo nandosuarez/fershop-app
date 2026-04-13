@@ -7308,6 +7308,9 @@ function getOrderEditPurchaseItems(order) {
   if (Array.isArray(quoteItems) && quoteItems.length) {
     return quoteItems.map((item, index) => {
       const itemInput = item && typeof item.input === "object" ? item.input : item;
+      const salePriceCop =
+        Number(item?.sale_price_cop || item?.result?.final?.sale_price_cop || itemInput?.final_sale_price_cop || 0) ||
+        0;
       return {
         quoteItemIndex: index,
         productId: item?.product_id ?? itemInput?.product_id ?? null,
@@ -7315,7 +7318,12 @@ function getOrderEditPurchaseItems(order) {
         usesInventoryStock: Boolean(
           item?.uses_inventory_stock ?? itemInput?.uses_inventory_stock ?? false
         ),
+        quantity: Number(item?.quantity || itemInput?.quantity || 1) || 1,
         priceUsdNet: Number(itemInput?.price_usd_net || 0) || 0,
+        taxUsaPercent: Number(itemInput?.tax_usa_percent || 0) || 0,
+        lockerShippingUsd: Number(itemInput?.locker_shipping_usd || 0) || 0,
+        travelCostUsd: Number(itemInput?.travel_cost_usd || 0) || 0,
+        finalSalePriceCop: salePriceCop,
       };
     });
   }
@@ -7326,7 +7334,15 @@ function getOrderEditPurchaseItems(order) {
       productId: order?.snapshot?.input?.product_id ?? null,
       productName: String(order?.snapshot?.input?.product_name || order?.product_name || "Producto"),
       usesInventoryStock: Boolean(order?.snapshot?.input?.uses_inventory_stock),
+      quantity: Number(order?.snapshot?.input?.quantity || 1) || 1,
       priceUsdNet: Number(order?.snapshot?.input?.price_usd_net || 0) || 0,
+      taxUsaPercent: Number(order?.snapshot?.input?.tax_usa_percent || 0) || 0,
+      lockerShippingUsd: Number(order?.snapshot?.input?.locker_shipping_usd || 0) || 0,
+      travelCostUsd: Number(order?.snapshot?.input?.travel_cost_usd || 0) || 0,
+      finalSalePriceCop:
+        Number(
+          order?.snapshot?.result?.final?.sale_price_cop || order?.snapshot?.input?.final_sale_price_cop || 0
+        ) || 0,
     },
   ];
 }
@@ -7336,7 +7352,6 @@ function renderOrderDetailPanel(order) {
   const secondPaymentBlocked =
     order.next_status_key === "second_payment_received" && Number(order.balance_due_cop || 0) > 0;
   const editablePurchaseItems = getOrderEditPurchaseItems(order);
-  const editableImportedItems = editablePurchaseItems.filter((item) => !item.usesInventoryStock);
   const exchangeRateCop = getOrderEditExchangeRate(order);
 
   return `
@@ -7373,7 +7388,7 @@ function renderOrderDetailPanel(order) {
       <div class="order-payment-register">
         <strong>Editar compra confirmada</strong>
         <p class="catalog-card-note">
-          Ajusta TRM, anticipo real, notas y el precio real de compra para recalcular utilidad y saldo sin tocar el flujo.
+          Corrige la compra completa si hubo descuentos, cambios de venta o un error operativo, sin perder el historial.
         </p>
         <div class="order-payment-fields">
           <label>
@@ -7396,29 +7411,93 @@ function renderOrderDetailPanel(order) {
           </label>
         </div>
         <div class="order-payment-fields order-edit-price-grid">
-          ${
-            editableImportedItems.length
-              ? editableImportedItems
-                  .map(
-                    (item) => `
-                      <label>
-                        <span>Precio real USD · ${escapeHtml(item.productName)}</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value="${escapeHtml(String(item.priceUsdNet || 0))}"
-                          data-order-edit-price="${order.id}"
-                          data-quote-item-index="${item.quoteItemIndex}"
-                          data-product-id="${escapeHtml(String(item.productId ?? ""))}"
-                          data-product-name="${escapeHtml(item.productName)}"
-                        />
-                      </label>
-                    `
-                  )
-                  .join("")
-              : `<p class="catalog-card-note">Esta compra sale completamente de inventario; no necesita ajustar precio real de compra.</p>`
-          }
+          ${editablePurchaseItems
+            .map(
+              (item) => `
+                <article class="order-edit-product-card">
+                  <strong>${escapeHtml(item.productName)}</strong>
+                  <small>Cantidad: ${escapeHtml(String(item.quantity || 1))}</small>
+                  <div class="order-edit-product-grid">
+                    ${
+                      item.usesInventoryStock
+                        ? `<p class="catalog-card-note">Sale desde inventario. El costo real se toma del stock; aqui solo puedes ajustar la venta final.</p>`
+                        : `
+                          <label>
+                            <span>Precio compra USD</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value="${escapeHtml(String(item.priceUsdNet || 0))}"
+                              data-order-edit-item="${order.id}"
+                              data-field="price_usd_net"
+                              data-quote-item-index="${item.quoteItemIndex}"
+                              data-product-id="${escapeHtml(String(item.productId ?? ""))}"
+                              data-product-name="${escapeHtml(item.productName)}"
+                            />
+                          </label>
+                          <label>
+                            <span>Tax %</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value="${escapeHtml(String(item.taxUsaPercent || 0))}"
+                              data-order-edit-item="${order.id}"
+                              data-field="tax_usa_percent"
+                              data-quote-item-index="${item.quoteItemIndex}"
+                              data-product-id="${escapeHtml(String(item.productId ?? ""))}"
+                              data-product-name="${escapeHtml(item.productName)}"
+                            />
+                          </label>
+                          <label>
+                            <span>Envio / casillero USD</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value="${escapeHtml(String(item.lockerShippingUsd || 0))}"
+                              data-order-edit-item="${order.id}"
+                              data-field="locker_shipping_usd"
+                              data-quote-item-index="${item.quoteItemIndex}"
+                              data-product-id="${escapeHtml(String(item.productId ?? ""))}"
+                              data-product-name="${escapeHtml(item.productName)}"
+                            />
+                          </label>
+                          <label>
+                            <span>Costo viaje USD</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value="${escapeHtml(String(item.travelCostUsd || 0))}"
+                              data-order-edit-item="${order.id}"
+                              data-field="travel_cost_usd"
+                              data-quote-item-index="${item.quoteItemIndex}"
+                              data-product-id="${escapeHtml(String(item.productId ?? ""))}"
+                              data-product-name="${escapeHtml(item.productName)}"
+                            />
+                          </label>
+                        `
+                    }
+                    <label>
+                      <span>Precio final COP</span>
+                      <input
+                        type="text"
+                        inputmode="numeric"
+                        value="${escapeHtml(String(Math.round(item.finalSalePriceCop || 0)))}"
+                        data-order-edit-item="${order.id}"
+                        data-field="final_sale_price_cop"
+                        data-quote-item-index="${item.quoteItemIndex}"
+                        data-product-id="${escapeHtml(String(item.productId ?? ""))}"
+                        data-product-name="${escapeHtml(item.productName)}"
+                      />
+                    </label>
+                  </div>
+                </article>
+              `
+            )
+            .join("")}
         </div>
         <label class="order-edit-notes-field">
           <span>Notas de la compra</span>
@@ -7427,6 +7506,12 @@ function renderOrderDetailPanel(order) {
         <div class="order-edit-actions">
           <button class="secondary" type="button" data-save-order-edit="${order.id}">
             Guardar ajustes
+          </button>
+          <button class="secondary danger-button" type="button" data-invalidate-order="${order.id}">
+            Invalidar compra
+          </button>
+          <button class="secondary danger-button danger-button-outline" type="button" data-delete-order="${order.id}">
+            Eliminar compra
           </button>
         </div>
       </div>
@@ -9440,8 +9525,8 @@ ordersListContainer.addEventListener("click", async (event) => {
     const notesInput = ordersListContainer.querySelector(
       `[data-order-edit-notes="${orderId}"]`
     );
-    const priceInputs = Array.from(
-      ordersListContainer.querySelectorAll(`[data-order-edit-price="${orderId}"]`)
+    const lineEditInputs = Array.from(
+      ordersListContainer.querySelectorAll(`[data-order-edit-item="${orderId}"]`)
     );
 
     const exchangeRateCop = parseCurrencyInput(exchangeRateInput ? exchangeRateInput.value : "");
@@ -9456,23 +9541,37 @@ ordersListContainer.addEventListener("click", async (event) => {
       return;
     }
 
-    const actualPurchasePrices = [];
-    for (const input of priceInputs) {
+    const quoteItemUpdates = new Map();
+    for (const input of lineEditInputs) {
       const rawValue = String(input.value || "").trim();
       if (!rawValue) {
         continue;
       }
-      const parsedValue = parseUsdInput(rawValue);
-      if (!Number.isFinite(parsedValue) || parsedValue < 0) {
-        statusMessage.textContent = "Revisa los precios reales USD de la compra.";
-        return;
-      }
-      actualPurchasePrices.push({
-        quote_item_index: Number(input.getAttribute("data-quote-item-index") || 0),
+      const fieldName = String(input.getAttribute("data-field") || "").trim();
+      const quoteItemIndex = Number(input.getAttribute("data-quote-item-index") || 0);
+      const mapKey = String(quoteItemIndex);
+      const currentItem = quoteItemUpdates.get(mapKey) || {
+        quote_item_index: quoteItemIndex,
         product_id: input.getAttribute("data-product-id") || null,
         product_name: input.getAttribute("data-product-name") || "",
-        price_usd_net: parsedValue,
-      });
+      };
+
+      let parsedValue = null;
+      if (fieldName === "final_sale_price_cop") {
+        parsedValue = parseCurrencyInput(rawValue);
+        if (parsedValue === null || parsedValue <= 0) {
+          statusMessage.textContent = "Revisa el precio final COP de la compra.";
+          return;
+        }
+      } else {
+        parsedValue = parseUsdInput(rawValue);
+        if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+          statusMessage.textContent = "Revisa los valores ajustados por producto.";
+          return;
+        }
+      }
+      currentItem[fieldName] = parsedValue;
+      quoteItemUpdates.set(mapKey, currentItem);
     }
 
     const originalText = saveOrderEditButton.textContent;
@@ -9486,7 +9585,7 @@ ordersListContainer.addEventListener("click", async (event) => {
           exchange_rate_cop: exchangeRateCop,
           advance_paid_cop: advancePaidCop,
           notes: String(notesInput?.value || "").trim(),
-          actual_purchase_prices: actualPurchasePrices,
+          quote_item_updates: Array.from(quoteItemUpdates.values()),
         }),
       });
       await Promise.all([loadOrders(), loadDashboard(), loadFollowup()]);
@@ -9498,6 +9597,92 @@ ordersListContainer.addEventListener("click", async (event) => {
     } finally {
       saveOrderEditButton.disabled = false;
       saveOrderEditButton.textContent = originalText;
+    }
+    return;
+  }
+
+  const invalidateOrderButton = event.target.closest("[data-invalidate-order]");
+  if (invalidateOrderButton) {
+    const orderId = invalidateOrderButton.getAttribute("data-invalidate-order");
+    if (!orderId) {
+      return;
+    }
+    const reason = window.prompt(
+      "Cuéntame brevemente por qué vas a invalidar esta compra.",
+      "Compra invalidada por novedad extraordinaria."
+    );
+    if (reason === null) {
+      return;
+    }
+    if (!String(reason).trim()) {
+      statusMessage.textContent = "Escribe un motivo para invalidar la compra.";
+      return;
+    }
+
+    const originalText = invalidateOrderButton.textContent;
+    invalidateOrderButton.disabled = true;
+    invalidateOrderButton.textContent = "Invalidando...";
+
+    try {
+      await requestJson(`/api/orders/${orderId}/invalidate`, {
+        method: "POST",
+        body: JSON.stringify({ reason: String(reason).trim() }),
+      });
+      await Promise.all([loadOrders(), loadHistory(), loadDashboard(), loadFollowup()]);
+      await refreshActiveClientDetail();
+      await refreshActiveProductDetail();
+      statusMessage.textContent = "Compra invalidada y retirada del operativo.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    } finally {
+      invalidateOrderButton.disabled = false;
+      invalidateOrderButton.textContent = originalText;
+    }
+    return;
+  }
+
+  const deleteOrderButton = event.target.closest("[data-delete-order]");
+  if (deleteOrderButton) {
+    const orderId = deleteOrderButton.getAttribute("data-delete-order");
+    if (!orderId) {
+      return;
+    }
+    const confirmed = window.confirm(
+      "Esta accion sacara la compra del operativo. Antes de hacerlo, quedara archivada internamente. ¿Deseas continuar?"
+    );
+    if (!confirmed) {
+      return;
+    }
+    const reason = window.prompt(
+      "Escribe el motivo de esta eliminacion extraordinaria.",
+      "Compra eliminada por novedad extraordinaria."
+    );
+    if (reason === null) {
+      return;
+    }
+    if (!String(reason).trim()) {
+      statusMessage.textContent = "Escribe un motivo para eliminar la compra.";
+      return;
+    }
+
+    const originalText = deleteOrderButton.textContent;
+    deleteOrderButton.disabled = true;
+    deleteOrderButton.textContent = "Eliminando...";
+
+    try {
+      await requestJson(`/api/orders/${orderId}/delete`, {
+        method: "POST",
+        body: JSON.stringify({ reason: String(reason).trim() }),
+      });
+      await Promise.all([loadOrders(), loadHistory(), loadDashboard(), loadFollowup()]);
+      await refreshActiveClientDetail();
+      await refreshActiveProductDetail();
+      statusMessage.textContent = "Compra eliminada del operativo y archivada internamente.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    } finally {
+      deleteOrderButton.disabled = false;
+      deleteOrderButton.textContent = originalText;
     }
     return;
   }
