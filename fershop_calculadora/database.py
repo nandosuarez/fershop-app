@@ -521,6 +521,7 @@ def _recalculate_confirmed_order_quote_record(
     *,
     exchange_rate_cop: float | None = None,
     notes: str | None = None,
+    general_discount_cop: float | None = None,
     actual_purchase_prices: list[dict[str, Any]] | None = None,
     quote_item_updates: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -535,6 +536,8 @@ def _recalculate_confirmed_order_quote_record(
         clean_notes = str(notes or "").strip()
         updated_record["notes"] = clean_notes
         input_data["notes"] = clean_notes
+    if general_discount_cop is not None:
+        input_data["general_discount_cop"] = float(general_discount_cop)
 
     quote_items = input_data.get("quote_items")
     if isinstance(quote_items, list) and quote_items:
@@ -614,6 +617,7 @@ def _recalculate_confirmed_order_quote_record(
                 "client_name": input_data.get("client_name"),
                 "notes": input_data.get("notes"),
                 "client_quote_items_text": input_data.get("client_quote_items_text"),
+                "general_discount_cop": input_data.get("general_discount_cop"),
                 "quote_items": updated_quote_items,
             }
         )
@@ -6774,6 +6778,7 @@ def update_confirmed_order(
     exchange_rate_cop: float | None = None,
     advance_paid_cop: float | None = None,
     notes: str | None = None,
+    general_discount_cop: float | None = None,
     actual_purchase_prices: list[dict[str, Any]] | None = None,
     quote_item_updates: list[dict[str, Any]] | None = None,
     company_id: int | None = None,
@@ -6810,10 +6815,20 @@ def update_confirmed_order(
             if normalized_exchange_rate <= 0:
                 raise ValueError("La TRM debe ser mayor a cero.")
 
+        normalized_general_discount: float | None = None
+        if general_discount_cop is not None:
+            try:
+                normalized_general_discount = float(general_discount_cop)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("El descuento general debe ser numerico.") from exc
+            if normalized_general_discount < 0:
+                raise ValueError("El descuento general no puede ser negativo.")
+
         recalculated_snapshot = _recalculate_confirmed_order_quote_record(
             snapshot,
             exchange_rate_cop=normalized_exchange_rate,
             notes=normalized_notes,
+            general_discount_cop=normalized_general_discount,
             actual_purchase_prices=actual_purchase_prices,
             quote_item_updates=quote_item_updates,
         )
@@ -6877,6 +6892,10 @@ def update_confirmed_order(
         if advance_paid_cop is not None:
             changes.append(
                 f"Anticipo real: {_format_cop_plain(float(order_data['advance_paid_cop'] or 0))}"
+            )
+        if normalized_general_discount is not None:
+            changes.append(
+                f"Descuento general: {_format_cop_plain(normalized_general_discount)}"
             )
         if actual_purchase_prices:
             changes.append("Precios reales de compra ajustados")
@@ -7107,8 +7126,20 @@ def build_dashboard_summary(
     sales_total_cop = sum(float(row["sale_price_cop"] or 0) for row in period_orders)
 
     gross_profit_cop = 0.0
+    product_cost_total_cop = 0.0
+    locker_shipping_total_cop = 0.0
+    travel_cost_total_cop = 0.0
     for row in period_orders:
         snapshot = json.loads(row["snapshot_json"])
+        costs = snapshot.get("result", {}).get("costs", {})
+        travel_cost_cop = float(costs.get("travel_cost_cop") or 0)
+        locker_shipping_cop = float(costs.get("locker_shipping_cop") or 0)
+        inventory_cost_cop = float(costs.get("inventory_cost_cop") or 0)
+        import_cost_cop = float(costs.get("cost_in_cop") or 0)
+        product_cost_cop = max(import_cost_cop - travel_cost_cop - locker_shipping_cop, 0.0)
+        product_cost_total_cop += product_cost_cop + inventory_cost_cop
+        locker_shipping_total_cop += locker_shipping_cop
+        travel_cost_total_cop += travel_cost_cop
         gross_profit_cop += float(
             snapshot.get("result", {}).get("final", {}).get("profit_cop") or 0
         )
@@ -7315,6 +7346,9 @@ def build_dashboard_summary(
             "open_orders_count": len(open_orders),
             "sales_total_cop": sales_total_cop,
             "cash_in_total_cop": cash_in_total_cop,
+            "product_cost_total_cop": product_cost_total_cop,
+            "locker_shipping_total_cop": locker_shipping_total_cop,
+            "travel_cost_total_cop": travel_cost_total_cop,
             "period_balance_due_cop": period_balance_due_cop,
             "accounts_receivable_cop": accounts_receivable_cop,
             "gross_profit_cop": gross_profit_cop,

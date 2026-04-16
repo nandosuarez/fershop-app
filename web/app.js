@@ -960,30 +960,7 @@ function renderDirectOrderLiveSummary() {
   const productName = String(
     getDirectOrderField("product_name")?.value || directOrderProductSelect?.value || ""
   ).trim();
-  const totalSale = state.directOrderLineItems.reduce(
-    (total, item) => total + Number(item.sale_price_cop || 0),
-    0
-  );
-  const totalProfit = state.directOrderLineItems.reduce(
-    (total, item) => total + Number(item.profit_cop || 0),
-    0
-  );
-  const totalShippingUsd = state.directOrderLineItems.reduce(
-    (total, item) => total + Number(item.result?.costs?.applied_locker_shipping_usd || 0),
-    0
-  );
-  const totalShippingCop = state.directOrderLineItems.reduce(
-    (total, item) => total + Number(item.result?.costs?.locker_shipping_cop || 0),
-    0
-  );
-  const totalTravelUsd = state.directOrderLineItems.reduce(
-    (total, item) => total + Number(item.result?.costs?.applied_travel_cost_usd || 0),
-    0
-  );
-  const totalTravelCop = state.directOrderLineItems.reduce(
-    (total, item) => total + Number(item.result?.costs?.travel_cost_cop || 0),
-    0
-  );
+  const totals = getDirectOrderAggregateTotals();
   const exchangeRateCop = Number(getDirectOrderField("exchange_rate_cop")?.value || 0);
   const finalData = state.directOrderLastResult?.final || null;
   const workingValue = finalData ? formatCop(finalData.sale_price_cop) : "Sin calcular";
@@ -1020,25 +997,88 @@ function renderDirectOrderLiveSummary() {
       <article class="quote-live-summary-card">
         <span>Compra armada</span>
         <strong>${escapeHtml(itemsLabel)}</strong>
-        <small>${state.directOrderLineItems.length ? formatCop(totalSale) : "Aun no hay total acumulado"}</small>
+        <small>${
+          state.directOrderLineItems.length
+            ? `${formatCop(totals.discountedSale)}${totals.generalDiscountCop ? ` · desc. ${formatCop(totals.generalDiscountCop)}` : ""}`
+            : "Aun no hay total acumulado"
+        }</small>
       </article>
       <article class="quote-live-summary-card">
         <span>Utilidad estimada</span>
-        <strong>${formatCop(totalProfit)}</strong>
+        <strong>${formatCop(totals.discountedProfit)}</strong>
         <small>Sobre los productos ya agregados</small>
       </article>
       <article class="quote-live-summary-card">
         <span>Envio / casillero</span>
-        <strong>${formatCop(totalShippingCop)}</strong>
-        <small>${formatUsd(totalShippingUsd)} acumulado</small>
+        <strong>${formatCop(totals.totalShippingCop)}</strong>
+        <small>${formatUsd(totals.totalShippingUsd)} acumulado</small>
       </article>
       <article class="quote-live-summary-card">
         <span>Costo de viaje</span>
-        <strong>${formatCop(totalTravelCop)}</strong>
-        <small>${formatUsd(totalTravelUsd)} acumulado</small>
+        <strong>${formatCop(totals.totalTravelCop)}</strong>
+        <small>${formatUsd(totals.totalTravelUsd)} acumulado</small>
+      </article>
+      <article class="quote-live-summary-card">
+        <span>Descuento general</span>
+        <strong>${formatCop(totals.generalDiscountCop)}</strong>
+        <small>${totals.generalDiscountCop ? "Se aplica a toda la compra" : "Sin descuento adicional"}</small>
       </article>
     </div>
   `;
+}
+
+function getDirectOrderGeneralDiscountCop() {
+  const parsed = parseCurrencyInput(getDirectOrderField("general_discount_cop")?.value || "");
+  if (parsed === null || Number.isNaN(parsed)) {
+    return 0;
+  }
+  return Math.max(Number(parsed), 0);
+}
+
+function getDirectOrderAggregateTotals() {
+  const totalSale = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.sale_price_cop || 0),
+    0
+  );
+  const totalProfit = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.profit_cop || 0),
+    0
+  );
+  const totalShippingUsd = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.result?.costs?.applied_locker_shipping_usd || 0),
+    0
+  );
+  const totalShippingCop = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.result?.costs?.locker_shipping_cop || 0),
+    0
+  );
+  const totalTravelUsd = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.result?.costs?.applied_travel_cost_usd || 0),
+    0
+  );
+  const totalTravelCop = state.directOrderLineItems.reduce(
+    (total, item) => total + Number(item.result?.costs?.travel_cost_cop || 0),
+    0
+  );
+  const rawDiscount = getDirectOrderGeneralDiscountCop();
+  const generalDiscountCop = Math.min(rawDiscount, totalSale);
+  const discountedSale = Math.max(totalSale - generalDiscountCop, 0);
+  const discountedProfit = totalProfit - generalDiscountCop;
+  const actualAdvance = parseCurrencyInput(getDirectOrderField("advance_paid_cop")?.value || "0") || 0;
+  const balance = Math.max(discountedSale - actualAdvance, 0);
+  return {
+    totalSale,
+    totalProfit,
+    totalShippingUsd,
+    totalShippingCop,
+    totalTravelUsd,
+    totalTravelCop,
+    generalDiscountCop,
+    discountedSale,
+    discountedProfit,
+    actualAdvance,
+    balance,
+  };
 }
 
 function ensureDirectOrderItemText() {
@@ -1378,58 +1418,43 @@ function renderDirectOrderLineItems() {
     return;
   }
 
-  const totalSale = state.directOrderLineItems.reduce(
-    (total, item) => total + Number(item.sale_price_cop || 0),
-    0
-  );
-  const totalProfit = state.directOrderLineItems.reduce(
-    (total, item) => total + Number(item.profit_cop || 0),
-    0
-  );
-  const totalShippingUsd = state.directOrderLineItems.reduce(
-    (total, item) => total + Number(item.result?.costs?.applied_locker_shipping_usd || 0),
-    0
-  );
-  const totalShippingCop = state.directOrderLineItems.reduce(
-    (total, item) => total + Number(item.result?.costs?.locker_shipping_cop || 0),
-    0
-  );
-  const totalTravelUsd = state.directOrderLineItems.reduce(
-    (total, item) => total + Number(item.result?.costs?.applied_travel_cost_usd || 0),
-    0
-  );
-  const totalTravelCop = state.directOrderLineItems.reduce(
-    (total, item) => total + Number(item.result?.costs?.travel_cost_cop || 0),
-    0
-  );
-  const actualAdvance = parseCurrencyInput(getDirectOrderField("advance_paid_cop")?.value || "0") || 0;
-  const balance = Math.max(totalSale - actualAdvance, 0);
+  const totals = getDirectOrderAggregateTotals();
 
   directOrderLineItemsContainer.className = "quote-line-items";
   directOrderLineItemsContainer.innerHTML = `
     <article class="quote-line-summary-card">
       <div class="quote-line-summary-metric">
         <span>Total compra</span>
-        <strong>${formatCop(totalSale)}</strong>
+        <strong>${formatCop(totals.discountedSale)}</strong>
+        ${
+          totals.generalDiscountCop
+            ? `<small>Antes del descuento: ${formatCop(totals.totalSale)}</small>`
+            : ""
+        }
+      </div>
+      <div class="quote-line-summary-metric">
+        <span>Descuento general</span>
+        <strong>${formatCop(totals.generalDiscountCop)}</strong>
+        <small>Se reparte sobre toda la compra</small>
       </div>
       <div class="quote-line-summary-metric">
         <span>Utilidad estimada</span>
-        <strong>${formatCop(totalProfit)}</strong>
+        <strong>${formatCop(totals.discountedProfit)}</strong>
       </div>
       <div class="quote-line-summary-metric">
         <span>Envio / casillero</span>
-        <strong>${formatCop(totalShippingCop)}</strong>
-        <small>${formatUsd(totalShippingUsd)}</small>
+        <strong>${formatCop(totals.totalShippingCop)}</strong>
+        <small>${formatUsd(totals.totalShippingUsd)}</small>
       </div>
       <div class="quote-line-summary-metric">
         <span>Costo de viaje</span>
-        <strong>${formatCop(totalTravelCop)}</strong>
-        <small>${formatUsd(totalTravelUsd)}</small>
+        <strong>${formatCop(totals.totalTravelCop)}</strong>
+        <small>${formatUsd(totals.totalTravelUsd)}</small>
       </div>
       <div class="quote-line-summary-metric">
         <span>Saldo estimado</span>
-        <strong>${formatCop(balance)}</strong>
-        <small>Con anticipo actual: ${formatCop(actualAdvance)}</small>
+        <strong>${formatCop(totals.balance)}</strong>
+        <small>Con anticipo actual: ${formatCop(totals.actualAdvance)}</small>
       </div>
     </article>
     ${state.directOrderLineItems
@@ -1483,17 +1508,18 @@ function enhanceDirectOrderComposerLayout() {
 
   directOrderForm.dataset.layoutEnhanced = "true";
 
-    const productPanel = directOrderForm.querySelector(".direct-order-product-panel");
-    const productLabel = productPanel?.querySelector("label");
-    const fieldGrid = directOrderForm.querySelector(".field-grid");
-    const topGrid = directOrderForm.querySelector(".direct-order-top-grid");
-    const listPanel = directOrderLineItemsContainer?.closest(".quote-items-panel");
+  const productPanel = directOrderForm.querySelector(".direct-order-product-panel");
+  const productLabel = productPanel?.querySelector("label");
+  const fieldGrid = directOrderForm.querySelector(".field-grid");
+  const topGrid = directOrderForm.querySelector(".direct-order-top-grid");
+  const listPanel = directOrderLineItemsContainer?.closest(".quote-items-panel");
     const legacyResultPanel = directOrderResultsContainer?.closest(".panel");
     const legacyActionsBar = directOrderForm.querySelector(".actions.quote-actions-bar");
-    const notesLabel = getDirectOrderField("notes")?.closest("label");
-    const advanceLabel = getDirectOrderField("advance_paid_cop")?.closest("label");
-    const inventoryLabel = getDirectOrderField("uses_inventory_stock")?.closest("label");
-    const purchaseTypeLabel = getDirectOrderField("purchase_type")?.closest("label");
+  const notesLabel = getDirectOrderField("notes")?.closest("label");
+  const advanceLabel = getDirectOrderField("advance_paid_cop")?.closest("label");
+  const discountLabel = getDirectOrderField("general_discount_cop")?.closest("label");
+  const inventoryLabel = getDirectOrderField("uses_inventory_stock")?.closest("label");
+  const purchaseTypeLabel = getDirectOrderField("purchase_type")?.closest("label");
     const hiddenFieldNames = [
       "exchange_rate_cop_legacy",
       "tax_usa_percent",
@@ -1551,7 +1577,12 @@ function enhanceDirectOrderComposerLayout() {
           label.remove();
           return;
         }
-        if (label !== inventoryLabel && label !== advanceLabel && label !== notesLabel) {
+        if (
+          label !== inventoryLabel &&
+          label !== advanceLabel &&
+          label !== discountLabel &&
+          label !== notesLabel
+        ) {
           label.hidden = true;
         }
       });
@@ -1622,7 +1653,7 @@ function enhanceDirectOrderComposerLayout() {
     legacyResultPanel.remove();
   }
 
-  if (directOrderForm && (advanceLabel || notesLabel)) {
+  if (directOrderForm && (advanceLabel || discountLabel || notesLabel)) {
     const advanceSection = document.createElement("section");
     advanceSection.className = "quote-items-panel direct-order-advance-panel";
     advanceSection.innerHTML = `
@@ -1637,6 +1668,9 @@ function enhanceDirectOrderComposerLayout() {
     footerGrid.className = "direct-order-footer-grid";
     if (advanceLabel) {
       footerGrid.append(advanceLabel);
+    }
+    if (discountLabel) {
+      footerGrid.append(discountLabel);
     }
     if (notesLabel) {
       footerGrid.append(notesLabel);
@@ -1708,6 +1742,23 @@ function buildDirectOrderSavePayload() {
     throw new Error("Agrega al menos un producto calculado antes de crear la compra.");
   }
 
+  const generalDiscountCop = getDirectOrderGeneralDiscountCop();
+  if (generalDiscountCop < 0) {
+    throw new Error("El descuento general no puede ser negativo.");
+  }
+  const baseTotalSale = quoteItems.reduce((total, item) => {
+    const baseSale = Number(
+      item.input?.final_sale_price_cop ??
+        item.result?.final?.sale_price_cop ??
+        item.sale_price_cop ??
+        0
+    );
+    return total + Math.max(baseSale, 0);
+  }, 0);
+  if (generalDiscountCop > baseTotalSale) {
+    throw new Error("El descuento general no puede ser mayor al total de la compra.");
+  }
+
   const advancePaidCop = parseCurrencyInput(getDirectOrderField("advance_paid_cop")?.value || "");
   if (advancePaidCop === null || advancePaidCop < 0) {
     throw new Error("Ingresa un anticipo real valido para esta compra.");
@@ -1718,6 +1769,7 @@ function buildDirectOrderSavePayload() {
     client_name: currentPayload.client_name,
     notes: currentPayload.notes,
     client_quote_items_text: currentPayload.client_quote_items_text,
+    general_discount_cop: generalDiscountCop,
     quote_items: quoteItems,
     advance_paid_cop: advancePaidCop,
   };
@@ -1744,6 +1796,7 @@ function resetDirectOrderComposerState(
   setDirectOrderField("exchange_rate_cop", 3790);
   setDirectOrderField("desired_margin_percent", 30);
   setDirectOrderField("advance_paid_cop", 0);
+  setDirectOrderField("general_discount_cop", 0);
   setDirectOrderField("quantity", 1);
   clearDirectOrderClientSelection();
   clearDirectOrderProductSelection();
@@ -5260,6 +5313,9 @@ function renderDashboard(summary) {
     <div class="metrics-grid dashboard-metrics-grid">
       ${makeMetricCard("Vendido", formatCop(metrics.sales_total_cop), `${metrics.orders_count || 0} compras en el periodo`)}
       ${makeMetricCard("Recibido", formatCop(metrics.cash_in_total_cop), "Anticipos y pagos registrados")}
+      ${makeMetricCard("Costo producto", formatCop(metrics.product_cost_total_cop), "Costo base de los productos vendidos en el periodo")}
+      ${makeMetricCard("Costo casillero", formatCop(metrics.locker_shipping_total_cop), "Envio o casillero acumulado de las compras del periodo")}
+      ${makeMetricCard("Costo viaje", formatCop(metrics.travel_cost_total_cop), "Costo de viaje asignado a las compras del periodo")}
       ${makeMetricCard("Pendiente del periodo", formatCop(metrics.period_balance_due_cop), "Saldo aun abierto de estas compras")}
       ${makeMetricCard("Cartera por cobrar", formatCop(metrics.accounts_receivable_cop), "Solo compras notificadas y pendientes de segundo pago")}
       ${makeMetricCard("Utilidad bruta", formatCop(metrics.gross_profit_cop), "Antes de descontar gastos")}
@@ -5291,6 +5347,18 @@ function renderDashboard(summary) {
         <div class="detail-item">
           <span>Hasta</span>
           <strong>${escapeHtml(formatStoredDate(period.end_date || ""))}</strong>
+        </div>
+        <div class="detail-item">
+          <span>Costo producto</span>
+          <strong>${formatCop(metrics.product_cost_total_cop)}</strong>
+        </div>
+        <div class="detail-item">
+          <span>Costo casillero</span>
+          <strong>${formatCop(metrics.locker_shipping_total_cop)}</strong>
+        </div>
+        <div class="detail-item">
+          <span>Costo viaje</span>
+          <strong>${formatCop(metrics.travel_cost_total_cop)}</strong>
         </div>
       </section>
     </div>
@@ -7409,6 +7477,23 @@ function renderOrderDetailPanel(order) {
               data-order-edit-advance="${order.id}"
             />
           </label>
+          <label>
+            <span>Descuento general</span>
+            <input
+              type="text"
+              inputmode="numeric"
+              value="${escapeHtml(
+                String(
+                  Math.round(
+                    order.snapshot?.result?.final?.general_discount_cop ||
+                      order.snapshot?.input?.general_discount_cop ||
+                      0
+                  )
+                )
+              )}"
+              data-order-edit-discount="${order.id}"
+            />
+          </label>
         </div>
         <div class="order-payment-fields order-edit-price-grid">
           ${editablePurchaseItems
@@ -9522,6 +9607,9 @@ ordersListContainer.addEventListener("click", async (event) => {
     const advanceInput = ordersListContainer.querySelector(
       `[data-order-edit-advance="${orderId}"]`
     );
+    const discountInput = ordersListContainer.querySelector(
+      `[data-order-edit-discount="${orderId}"]`
+    );
     const notesInput = ordersListContainer.querySelector(
       `[data-order-edit-notes="${orderId}"]`
     );
@@ -9538,6 +9626,12 @@ ordersListContainer.addEventListener("click", async (event) => {
     const advancePaidCop = parseCurrencyInput(advanceInput ? advanceInput.value : "");
     if (advancePaidCop === null || advancePaidCop < 0) {
       statusMessage.textContent = "Ingresa un anticipo real valido.";
+      return;
+    }
+
+    const generalDiscountCop = parseCurrencyInput(discountInput ? discountInput.value : "");
+    if (generalDiscountCop === null || generalDiscountCop < 0) {
+      statusMessage.textContent = "Ingresa un descuento general valido.";
       return;
     }
 
@@ -9584,6 +9678,7 @@ ordersListContainer.addEventListener("click", async (event) => {
         body: JSON.stringify({
           exchange_rate_cop: exchangeRateCop,
           advance_paid_cop: advancePaidCop,
+          general_discount_cop: generalDiscountCop,
           notes: String(notesInput?.value || "").trim(),
           quote_item_updates: Array.from(quoteItemUpdates.values()),
         }),

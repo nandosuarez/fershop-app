@@ -1114,6 +1114,14 @@ class FerShopHandler(BaseHTTPRequestHandler):
                         except (TypeError, ValueError) as exc:
                             raise ValueError("La TRM debe ser numerica.") from exc
 
+                    raw_general_discount = payload.get("general_discount_cop")
+                    general_discount_cop = None
+                    if raw_general_discount not in (None, ""):
+                        try:
+                            general_discount_cop = float(raw_general_discount)
+                        except (TypeError, ValueError) as exc:
+                            raise ValueError("El descuento general debe ser numerico.") from exc
+
                     actual_purchase_prices = payload.get("actual_purchase_prices")
                     if actual_purchase_prices is not None and not isinstance(actual_purchase_prices, list):
                         raise ValueError("Los precios reales de compra deben enviarse como lista.")
@@ -1125,6 +1133,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
                         order_id,
                         exchange_rate_cop=exchange_rate_cop,
                         advance_paid_cop=advance_paid_cop,
+                        general_discount_cop=general_discount_cop,
                         notes=str(payload.get("notes", "") if "notes" in payload else "").strip()
                         if "notes" in payload
                         else None,

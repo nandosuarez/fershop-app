@@ -460,6 +460,75 @@ class OrderPersistenceTests(unittest.TestCase):
         self.assertAlmostEqual(updated["snapshot"]["input"]["locker_shipping_usd"], 8)
         self.assertIn("Compra editada", updated["events"][-1]["note"])
 
+    def test_update_confirmed_order_can_adjust_general_discount_on_bundle_order(self) -> None:
+        bundle_result = calculate_quote_bundle(
+            {
+                "client_name": "Andrea",
+                "general_discount_cop": 20000,
+                "quote_items": [
+                    {
+                        "product_name": "Sueter basico",
+                        "quantity": 1,
+                        "input": QuoteInput.from_dict(
+                            {
+                                "product_name": "Sueter basico",
+                                "client_name": "Andrea",
+                                "quantity": 1,
+                                "purchase_type": "travel",
+                                "price_usd_net": 20,
+                                "tax_usa_percent": 0,
+                                "travel_cost_usd": 5,
+                                "locker_shipping_usd": 2,
+                                "exchange_rate_cop": 4000,
+                                "local_costs_cop": 10000,
+                                "desired_margin_percent": 25,
+                                "advance_percent": 40,
+                                "final_sale_price_cop": 220000,
+                            }
+                        ).to_dict(),
+                    },
+                    {
+                        "product_name": "Zapato casual",
+                        "quantity": 1,
+                        "input": QuoteInput.from_dict(
+                            {
+                                "product_name": "Zapato casual",
+                                "client_name": "Andrea",
+                                "quantity": 1,
+                                "purchase_type": "travel",
+                                "price_usd_net": 30,
+                                "tax_usa_percent": 0,
+                                "travel_cost_usd": 6,
+                                "locker_shipping_usd": 3,
+                                "exchange_rate_cop": 4000,
+                                "local_costs_cop": 12000,
+                                "desired_margin_percent": 25,
+                                "advance_percent": 40,
+                                "final_sale_price_cop": 300000,
+                            }
+                        ).to_dict(),
+                    },
+                ],
+            }
+        )
+
+        order, _ = create_direct_order(
+            bundle_result["input"],
+            bundle_result,
+            advance_paid_cop=150000,
+        )
+
+        self.assertAlmostEqual(order["sale_price_cop"], 500000)
+
+        updated = update_confirmed_order(
+            order["id"],
+            general_discount_cop=50000,
+        )
+
+        self.assertAlmostEqual(updated["sale_price_cop"], 470000)
+        self.assertAlmostEqual(updated["snapshot"]["result"]["final"]["general_discount_cop"], 50000)
+        self.assertIn("Descuento general", updated["events"][-1]["note"])
+
     def test_invalidate_order_removes_it_from_active_flow_and_reopens_quote(self) -> None:
         quote = QuoteInput.from_dict(
             {

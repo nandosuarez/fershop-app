@@ -134,6 +134,20 @@ class DashboardTests(unittest.TestCase):
 
         self.assertAlmostEqual(metrics["sales_total_cop"], order["sale_price_cop"])
         self.assertAlmostEqual(metrics["cash_in_total_cop"], 2_500_000)
+        self.assertAlmostEqual(
+            metrics["product_cost_total_cop"],
+            result["costs"]["cost_in_cop"]
+            - result["costs"]["travel_cost_cop"]
+            - result["costs"]["locker_shipping_cop"],
+        )
+        self.assertAlmostEqual(
+            metrics["locker_shipping_total_cop"],
+            result["costs"]["locker_shipping_cop"],
+        )
+        self.assertAlmostEqual(
+            metrics["travel_cost_total_cop"],
+            result["costs"]["travel_cost_cop"],
+        )
         self.assertAlmostEqual(metrics["period_balance_due_cop"], order["balance_due_cop"])
         self.assertAlmostEqual(metrics["accounts_receivable_cop"], order["balance_due_cop"])
         self.assertAlmostEqual(

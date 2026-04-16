@@ -739,6 +739,11 @@ def calculate_quote_bundle(payload: dict[str, Any]) -> dict[str, Any]:
     client_name = _clean_text(payload.get("client_name"))
     notes = _clean_text(payload.get("notes"))
     client_quote_items_text = _clean_text(payload.get("client_quote_items_text"))
+    general_discount_cop = _to_float(
+        payload.get("general_discount_cop"), "general_discount_cop", required=False
+    ) or 0.0
+    if general_discount_cop < 0:
+        raise ValueError("El descuento general no puede ser negativo.")
 
     quote_items: list[dict[str, Any]] = []
     summary_line_items: list[dict[str, Any]] = []
@@ -832,8 +837,21 @@ def calculate_quote_bundle(payload: dict[str, Any]) -> dict[str, Any]:
     total_usd = total_price_with_tax_usd + total_travel_cost_usd + total_locker_shipping_usd
     purchase_type = _resolve_bundle_purchase_type(quote_items)
     purchase_type_label = PURCHASE_TYPE_LABELS.get(purchase_type, "Cotizacion mixta")
+    applied_general_discount_cop = min(general_discount_cop, total_final_sale_cop)
+    discounted_total_final_sale_cop = max(total_final_sale_cop - applied_general_discount_cop, 0.0)
+    discounted_total_final_profit_cop = total_final_profit_cop - applied_general_discount_cop
 
     for item in summary_line_items:
+        original_sale_price_cop = float(item.get("sale_price_cop") or 0)
+        sale_share_ratio = _safe_div(original_sale_price_cop, total_final_sale_cop) or 0.0
+        allocated_discount_cop = applied_general_discount_cop * sale_share_ratio
+        discounted_sale_price_cop = max(original_sale_price_cop - allocated_discount_cop, 0.0)
+        item["general_discount_cop"] = allocated_discount_cop
+        item["sale_price_cop"] = discounted_sale_price_cop
+        item["profit_cop"] = float(item.get("profit_cop") or 0) - allocated_discount_cop
+        item["advance_cop"] = total_final_advance_cop * (
+            _safe_div(discounted_sale_price_cop, discounted_total_final_sale_cop) or 0.0
+        )
         real_cost = float(item.get("real_cost_cop") or 0)
         item["share_ratio"] = _safe_div(real_cost, total_real_cost_cop) or 0.0
 
@@ -843,6 +861,7 @@ def calculate_quote_bundle(payload: dict[str, Any]) -> dict[str, Any]:
         "product_id": quote_items[0]["product_id"] if len(quote_items) == 1 else None,
         "client_id": client_id,
         "purchase_type": purchase_type,
+        "general_discount_cop": applied_general_discount_cop,
         "notes": notes,
         "client_quote_items_text": client_quote_items_text,
         "quote_items": quote_items,
@@ -886,16 +905,17 @@ def calculate_quote_bundle(payload: dict[str, Any]) -> dict[str, Any]:
             "roi_percent": _safe_div(total_suggested_profit_cop, total_suggested_own_capital_cop),
         },
         "final": {
-            "sale_price_cop": total_final_sale_cop,
-            "profit_cop": total_final_profit_cop,
-            "margin_percent": 1 - (total_real_cost_cop / total_final_sale_cop)
-            if total_final_sale_cop
+            "sale_price_cop": discounted_total_final_sale_cop,
+            "profit_cop": discounted_total_final_profit_cop,
+            "margin_percent": 1 - (total_real_cost_cop / discounted_total_final_sale_cop)
+            if discounted_total_final_sale_cop
             else None,
+            "general_discount_cop": applied_general_discount_cop,
             "advance_cop": total_final_advance_cop,
-            "advance_percent": _safe_div(total_final_advance_cop, total_final_sale_cop),
+            "advance_percent": _safe_div(total_final_advance_cop, discounted_total_final_sale_cop),
             "own_capital_cop": total_final_own_capital_cop,
             "own_capital_percent": _safe_div(total_final_own_capital_cop, total_real_cost_cop),
-            "markup_percent": _safe_div(total_final_profit_cop, total_real_cost_cop),
+            "markup_percent": _safe_div(discounted_total_final_profit_cop, total_real_cost_cop),
             "roi_percent": _safe_div(total_final_profit_cop, total_final_own_capital_cop),
             "uses_custom_sale_price": uses_custom_sale_price,
             "uses_custom_advance": uses_custom_advance,
