@@ -344,7 +344,15 @@ class FerShopHandler(BaseHTTPRequestHandler):
             session = self._require_session()
             if session is None:
                 return
-            detail = get_client_detail(client_route, company_id=session["company"]["id"])
+            params = parse_qs(parsed.query)
+            period_key = str(params.get("period", [""])[0] or "").strip() or None
+            reference_date = str(params.get("reference_date", [""])[0] or "").strip() or None
+            detail = get_client_detail(
+                client_route,
+                company_id=session["company"]["id"],
+                period_key=period_key,
+                reference_date=reference_date,
+            )
             if detail is None:
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "Cliente no encontrado."})
                 return

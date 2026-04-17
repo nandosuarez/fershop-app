@@ -1,6 +1,6 @@
 import sqlite3
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fershop_calculadora.calculations import QuoteInput, calculate_quote
 from fershop_calculadora.database import (
@@ -416,6 +416,97 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(detail["top_products"][0]["product_name"], "iPhone 16")
         self.assertEqual(detail["recent_orders"][0]["id"], order_1["id"])
         self.assertEqual(detail["recent_quotes"][0]["client_name"], "Laura")
+
+    def test_client_detail_filters_orders_and_quotes_by_selected_period(self) -> None:
+        today_date = datetime.now(timezone.utc).date()
+        today = today_date.isoformat()
+        previous_date = (today_date - timedelta(days=35)).isoformat()
+
+        client = save_client({"name": "Laura", "city": "Bogota"})
+        iphone = save_product(
+            {
+                "name": "iPhone 16",
+                "reference": "A18",
+                "price_usd_net": 1100,
+                "tax_usa_percent": 7,
+                "travel_cost_usd": 0,
+                "locker_shipping_usd": 25,
+                "notes": "",
+            }
+        )
+        airpods = save_product(
+            {
+                "name": "AirPods Max",
+                "reference": "APM",
+                "price_usd_net": 240,
+                "tax_usa_percent": 7,
+                "travel_cost_usd": 0,
+                "locker_shipping_usd": 12,
+                "notes": "",
+            }
+        )
+
+        old_quote = QuoteInput.from_dict(
+            {
+                "client_id": client["id"],
+                "client_name": client["name"],
+                "product_id": iphone["id"],
+                "product_name": iphone["name"],
+                "price_usd_net": 1100,
+                "tax_usa_percent": 7,
+                "travel_cost_usd": 0,
+                "locker_shipping_usd": 25,
+                "exchange_rate_cop": 4000,
+                "local_costs_cop": 100000,
+                "desired_margin_percent": 28,
+                "advance_percent": 50,
+            }
+        )
+        old_result = calculate_quote(old_quote)
+        old_record = save_quote(old_quote.to_dict(), old_result)
+        old_order, _ = create_order_from_quote(old_record["id"], advance_paid_cop=1_800_000)
+
+        recent_quote = QuoteInput.from_dict(
+            {
+                "client_id": client["id"],
+                "client_name": client["name"],
+                "product_id": airpods["id"],
+                "product_name": airpods["name"],
+                "price_usd_net": 240,
+                "tax_usa_percent": 7,
+                "travel_cost_usd": 0,
+                "locker_shipping_usd": 12,
+                "exchange_rate_cop": 4000,
+                "local_costs_cop": 30000,
+                "desired_margin_percent": 30,
+                "advance_percent": 40,
+            }
+        )
+        recent_result = calculate_quote(recent_quote)
+        recent_record = save_quote(recent_quote.to_dict(), recent_result)
+        recent_order, _ = create_order_from_quote(recent_record["id"], advance_paid_cop=600_000)
+
+        with database._connect() as connection:
+            connection.execute(
+                "UPDATE quotes SET created_at = ? WHERE id = ?",
+                (previous_date, old_record["id"]),
+            )
+            connection.execute(
+                "UPDATE orders SET created_at = ? WHERE id = ?",
+                (previous_date, old_order["id"]),
+            )
+            connection.commit()
+
+        detail = get_client_detail(client["id"], period_key="daily", reference_date=today)
+
+        self.assertIsNotNone(detail)
+        self.assertEqual(detail["period"]["key"], "daily")
+        self.assertEqual(detail["summary"]["quotes_count"], 1)
+        self.assertEqual(detail["summary"]["orders_count"], 1)
+        self.assertAlmostEqual(detail["summary"]["sales_total_cop"], recent_order["sale_price_cop"])
+        self.assertEqual(detail["top_products"][0]["product_name"], "AirPods Max")
+        self.assertEqual(detail["recent_quotes"][0]["id"], recent_record["id"])
+        self.assertEqual(detail["recent_orders"][0]["id"], recent_order["id"])
 
     def test_product_detail_rolls_up_quotes_orders_and_clients(self) -> None:
         today = datetime.now(timezone.utc).date().isoformat()

@@ -54,6 +54,10 @@ const productCategoryForm = document.getElementById("product-category-form");
 const productStoreForm = document.getElementById("product-store-form");
 const productCategoriesListContainer = document.getElementById("product-categories-list");
 const productStoresListContainer = document.getElementById("product-stores-list");
+const clientsListSearchInput = document.getElementById("clients-list-search");
+const productsListSearchInput = document.getElementById("products-list-search");
+const productCategoriesSearchInput = document.getElementById("product-categories-search");
+const productStoresSearchInput = document.getElementById("product-stores-search");
 const publicRegistrationUrlInput = document.getElementById("public-registration-url");
 const copyPublicRegistrationUrlButton = document.getElementById("copy-public-registration-url");
 const openPublicRegistrationUrlLink = document.getElementById("open-public-registration-url");
@@ -136,6 +140,7 @@ const state = {
   activeModule: "dashboard",
   menuOpen: false,
   clientDetail: null,
+  clientDetailScope: null,
   productDetail: null,
   clientInlineDetail: null,
   clientInlineDetailId: null,
@@ -161,6 +166,12 @@ const state = {
   editingProductCategoryId: null,
   editingProductStoreId: null,
   clientCatalogView: "list",
+  adminFilters: {
+    clients: "",
+    products: "",
+    categories: "",
+    stores: "",
+  },
   collapsiblePanels: {},
 };
 
@@ -3154,6 +3165,98 @@ function makeMetricCard(title, value, detail) {
   `;
 }
 
+function getDashboardPeriodLabel(periodKey) {
+  return (
+    {
+      daily: "Dia",
+      weekly: "Semana",
+      biweekly: "Quincena",
+      monthly: "Mes",
+      quarterly: "Trimestre",
+    }[String(periodKey || "").trim().toLowerCase()] || "Periodo"
+  );
+}
+
+function formatClientDetailPeriodCopy(period) {
+  const periodKey = String(period?.key || "").trim().toLowerCase();
+  if (!periodKey) {
+    return "";
+  }
+
+  const periodLabel = getDashboardPeriodLabel(periodKey);
+  const startDate = String(period?.start_date || "").trim();
+  const endDate = String(period?.end_date || "").trim();
+  const formattedStart = formatStoredDate(startDate);
+  const formattedEnd = formatStoredDate(endDate);
+  const dateCopy =
+    startDate && endDate && startDate !== endDate
+      ? `${formattedStart} a ${formattedEnd}`
+      : formattedStart;
+
+  return `Lectura del dashboard: ${periodLabel}${dateCopy ? ` · ${dateCopy}` : ""}`;
+}
+
+function normalizeAdminSearchText(...values) {
+  return values
+    .flat()
+    .map((value) => String(value ?? "").trim().toLocaleLowerCase("es-CO"))
+    .join(" ");
+}
+
+function matchesAdminFilter(haystack, filterValue) {
+  const normalizedFilter = String(filterValue || "").trim().toLocaleLowerCase("es-CO");
+  if (!normalizedFilter) {
+    return true;
+  }
+  return haystack.includes(normalizedFilter);
+}
+
+function getFilteredClients() {
+  return state.clients.filter((client) =>
+    matchesAdminFilter(
+      normalizeAdminSearchText(
+        client.name,
+        client.identification,
+        client.phone,
+        client.email,
+        client.whatsapp_phone,
+        client.city,
+        client.neighborhood,
+        client.address,
+        client.description,
+        client.interests,
+        client.notes
+      ),
+      state.adminFilters.clients
+    )
+  );
+}
+
+function getFilteredProducts() {
+  return state.products.filter((product) =>
+    matchesAdminFilter(
+      normalizeAdminSearchText(
+        product.name,
+        product.reference,
+        product.category,
+        product.store,
+        product.description,
+        product.notes
+      ),
+      state.adminFilters.products
+    )
+  );
+}
+
+function getFilteredNamedCatalogItems(items, filterValue) {
+  return items.filter((item) =>
+    matchesAdminFilter(
+      normalizeAdminSearchText(item.name, item.description),
+      filterValue
+    )
+  );
+}
+
 function buildClientDetailMarkup(detail) {
   if (!detail) {
     return "";
@@ -3164,6 +3267,7 @@ function buildClientDetailMarkup(detail) {
   const topProducts = detail.top_products || [];
   const recentQuotes = detail.recent_quotes || [];
   const recentOrders = detail.recent_orders || [];
+  const periodCopy = formatClientDetailPeriodCopy(detail.period);
 
   return `
     <section class="client-detail-hero">
@@ -3180,24 +3284,12 @@ function buildClientDetailMarkup(detail) {
             ? `<p class="catalog-card-note"><strong>Identificacion:</strong> ${escapeHtml(client.identification)}</p>`
             : ""
         }
+        ${periodCopy ? `<p class="catalog-card-note"><strong>${escapeHtml(periodCopy)}</strong></p>` : ""}
       </div>
       <div class="client-detail-actions">
         <button class="primary" type="button" data-use-client-detail="${client.id}">Usar en cotizacion</button>
       </div>
     </section>
-
-    ${
-      product.image_data_url
-        ? `
-          <section class="detail-panel product-image-panel">
-            <h3>Imagen del producto</h3>
-            <div class="detail-image-card">
-              <img src="${product.image_data_url}" alt="${escapeHtml(productLabel(product))}" />
-            </div>
-          </section>
-        `
-        : ""
-    }
 
     <div class="metrics-grid client-detail-metrics">
       ${makeMetricCard("Cotizaciones", String(summary.quotes_count || 0), "Interacciones comerciales registradas")}
@@ -3940,9 +4032,13 @@ function renderNamedCatalogList(container, items, emptyMessage) {
 }
 
 function renderClientsManaged(items) {
+  const emptyMessage = state.adminFilters.clients
+    ? "No encontramos clientes con ese filtro."
+    : "Aun no hay clientes guardados.";
+
   if (!items.length) {
     clientsListContainer.className = "catalog-empty";
-    clientsListContainer.innerHTML = "<p>Aun no hay clientes guardados.</p>";
+    clientsListContainer.innerHTML = `<p>${emptyMessage}</p>`;
     return;
   }
 
@@ -4077,9 +4173,13 @@ function renderClientsCards(items) {
 }
 
 function renderProductsManaged(items) {
+  const emptyMessage = state.adminFilters.products
+    ? "No encontramos productos con ese filtro."
+    : "Aun no hay productos guardados.";
+
   if (!items.length) {
     productsListContainer.className = "catalog-empty";
-    productsListContainer.innerHTML = "<p>Aun no hay productos guardados.</p>";
+    productsListContainer.innerHTML = `<p>${emptyMessage}</p>`;
     return;
   }
 
@@ -4145,6 +4245,35 @@ function renderProductsManaged(items) {
       `
     )
     .join("");
+}
+
+function refreshAdminCatalogViews() {
+  renderClientsManaged(getFilteredClients());
+  renderProductsManaged(getFilteredProducts());
+  renderAdminNamedCatalogList(
+    productCategoriesListContainer,
+    getFilteredNamedCatalogItems(state.productCategories, state.adminFilters.categories),
+    state.adminFilters.categories
+      ? "No encontramos categorias con ese filtro."
+      : "Aun no hay categorias creadas.",
+    {
+      entityName: "categoria",
+      editAttr: "data-edit-product-category",
+      toggleAttr: "data-toggle-product-category-active",
+    }
+  );
+  renderAdminNamedCatalogList(
+    productStoresListContainer,
+    getFilteredNamedCatalogItems(state.productStores, state.adminFilters.stores),
+    state.adminFilters.stores
+      ? "No encontramos tiendas con ese filtro."
+      : "Aun no hay tiendas creadas.",
+    {
+      entityName: "tienda",
+      editAttr: "data-edit-product-store",
+      toggleAttr: "data-toggle-product-store-active",
+    }
+  );
 }
 
 function renderAdminNamedCatalogList(container, items, emptyMessage, config) {
@@ -4422,16 +4551,37 @@ function renderClientDetail(detail) {
 }
 
 async function loadClientDetail(clientId, options = {}) {
-  const { shouldScroll = true } = options;
+  const {
+    shouldScroll = true,
+    source = "admin",
+    periodKey = null,
+    referenceDate = null,
+  } = options;
   if (!clientId) {
     state.clientDetail = null;
+    state.clientDetailScope = null;
     renderClientDetail(null);
     return;
   }
 
   try {
-    const payload = await requestJson(`/api/clients/${encodeURIComponent(clientId)}`);
+    const params = new URLSearchParams();
+    if (periodKey) {
+      params.set("period", periodKey);
+    }
+    if (referenceDate) {
+      params.set("reference_date", referenceDate);
+    }
+    const query = params.toString();
+    const payload = await requestJson(
+      `/api/clients/${encodeURIComponent(clientId)}${query ? `?${query}` : ""}`
+    );
     state.clientDetail = payload.item || null;
+    state.clientDetailScope = {
+      source,
+      periodKey: periodKey || "",
+      referenceDate: referenceDate || "",
+    };
     renderClientDetail(state.clientDetail);
     if (shouldScroll && clientDetailSection) {
       window.location.hash = "administracion";
@@ -4440,6 +4590,7 @@ async function loadClientDetail(clientId, options = {}) {
     }
   } catch (error) {
     state.clientDetail = null;
+    state.clientDetailScope = null;
     clientDetailContainer.className = "catalog-empty";
     clientDetailContainer.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
   }
@@ -4451,7 +4602,13 @@ async function refreshActiveClientDetail() {
     return;
   }
 
-  await loadClientDetail(activeClientId, { shouldScroll: false });
+  const activeScope = state.clientDetailScope || {};
+  await loadClientDetail(activeClientId, {
+    shouldScroll: false,
+    source: activeScope.source || "admin",
+    periodKey: activeScope.periodKey || null,
+    referenceDate: activeScope.referenceDate || null,
+  });
 }
 
 function renderProductDetailLegacy(detail) {
@@ -5817,7 +5974,7 @@ function renderDashboardClients(insights) {
             <small>
               Ticket promedio: ${formatCop(item.average_ticket_cop)} | Recaudado: ${formatCop(
                 item.cash_in_total_cop
-              )} | Utilidad: ${formatCop(item.gross_profit_cop)} | Por cobrar: ${formatCop(
+              )} | Por cobrar: ${formatCop(
                 item.accounts_receivable_cop
               )}
             </small>
@@ -7871,33 +8028,12 @@ async function loadCatalog() {
         state.productInlineDetail = null;
       }
 
-      updateSearchableOptions(clientSelectOptions, getActiveClients(), clientSearchLabel);
+    updateSearchableOptions(clientSelectOptions, getActiveClients(), clientSearchLabel);
     updateSearchableOptions(productSelectOptions, getActiveProducts(), productSearchLabel);
     updateNameOptions(productCategoryOptions, getActiveProductCategories());
     updateNameOptions(productStoreOptions, getActiveProductStores());
 
-    renderClientsManaged(state.clients);
-    renderProductsManaged(state.products);
-    renderAdminNamedCatalogList(
-      productCategoriesListContainer,
-      state.productCategories,
-      "Aun no hay categorias creadas.",
-      {
-        entityName: "categoria",
-        editAttr: "data-edit-product-category",
-        toggleAttr: "data-toggle-product-category-active",
-      }
-    );
-    renderAdminNamedCatalogList(
-      productStoresListContainer,
-      state.productStores,
-      "Aun no hay tiendas creadas.",
-      {
-        entityName: "tienda",
-        editAttr: "data-edit-product-store",
-        toggleAttr: "data-toggle-product-store-active",
-      }
-    );
+    refreshAdminCatalogViews();
     autocompleteControllers.forEach((controller) => controller.refresh());
     syncInventorySaleUi();
   } catch (error) {
@@ -8880,6 +9016,9 @@ if (directOrderLineItemsContainer) {
 dashboardPeriodSelect.addEventListener("change", async () => {
   state.dashboardPeriod = dashboardPeriodSelect.value || "daily";
   await loadDashboard();
+  if (state.clientDetailScope?.source === "dashboard") {
+    await refreshActiveClientDetail();
+  }
 });
 
 historyContainer.addEventListener("click", async (event) => {
@@ -9144,7 +9283,10 @@ if (dashboardClientsContainer) {
     }
 
     window.location.hash = "administracion";
-    loadClientDetail(clientId);
+    loadClientDetail(clientId, {
+      source: "dashboard",
+      periodKey: state.dashboardPeriod,
+    });
   });
 }
 
@@ -9850,6 +9992,7 @@ ordersListContainer.addEventListener("change", async (event) => {
 if (clientDetailClearButton) {
   clientDetailClearButton.addEventListener("click", () => {
     state.clientDetail = null;
+    state.clientDetailScope = null;
     renderClientDetail(null);
   });
 }
@@ -10231,6 +10374,21 @@ if (copyPublicRegistrationUrlButton) {
 clientViewButtons.forEach((button) => {
   button.addEventListener("click", () => {
     setClientCatalogView(button.getAttribute("data-client-view") || "list");
+  });
+});
+
+[
+  [clientsListSearchInput, "clients"],
+  [productsListSearchInput, "products"],
+  [productCategoriesSearchInput, "categories"],
+  [productStoresSearchInput, "stores"],
+].forEach(([input, filterKey]) => {
+  if (!input) {
+    return;
+  }
+  input.addEventListener("input", () => {
+    state.adminFilters[filterKey] = input.value || "";
+    refreshAdminCatalogViews();
   });
 });
 

@@ -1760,9 +1760,21 @@ button:disabled {
   margin-top: 24px;
 }
 
+.admin-collapsible-wide {
+  grid-column: 1 / -1;
+}
+
 .admin-embedded-section {
   display: grid;
   gap: 18px;
+}
+
+.admin-search-field {
+  max-width: 560px;
+}
+
+.admin-search-field input[type="search"] {
+  width: 100%;
 }
 
 .admin-detail-panel {

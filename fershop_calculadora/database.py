@@ -3388,9 +3388,23 @@ def list_clients(
     return [_serialize_client_row(row) for row in rows]
 
 
-def get_client_detail(client_id: int, company_id: int | None = None) -> dict[str, Any] | None:
+def get_client_detail(
+    client_id: int,
+    company_id: int | None = None,
+    *,
+    period_key: str | None = None,
+    reference_date: str | None = None,
+) -> dict[str, Any] | None:
     init_db()
     company_id = _normalize_company_id(company_id)
+    period: dict[str, Any] | None = None
+    start_date = None
+    end_date = None
+    normalized_period_key = str(period_key or "").strip().lower() or None
+    if normalized_period_key:
+        period = get_period_bounds(normalized_period_key, reference_date=reference_date)
+        start_date = normalize_date_input(period["start_date"])
+        end_date = normalize_date_input(period["end_date"])
 
     def _match_entity(
         target_id: int, target_name: str, candidate_id: Any, candidate_name: Any
@@ -3399,6 +3413,11 @@ def get_client_detail(client_id: int, company_id: int | None = None) -> dict[str
         if clean_candidate_id:
             return clean_candidate_id == str(target_id)
         return str(candidate_name or "").strip().casefold() == target_name.casefold()
+
+    def _matches_period(raw_value: Any) -> bool:
+        if start_date is None or end_date is None:
+            return True
+        return is_date_in_range(raw_value, start_date, end_date)
 
     with closing(_connect()) as connection:
         connection.row_factory = sqlite3.Row
@@ -3459,7 +3478,7 @@ def get_client_detail(client_id: int, company_id: int | None = None) -> dict[str
         ).fetchall()
         payment_rows = connection.execute(
             """
-            SELECT order_id, amount_cop
+            SELECT order_id, amount_cop, payment_date
             FROM payment_events
             WHERE company_id = ?
             ORDER BY id DESC
@@ -3482,6 +3501,8 @@ def get_client_detail(client_id: int, company_id: int | None = None) -> dict[str
                 input_data.get("client_id"),
                 row["client_name"],
             ):
+                continue
+            if not _matches_period(row["created_at"]):
                 continue
 
             result_data = json.loads(row["result_json"])
@@ -3512,6 +3533,7 @@ def get_client_detail(client_id: int, company_id: int | None = None) -> dict[str
                 row["client_id"],
                 row["client_name"],
             )
+            and _matches_period(row["created_at"])
         ]
         events_by_order_id = _list_order_events(
             connection,
@@ -3522,6 +3544,8 @@ def get_client_detail(client_id: int, company_id: int | None = None) -> dict[str
 
     payment_totals_by_order_id: dict[int, float] = {}
     for row in payment_rows:
+        if not _matches_period(row["payment_date"]):
+            continue
         order_id = int(row["order_id"] or 0)
         payment_totals_by_order_id[order_id] = payment_totals_by_order_id.get(order_id, 0.0) + float(
             row["amount_cop"] or 0
@@ -3617,6 +3641,11 @@ def get_client_detail(client_id: int, company_id: int | None = None) -> dict[str
 
     return {
         "client": _serialize_client_row(client_row),
+        "period": {
+            "key": normalized_period_key or "",
+            "start_date": period["start_date"] if period else "",
+            "end_date": period["end_date"] if period else "",
+        },
         "summary": {
             "quotes_count": quotes_count,
             "orders_count": orders_count,

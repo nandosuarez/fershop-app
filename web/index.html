@@ -1225,6 +1225,16 @@
                   </div>
                 </form>
 
+                <label class="search-field admin-search-field">
+                  <span>Buscar categoria</span>
+                  <input
+                    id="product-categories-search"
+                    type="search"
+                    placeholder="Busca por nombre o descripcion"
+                    autocomplete="off"
+                  />
+                </label>
+
                 <div id="product-categories-list" class="catalog-empty">
                   <p>Aun no hay categorias creadas.</p>
                 </div>
@@ -1275,13 +1285,23 @@
                   </div>
                 </form>
 
+                <label class="search-field admin-search-field">
+                  <span>Buscar tienda</span>
+                  <input
+                    id="product-stores-search"
+                    type="search"
+                    placeholder="Busca por nombre o descripcion"
+                    autocomplete="off"
+                  />
+                </label>
+
                 <div id="product-stores-list" class="catalog-empty">
                   <p>Aun no hay tiendas creadas.</p>
                 </div>
                 </div>
               </section>
 
-              <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-clients">
+              <section class="panel catalog-panel admin-collapsible admin-collapsible-wide" data-collapsible-panel="admin-clients">
                 <button
                   class="panel-header collapsible-toggle"
                   type="button"
@@ -1312,6 +1332,16 @@
                         </button>
                       </div>
                     </div>
+
+                    <label class="search-field admin-search-field">
+                      <span>Buscar cliente</span>
+                      <input
+                        id="clients-list-search"
+                        type="search"
+                        placeholder="Busca por nombre, identificacion, telefono, ciudad o WhatsApp"
+                        autocomplete="off"
+                      />
+                    </label>
 
                     <form id="client-form" class="catalog-form">
                       <input name="id" type="hidden" />
@@ -1434,7 +1464,7 @@
                 </div>
               </section>
 
-              <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-products">
+              <section class="panel catalog-panel admin-collapsible admin-collapsible-wide" data-collapsible-panel="admin-products">
                 <button
                   class="panel-header collapsible-toggle"
                   type="button"
@@ -1455,6 +1485,16 @@
                       <h3>Catalogo de productos</h3>
                       <p>Guarda costos base para cotizar mas rapido sin volver a escribir todo.</p>
                     </div>
+
+                    <label class="search-field admin-search-field">
+                      <span>Buscar producto</span>
+                      <input
+                        id="products-list-search"
+                        type="search"
+                        placeholder="Busca por nombre, referencia, categoria o tienda"
+                        autocomplete="off"
+                      />
+                    </label>
 
                     <form id="product-form" class="catalog-form">
                       <input name="id" type="hidden" />
