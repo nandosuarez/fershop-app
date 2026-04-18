@@ -3269,6 +3269,20 @@ function buildClientDetailMarkup(detail) {
   const recentQuotes = detail.recent_quotes || [];
   const recentOrders = detail.recent_orders || [];
   const periodCopy = formatClientDetailPeriodCopy(detail.period);
+  const clientStatementParams = new URLSearchParams();
+  if (detail.period?.key) {
+    clientStatementParams.set("period", detail.period.key);
+  }
+  if (detail.period?.end_date) {
+    clientStatementParams.set("reference_date", detail.period.end_date);
+  }
+  const clientStatementQuery = clientStatementParams.toString();
+  const clientStatementPdfHref = `/api/clients/${encodeURIComponent(client.id)}/statement/pdf${
+    clientStatementQuery ? `?${clientStatementQuery}` : ""
+  }`;
+  const clientStatementMessageUrl = `/api/clients/${encodeURIComponent(client.id)}/statement/message${
+    clientStatementQuery ? `?${clientStatementQuery}` : ""
+  }`;
 
   return `
     <section class="client-detail-hero">
@@ -3289,6 +3303,16 @@ function buildClientDetailMarkup(detail) {
       </div>
       <div class="client-detail-actions">
         <button class="primary" type="button" data-use-client-detail="${client.id}">Usar en cotizacion</button>
+        <a class="history-action-button history-action-button-secondary" href="${clientStatementPdfHref}">
+          Descargar PDF
+        </a>
+        <button
+          class="history-action-button history-action-button-secondary"
+          type="button"
+          data-copy-client-statement="${escapeHtml(clientStatementMessageUrl)}"
+        >
+          Copiar texto
+        </button>
       </div>
     </section>
 
@@ -10025,7 +10049,34 @@ if (clientDetailClearButton) {
 }
 
 if (clientDetailContainer) {
-  clientDetailContainer.addEventListener("click", (event) => {
+  clientDetailContainer.addEventListener("click", async (event) => {
+    const copyButton = event.target.closest("[data-copy-client-statement]");
+    if (copyButton) {
+      const requestUrl = copyButton.getAttribute("data-copy-client-statement");
+      if (!requestUrl) {
+        return;
+      }
+
+      const originalText = copyButton.textContent;
+      copyButton.disabled = true;
+      copyButton.textContent = "Copiando...";
+      try {
+        const payload = await requestJson(requestUrl);
+        await navigator.clipboard.writeText(payload.text);
+        copyButton.textContent = "Copiado";
+        statusMessage.textContent = "Texto copiado. Ya lo puedes enviar al cliente.";
+      } catch (error) {
+        copyButton.textContent = "Error";
+        statusMessage.textContent = error.message;
+      } finally {
+        window.setTimeout(() => {
+          copyButton.disabled = false;
+          copyButton.textContent = originalText;
+        }, 1500);
+      }
+      return;
+    }
+
     const useButton = event.target.closest("[data-use-client-detail]");
     if (!useButton) {
       return;

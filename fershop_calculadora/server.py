@@ -75,7 +75,12 @@ from .database import (
     update_confirmed_order,
     update_whatsapp_notification_status,
 )
-from .documents import build_quote_message, generate_quote_pdf
+from .documents import (
+    build_client_statement_message,
+    build_quote_message,
+    generate_client_statement_pdf,
+    generate_quote_pdf,
+)
 from .orders import is_valid_order_status
 from .pending import list_pending_priorities, list_pending_statuses
 
@@ -227,6 +232,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
         route = self._parse_quote_route(parsed.path)
         quote_detail_route = self._parse_quote_detail_route(parsed.path)
         order_route = self._parse_order_route(parsed.path)
+        client_statement_route = self._parse_client_statement_route(parsed.path)
         client_route = self._parse_client_route(parsed.path)
         product_route = self._parse_product_route(parsed.path)
         product_pricing_route = self._parse_product_pricing_route(parsed.path)
@@ -339,6 +345,42 @@ class FerShopHandler(BaseHTTPRequestHandler):
                 {"items": list_clients(company_id=session["company"]["id"])},
             )
             return
+
+        if client_statement_route is not None:
+            client_id, action = client_statement_route
+            session = self._require_session()
+            if session is None:
+                return
+            params = parse_qs(parsed.query)
+            period_key = str(params.get("period", [""])[0] or "").strip() or None
+            reference_date = str(params.get("reference_date", [""])[0] or "").strip() or None
+            detail = get_client_detail(
+                client_id,
+                company_id=session["company"]["id"],
+                period_key=period_key,
+                reference_date=reference_date,
+            )
+            if detail is None:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "Cliente no encontrado."})
+                return
+
+            if action == "pdf":
+                filename = f"{session['company']['slug']}_estado_cliente_{client_id}.pdf"
+                pdf_bytes = generate_client_statement_pdf(detail, company=session["company"])
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/pdf")
+                self.send_header("Content-Length", str(len(pdf_bytes)))
+                self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+                self.end_headers()
+                self.wfile.write(pdf_bytes)
+                return
+
+            if action == "message":
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"text": build_client_statement_message(detail, company=session["company"])},
+                )
+                return
 
         if client_route is not None:
             session = self._require_session()
@@ -1337,6 +1379,25 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
         try:
             return int(parts[2])
+        except ValueError:
+            return None
+
+    def _parse_client_statement_route(self, path: str) -> tuple[int, str] | None:
+        parts = [part for part in path.split("/") if part]
+        if (
+            len(parts) != 5
+            or parts[0] != "api"
+            or parts[1] != "clients"
+            or parts[3] != "statement"
+        ):
+            return None
+
+        action = parts[4]
+        if action not in {"pdf", "message"}:
+            return None
+
+        try:
+            return int(parts[2]), action
         except ValueError:
             return None
 

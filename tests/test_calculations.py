@@ -2,7 +2,13 @@ import math
 import unittest
 
 from fershop_calculadora.calculations import QuoteInput, calculate_quote, calculate_quote_bundle
-from fershop_calculadora.documents import build_quote_message, generate_quote_pdf, get_client_quote_lines
+from fershop_calculadora.documents import (
+    build_client_statement_message,
+    build_quote_message,
+    generate_client_statement_pdf,
+    generate_quote_pdf,
+    get_client_quote_lines,
+)
 
 
 class CalculationTests(unittest.TestCase):
@@ -358,6 +364,59 @@ class CalculationTests(unittest.TestCase):
         lines = get_client_quote_lines(record)
         self.assertEqual(len(lines), 3)
         self.assertIn("3 x Sueter basico", lines[0])
+
+    def test_client_statement_message_and_pdf_include_active_accounts(self) -> None:
+        detail = {
+            "client": {
+                "id": 41,
+                "name": "Laura Pastor",
+                "identification": "100200300",
+            },
+            "period": {
+                "key": "monthly",
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-18",
+            },
+            "summary": {
+                "sales_total_cop": 1341429,
+                "cash_in_total_cop": 670714,
+                "accounts_receivable_cop": 670715,
+            },
+            "active_orders": [
+                {
+                    "id": 41,
+                    "product_name": "Sueter basico",
+                    "status_label": "Cliente notificado",
+                    "sale_price_cop": 920000,
+                    "balance_due_cop": 420000,
+                },
+                {
+                    "id": 42,
+                    "product_name": "Zapato casual",
+                    "status_label": "Enviado al cliente",
+                    "sale_price_cop": 421429,
+                    "balance_due_cop": 250715,
+                },
+            ],
+        }
+
+        message = build_client_statement_message(
+            detail,
+            company={"brand_name": "FerShop USA"},
+        )
+        self.assertIn("Laura Pastor", message)
+        self.assertIn("Compras activas:", message)
+        self.assertIn("Compra #41", message)
+        self.assertIn("Saldo pendiente total: $670.715 COP", message)
+
+        pdf_bytes = generate_client_statement_pdf(
+            detail,
+            company={"brand_name": "FerShop USA"},
+        )
+        self.assertTrue(pdf_bytes.startswith(b"%PDF-1.4"))
+        self.assertIn(b"FerShop USA", pdf_bytes)
+        self.assertIn(b"Estado de compras activas", pdf_bytes)
+        self.assertIn(b"Saldo pendiente total: $670.715 COP", pdf_bytes)
 
     def test_single_product_quantity_keeps_individual_calculation_mode(self) -> None:
         quote = QuoteInput.from_dict(

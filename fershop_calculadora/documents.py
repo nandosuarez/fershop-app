@@ -881,6 +881,283 @@ def generate_quote_pdf_legacy(record: dict[str, Any]) -> bytes:
     return generate_quote_pdf(record)
 
 
+def _client_statement_period_copy(detail: dict[str, Any]) -> str:
+    period = detail.get("period") or {}
+    period_key = str(period.get("key") or "").strip().lower()
+    if not period_key:
+        return ""
+
+    period_label = {
+        "daily": "Dia",
+        "weekly": "Semana",
+        "biweekly": "Quincena",
+        "monthly": "Mes",
+        "quarterly": "Trimestre",
+    }.get(period_key, "Periodo")
+    start_date = str(period.get("start_date") or "").strip()
+    end_date = str(period.get("end_date") or "").strip()
+    if start_date and end_date and start_date != end_date:
+        return f"{period_label}: {_format_date(start_date)} a {_format_date(end_date)}"
+    if end_date:
+        return f"{period_label}: {_format_date(end_date)}"
+    if start_date:
+        return f"{period_label}: {_format_date(start_date)}"
+    return period_label
+
+
+def _client_statement_active_order_lines(detail: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    for order in detail.get("active_orders", []) or []:
+        order_id = order.get("id")
+        order_number = f"Compra #{order_id}" if order_id not in (None, "") else "Compra"
+        product_name = str(order.get("product_name") or "Producto sin nombre").strip()
+        status_label = str(order.get("status_label") or "Sin estado").strip()
+        sale_price = _format_cop(float(order.get("sale_price_cop") or 0))
+        balance_due = _format_cop(float(order.get("balance_due_cop") or 0))
+        lines.append(
+            f"{order_number} - {product_name} - Estado: {status_label} - Total: {sale_price} - Pendiente: {balance_due}"
+        )
+    return lines
+
+
+def build_client_statement_message(
+    detail: dict[str, Any],
+    company: dict[str, Any] | None = None,
+) -> str:
+    client = detail.get("client") or {}
+    summary = detail.get("summary") or {}
+    client_name = str(client.get("name") or "").strip()
+    brand_name = _resolve_company_brand(company)
+    period_copy = _client_statement_period_copy(detail)
+    active_order_lines = _client_statement_active_order_lines(detail)
+    receivable_total = _format_cop(float(summary.get("accounts_receivable_cop") or 0))
+
+    intro = (
+        f"Hola {client_name}, te comparto el estado de tus compras activas con {brand_name}."
+        if client_name
+        else f"Hola, te comparto el estado de tus compras activas con {brand_name}."
+    )
+
+    parts = [intro]
+    if period_copy:
+        parts.extend(["", period_copy])
+
+    if active_order_lines:
+        parts.extend(["", "Compras activas:"])
+        parts.extend(f"- {line}" for line in active_order_lines)
+    else:
+        parts.extend(["", "En este momento no tienes compras activas registradas."])
+
+    parts.extend(["", f"Saldo pendiente total: {receivable_total}"])
+    parts.extend(
+        [
+            "",
+            "Si quieres revisar una compra o reportar un pago, me avisas y te actualizo el seguimiento.",
+        ]
+    )
+    return "\n".join(parts)
+
+
+def generate_client_statement_pdf(
+    detail: dict[str, Any],
+    company: dict[str, Any] | None = None,
+) -> bytes:
+    client = detail.get("client") or {}
+    summary = detail.get("summary") or {}
+    client_name = str(client.get("name") or "Cliente").strip() or "Cliente"
+    brand_name = _resolve_company_brand(company)
+    tagline = _resolve_company_tagline(company)
+    generated_at = _format_date(datetime.now().isoformat())
+    period_copy = _client_statement_period_copy(detail)
+    active_order_lines = _client_statement_active_order_lines(detail)
+    receivable_total = _format_cop(float(summary.get("accounts_receivable_cop") or 0))
+    sales_total = _format_cop(float(summary.get("sales_total_cop") or 0))
+    cash_in_total = _format_cop(float(summary.get("cash_in_total_cop") or 0))
+
+    detail_lines: list[str] = []
+    detail_lines.extend(_wrap_prefixed_line("Cliente: ", client_name, width=58))
+    if client.get("identification"):
+        detail_lines.extend(
+            _wrap_prefixed_line("Identificacion: ", str(client.get("identification")), width=56)
+        )
+    detail_lines.extend(_wrap_prefixed_line("Fecha: ", generated_at, width=60))
+    detail_lines.extend(_wrap_prefixed_line("Empresa: ", brand_name, width=60))
+    if period_copy:
+        detail_lines.extend(_wrap_prefixed_line("Lectura: ", period_copy, width=60))
+
+    account_lines: list[str] = []
+    if active_order_lines:
+        for line in active_order_lines:
+            account_lines.extend(_wrap_prefixed_line("- ", line, width=68))
+    else:
+        account_lines.extend(
+            _wrap_prefixed_line("- ", "No hay compras activas registradas para este cliente.", width=68)
+        )
+
+    summary_lines: list[str] = []
+    summary_lines.extend(_wrap_prefixed_line("- ", f"Total vendido activo: {sales_total}", width=68))
+    summary_lines.extend(_wrap_prefixed_line("- ", f"Total recaudado: {cash_in_total}", width=68))
+    summary_lines.extend(_wrap_prefixed_line("- ", f"Saldo pendiente total: {receivable_total}", width=68))
+
+    logo_path = _resolve_company_logo(company)
+    logo_bytes = logo_path.read_bytes() if logo_path is not None else b""
+    logo_size = _read_jpeg_size(logo_bytes) if logo_bytes else None
+
+    page_streams: list[bytes] = []
+    min_body_y = 150
+    current_commands, cursor_y = _pdf_formal_first_page_commands(
+        brand_name=brand_name,
+        tagline=tagline,
+        logo_size=logo_size,
+    )
+
+    def finalize_page() -> None:
+        nonlocal current_commands
+        current_commands.extend(_pdf_formal_footer_commands(brand_name))
+        page_streams.append(b"\n".join(current_commands))
+
+    def new_page() -> None:
+        nonlocal current_commands, cursor_y
+        finalize_page()
+        current_commands, cursor_y = _pdf_formal_followup_page_commands(brand_name)
+
+    def ensure_space(height: int) -> None:
+        nonlocal cursor_y
+        if cursor_y - height < min_body_y:
+            new_page()
+
+    def add_text_line(
+        line: str,
+        *,
+        font: str = "F1",
+        size: int = 12,
+        leading: int = 18,
+        x: int = 56,
+    ) -> None:
+        nonlocal cursor_y
+        ensure_space(leading)
+        current_commands.append(b"0.12 0.12 0.12 rg")
+        current_commands.extend(_pdf_line_commands([line], x=x, y=cursor_y, font=font, size=size, leading=leading))
+        cursor_y -= leading
+
+    def add_section(title: str, lines: list[str], *, heading_font: str = "F2") -> None:
+        nonlocal cursor_y
+        if not lines:
+            return
+
+        line_index = 0
+        first_chunk = True
+        while line_index < len(lines):
+            heading_text = title if first_chunk else f"{title} (continua)"
+            ensure_space(42)
+            add_text_line(heading_text, font=heading_font, size=14, leading=18)
+            cursor_y -= 6
+            while line_index < len(lines):
+                if cursor_y - 18 < min_body_y:
+                    new_page()
+                    first_chunk = False
+                    break
+                add_text_line(lines[line_index], font="F1", size=12, leading=18)
+                line_index += 1
+            else:
+                cursor_y -= 10
+                return
+
+    add_section("Estado de compras activas", detail_lines)
+    add_section("Cuentas activas del cliente", account_lines)
+    add_section("Resumen de cuenta", summary_lines)
+
+    finalize_page()
+
+    catalog_id = 1
+    pages_root_id = 2
+    font_regular_id = 3
+    font_bold_id = 4
+    image_id = 5 if logo_bytes and logo_size else None
+    next_object_id = 6 if image_id is not None else 5
+
+    page_ids: list[int] = []
+    content_ids: list[int] = []
+    for _ in page_streams:
+        page_ids.append(next_object_id)
+        next_object_id += 1
+        content_ids.append(next_object_id)
+        next_object_id += 1
+
+    max_object_id = next_object_id - 1
+    objects: dict[int, bytes] = {
+        catalog_id: b"<< /Type /Catalog /Pages 2 0 R >>",
+        pages_root_id: b"<< /Type /Pages /Kids ["
+        + b" ".join(f"{page_id} 0 R".encode("ascii") for page_id in page_ids)
+        + b"] /Count "
+        + str(len(page_ids)).encode("ascii")
+        + b" >>",
+        font_regular_id: b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+        font_bold_id: b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+    }
+
+    if image_id is not None and logo_size is not None:
+        raw_width, raw_height = logo_size
+        objects[image_id] = (
+            b"<< /Type /XObject /Subtype /Image /Width "
+            + str(raw_width).encode("ascii")
+            + b" /Height "
+            + str(raw_height).encode("ascii")
+            + b" /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length "
+            + str(len(logo_bytes)).encode("ascii")
+            + b" >>\nstream\n"
+            + logo_bytes
+            + b"\nendstream"
+        )
+
+    for index, content_stream in enumerate(page_streams):
+        page_id = page_ids[index]
+        content_id = content_ids[index]
+        resources = _pdf_formal_page_resources(
+            font_regular_id=font_regular_id,
+            font_bold_id=font_bold_id,
+            image_id=image_id,
+        )
+        objects[page_id] = (
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+            b"/Resources "
+            + resources
+            + b" /Contents "
+            + str(content_id).encode("ascii")
+            + b" 0 R >>"
+        )
+        objects[content_id] = (
+            b"<< /Length "
+            + str(len(content_stream)).encode("ascii")
+            + b" >>\nstream\n"
+            + content_stream
+            + b"\nendstream"
+        )
+
+    pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets = [0]
+    for object_id in range(1, max_object_id + 1):
+        obj = objects[object_id]
+        offsets.append(len(pdf))
+        pdf.extend(f"{object_id} 0 obj\n".encode("ascii"))
+        pdf.extend(obj)
+        pdf.extend(b"\nendobj\n")
+
+    xref_offset = len(pdf)
+    pdf.extend(f"xref\n0 {max_object_id + 1}\n".encode("ascii"))
+    pdf.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+
+    pdf.extend(
+        (
+            f"trailer\n<< /Size {max_object_id + 1} /Root {catalog_id} 0 R >>\n"
+            f"startxref\n{xref_offset}\n%%EOF"
+        ).encode("ascii")
+    )
+    return bytes(pdf)
+
+
 def _pdf_formal_page_resources(
     *,
     font_regular_id: int,
