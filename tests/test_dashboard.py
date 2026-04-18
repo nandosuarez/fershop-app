@@ -413,6 +413,8 @@ class DashboardTests(unittest.TestCase):
             order_1["balance_due_cop"],
         )
         self.assertAlmostEqual(detail["summary"]["conversion_rate_percent"], 0.5)
+        self.assertEqual(len(detail["active_orders"]), 1)
+        self.assertEqual(detail["active_orders"][0]["id"], order_1["id"])
         self.assertEqual(detail["top_products"][0]["product_name"], "iPhone 16")
         self.assertEqual(detail["recent_orders"][0]["id"], order_1["id"])
         self.assertEqual(detail["recent_quotes"][0]["client_name"], "Laura")

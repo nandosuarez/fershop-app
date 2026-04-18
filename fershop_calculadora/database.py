@@ -3551,14 +3551,20 @@ def get_client_detail(
             row["amount_cop"] or 0
         )
 
-    recent_orders = [
+    serialized_orders = [
         _serialize_order(
             row,
             events_by_order_id.get(row["id"], []),
             all_statuses,
             active_statuses,
         )
-        for row in matching_order_rows[:6]
+        for row in matching_order_rows
+    ]
+    recent_orders = serialized_orders[:6]
+    active_orders = [
+        item
+        for item in serialized_orders
+        if str(item.get("status_key") or "").strip() != CLOSED_ORDER_STATUS_KEY
     ]
 
     total_sales_cop = 0.0
@@ -3660,6 +3666,7 @@ def get_client_detail(
             "last_order_at": last_order_at,
         },
         "top_products": sorted_products[:6],
+        "active_orders": active_orders,
         "recent_quotes": matching_quotes[:6],
         "recent_orders": recent_orders,
     }

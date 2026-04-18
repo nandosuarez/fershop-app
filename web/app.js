@@ -3265,6 +3265,7 @@ function buildClientDetailMarkup(detail) {
   const client = detail.client || {};
   const summary = detail.summary || {};
   const topProducts = detail.top_products || [];
+  const activeOrders = detail.active_orders || [];
   const recentQuotes = detail.recent_quotes || [];
   const recentOrders = detail.recent_orders || [];
   const periodCopy = formatClientDetailPeriodCopy(detail.period);
@@ -3348,6 +3349,32 @@ function buildClientDetailMarkup(detail) {
                 )
                 .join("")
             : '<p class="catalog-card-note">Todavia no hay suficiente historial de productos para este cliente.</p>'
+        }
+      </section>
+
+      <section class="detail-panel">
+        <h3>Cuentas activas</h3>
+        ${
+          activeOrders.length
+            ? activeOrders
+                .map(
+                  (item) => `
+                    <article class="detail-list-card">
+                      <div>
+                        <strong>Compra #${escapeHtml(String(item.id || ""))} · ${escapeHtml(
+                          item.product_name || "Producto sin nombre"
+                        )}</strong>
+                        <p>${escapeHtml(item.status_label || "Sin estado")} · ${escapeHtml(
+                          formatStoredDate(item.last_status_changed_at || item.created_at)
+                        )}</p>
+                      </div>
+                      <span>${formatCop(item.sale_price_cop)}</span>
+                      <small>Saldo pendiente: ${formatCop(item.balance_due_cop)}</small>
+                    </article>
+                  `
+                )
+                .join("")
+            : '<p class="catalog-card-note">Este cliente no tiene compras activas en este momento.</p>'
         }
       </section>
 
