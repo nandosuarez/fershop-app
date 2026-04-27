@@ -48,85 +48,175 @@
 
       <div class="workspace-shell">
         <aside id="module-menu" class="module-menu" aria-label="Modulos">
-          <div class="menu-group">
-            <p class="menu-group-title">Vision general</p>
-            <a class="module-link is-active" data-module-link="dashboard" href="#dashboard">
-              <strong>Dashboard</strong>
-              <span>Ventas, cartera, gastos y radar comercial</span>
-            </a>
-            <a class="module-link" data-module-link="seguimiento" href="#seguimiento">
-              <strong>Seguimiento</strong>
-              <span>Agenda operativa y alertas de pendientes, cotizaciones, compras y cobros</span>
-            </a>
+          <div class="menu-group" data-menu-group="overview">
+            <button
+              class="menu-group-toggle"
+              type="button"
+              data-menu-group-button="overview"
+              aria-expanded="true"
+            >
+              <div>
+                <p class="menu-group-title">Vision general</p>
+                <span class="menu-group-copy">Lectura del negocio y prioridades del dia.</span>
+              </div>
+              <span class="menu-group-indicator" aria-hidden="true"></span>
+            </button>
+            <div class="menu-group-body" data-menu-group-body="overview">
+              <a class="module-link is-active" data-module-link="dashboard" href="#dashboard">
+                <strong>Dashboard</strong>
+                <span>Ventas, cartera, gastos y radar comercial</span>
+              </a>
+            </div>
           </div>
 
-          <div class="menu-group">
-            <p class="menu-group-title">Operacion comercial</p>
-            <a class="module-link" data-module-link="pendientes" href="#pendientes">
-              <strong>Pendientes comerciales</strong>
-              <span>Solicitudes por referencia que aun debes buscar antes de cotizar</span>
-            </a>
-            <a class="module-link" data-module-link="comercial" href="#comercial">
-              <strong>Cotizaciones</strong>
-              <span>Cotiza, guarda historial y convierte rapido a compra</span>
-            </a>
-            <a class="module-link" href="/calculadora-rapida" target="_blank" rel="noreferrer">
-              <strong>Calculadora rápida</strong>
-              <span>Página aparte para celular con cálculo inmediato</span>
-            </a>
+          <div class="menu-group" data-menu-group="commercial">
+            <button
+              class="menu-group-toggle"
+              type="button"
+              data-menu-group-button="commercial"
+              aria-expanded="false"
+            >
+              <div>
+                <p class="menu-group-title">Operacion comercial</p>
+                <span class="menu-group-copy">Pendientes, cotizaciones y apoyo comercial.</span>
+              </div>
+              <span class="menu-group-indicator" aria-hidden="true"></span>
+            </button>
+            <div class="menu-group-body" data-menu-group-body="commercial" hidden>
+              <a class="module-link" data-module-link="pendientes" href="#pendientes">
+                <strong>Pendientes comerciales</strong>
+                <span>Solicitudes por referencia que aun debes buscar antes de cotizar</span>
+              </a>
+              <a class="module-link" data-module-link="comercial" href="#comercial">
+                <strong>Cotizaciones</strong>
+                <span>Cotiza, guarda historial y convierte rapido a compra</span>
+              </a>
+              <a class="module-link" data-module-link="seguimiento" href="#seguimiento">
+                <strong>Seguimiento operativo</strong>
+                <span>Alertas, pendientes, compras quietas y cobros por mover</span>
+              </a>
+              <a class="module-link" href="/calculadora-rapida" target="_blank" rel="noreferrer">
+                <strong>Calculadora rápida</strong>
+                <span>Página aparte para celular con cálculo inmediato</span>
+              </a>
+            </div>
           </div>
 
-          <div class="menu-group">
-            <p class="menu-group-title">Operacion de compra</p>
-            <a class="module-link" data-module-link="abastecimiento" href="#abastecimiento">
-              <strong>Abastecimiento e inventario</strong>
-              <span>Compra stock para tienda y registra la salida real de dinero</span>
-            </a>
-            <a class="module-link" data-module-link="compras" href="#compras">
-              <strong>Compras y seguimiento</strong>
-              <span>Controla cada pedido desde la confirmacion hasta el cierre</span>
-            </a>
+          <div class="menu-group" data-menu-group="purchase">
+            <button
+              class="menu-group-toggle"
+              type="button"
+              data-menu-group-button="purchase"
+              aria-expanded="false"
+            >
+              <div>
+                <p class="menu-group-title">Operacion de compra</p>
+              </div>
+              <span class="menu-group-indicator" aria-hidden="true"></span>
+            </button>
+            <div class="menu-group-body" data-menu-group-body="purchase" hidden>
+              <a class="module-link" data-module-link="abastecimiento" href="#abastecimiento">
+                <strong>Abastecimiento e inventario</strong>
+                <span>Compra stock para tienda y registra la salida real de dinero</span>
+              </a>
+              <a class="module-link" data-module-link="compras" href="#compra-directa">
+                <strong>Compra directa</strong>
+                <span>Arma una compra nueva cliente por cliente</span>
+              </a>
+              <a class="module-link" href="#compras-seguimiento">
+                <strong>Seguimiento operativo</strong>
+                <span>Revisa compras abiertas y mueve el siguiente paso</span>
+              </a>
+            </div>
           </div>
 
-          <div class="menu-group">
-            <p class="menu-group-title">Finanzas</p>
-            <a class="module-link" data-module-link="gastos" href="#gastos">
-              <strong>Gastos del negocio</strong>
-              <span>Registra salidas de dinero y alimenta el dashboard</span>
-            </a>
+          <div class="menu-group" data-menu-group="finance">
+            <button
+              class="menu-group-toggle"
+              type="button"
+              data-menu-group-button="finance"
+              aria-expanded="false"
+            >
+              <div>
+                <p class="menu-group-title">Finanzas</p>
+                <span class="menu-group-copy">Control de gastos y lectura financiera.</span>
+              </div>
+              <span class="menu-group-indicator" aria-hidden="true"></span>
+            </button>
+            <div class="menu-group-body" data-menu-group-body="finance" hidden>
+              <a class="module-link" data-module-link="gastos" href="#gastos">
+                <strong>Gastos del negocio</strong>
+                <span>Registra salidas de dinero y alimenta el dashboard</span>
+              </a>
+            </div>
           </div>
 
-          <div class="menu-group">
-            <p class="menu-group-title">Configuracion</p>
-            <a class="module-link" data-module-link="administracion" href="#administracion">
-              <strong>Administracion</strong>
-              <span>Estados, clientes, productos, catalogos y ajustes generales</span>
-            </a>
+          <div class="menu-group" data-menu-group="admin">
+            <button
+              class="menu-group-toggle"
+              type="button"
+              data-menu-group-button="admin"
+              aria-expanded="false"
+            >
+              <div>
+                <p class="menu-group-title">Administracion</p>
+                <span class="menu-group-copy">Catalogos, estados, WhatsApp y ajustes generales.</span>
+              </div>
+              <span class="menu-group-indicator" aria-hidden="true"></span>
+            </button>
+            <div class="menu-group-body" data-menu-group-body="admin" hidden>
+              <a class="module-link" data-admin-menu-target="clients" href="#administracion">
+                <strong>Clientes</strong>
+                <span>Buscar, crear, editar e inactivar clientes.</span>
+              </a>
+              <a class="module-link" data-admin-menu-target="products" href="#administracion">
+                <strong>Productos</strong>
+                <span>Catalogo, imagenes e inventario base.</span>
+              </a>
+              <a class="module-link" data-admin-menu-target="categories" href="#administracion">
+                <strong>Categorias</strong>
+                <span>Organiza el catalogo con nombres consistentes.</span>
+              </a>
+              <a class="module-link" data-admin-menu-target="stores" href="#administracion">
+                <strong>Tiendas</strong>
+                <span>Mantén la lista de tiendas limpia y buscable.</span>
+              </a>
+              <a class="module-link" data-admin-menu-target="statuses" href="#administracion">
+                <strong>Estados</strong>
+                <span>Controla el flujo operativo de las compras.</span>
+              </a>
+              <a class="module-link" data-admin-menu-target="registration" href="#administracion">
+                <strong>Registro publico</strong>
+                <span>Comparte el formulario externo para captar clientes.</span>
+              </a>
+              <a class="module-link" data-admin-menu-target="whatsapp" href="#administracion">
+                <strong>WhatsApp</strong>
+                <span>Conexion, disparadores y plantillas.</span>
+              </a>
+            </div>
           </div>
         </aside>
 
         <main class="workspace-content">
-          <section id="dashboard" class="module-page is-active" data-module-page="dashboard">
-            <header class="hero">
-              <div>
-                <p class="eyebrow">Empresa activa</p>
-                <h1>Panel gerencial para dirigir la operacion completa</h1>
-                <p class="hero-copy">
-                  Aqui ves el negocio como un todo: ventas, recaudo, cartera, gastos y el
-                  comportamiento de clientes y productos.
-                </p>
+          <section class="panel utility-hub">
+            <div class="utility-search-shell">
+              <label class="search-field utility-search-field">
+                <span>Buscador global</span>
+                <input
+                  id="global-search-input"
+                  type="search"
+                  placeholder="Busca clientes, productos, compras, cotizaciones, pendientes, tiendas o categorias"
+                  autocomplete="off"
+                />
+              </label>
+              <div id="global-search-results" class="utility-search-results" hidden>
+                <p>Empieza a escribir para encontrar rapido lo que necesitas.</p>
               </div>
-              <div class="hero-card">
-                <span>Empresa autenticada</span>
-                <strong>Operacion independiente</strong>
-                <p>
-                  Cada cuenta entra con su usuario, su informacion, su logo y su flujo
-                  comercial totalmente separado.
-                </p>
-              </div>
-            </header>
+            </div>
+          </section>
 
-            <section class="dashboard-layout">
+          <section id="dashboard" class="module-page is-active" data-module-page="dashboard">
+            <section class="dashboard-layout dashboard-layout-stack">
               <section class="panel dashboard-panel">
                 <div class="panel-header">
                   <div>
@@ -283,7 +373,7 @@
 
                   <div class="direct-order-top-grid">
                     <label>
-                      <span>Producto guardado</span>
+                      <span>Producto</span>
                       <div class="inline-input-action">
                         <input
                           id="product-select"
@@ -343,7 +433,7 @@
                     </label>
 
                     <label>
-                      <span>Precio USD neto</span>
+                      <span>Precio USD</span>
                       <input
                         name="price_usd_net"
                         type="number"
@@ -354,7 +444,7 @@
                       />
                     </label>
 
-                    <label>
+                    <label hidden>
                       <span>Tax USA %</span>
                       <input
                         name="tax_usa_percent"
@@ -367,12 +457,12 @@
                     </label>
 
                     <label>
-                      <span>Costo viaje asignado USD</span>
+                      <span>Costo viaje USD</span>
                       <input name="travel_cost_usd" type="number" min="0" step="0.01" value="0" required />
                     </label>
 
                     <label>
-                      <span>Envio / casillero USD</span>
+                      <span>Casillero USD</span>
                       <input
                         name="locker_shipping_usd"
                         type="number"
@@ -449,8 +539,7 @@
 
                   <div class="actions quote-actions-bar">
                     <button type="button" id="add-quote-item-button">Agregar producto a la cotizacion</button>
-                    <button type="button" id="create-order-button">Crear compra directa</button>
-                    <button type="submit" class="secondary">Recalcular manual</button>
+                    <button type="button" id="create-order-button">Crear compra</button>
                     <button type="button" id="save-button" class="secondary" disabled>
                       Guardar cotizacion
                     </button>
@@ -761,23 +850,19 @@
           </section>
 
           <section id="compras" class="module-page" data-module-page="compras">
-            <header class="module-page-header">
-              <p class="module-page-kicker">Operacion de compra</p>
-              <h2>Compras y seguimiento</h2>
-              <p>
-                Crea compras directas o convierte una cotizacion confirmada en compra y sigue el
-                pedido por estados hasta cerrar el ciclo completo.
-              </p>
-            </header>
-
             <section class="catalog-layout catalog-layout-single direct-order-layout">
-              <section class="panel catalog-panel direct-order-panel">
-                <div class="panel-header">
-                  <h2>Compra directa</h2>
-                  <p>
-                    Selecciona el cliente, define la TRM y arma la compra producto por producto en
-                    una sola secuencia.
-                  </p>
+              <section id="compra-directa" class="panel catalog-panel direct-order-panel">
+                <div class="panel-header direct-order-header">
+                  <div>
+                    <h2>Compra directa</h2>
+                    <p>
+                      Selecciona cliente, define la TRM y arma la compra producto por producto en
+                      una sola secuencia.
+                    </p>
+                  </div>
+                  <span id="direct-order-mode-badge" class="catalog-chip quote-origin-chip" hidden>
+                    Editando producto
+                  </span>
                 </div>
 
                 <form id="direct-order-form" class="quote-form direct-order-form-linear">
@@ -789,13 +874,6 @@
                   <input name="category" type="hidden" />
                   <input name="store" type="hidden" />
                   <input name="advance_percent" type="hidden" value="50" />
-
-                  <div class="quote-mode-bar">
-                    <span class="catalog-chip">Nueva compra directa</span>
-                    <span id="direct-order-mode-badge" class="catalog-chip quote-origin-chip" hidden>
-                      Editando producto
-                    </span>
-                  </div>
 
                   <div class="direct-order-top-grid">
                     <label>
@@ -818,6 +896,7 @@
                   <section
                     id="direct-order-live-summary"
                     class="quote-live-summary quote-live-summary-empty"
+                    hidden
                   >
                     <p>Selecciona cliente y producto para empezar a armar la compra directa.</p>
                   </section>
@@ -826,22 +905,16 @@
                     <div class="panel-header panel-header-inline">
                       <div>
                         <h3>Linea de producto</h3>
-                        <p>Carga el producto y luego ajusta los valores reales en la linea de abajo.</p>
                       </div>
                     </div>
                     <label class="direct-order-line-product">
                       <span>Producto guardado</span>
-                      <div class="inline-input-action">
-                        <input
-                          id="direct-order-product-select"
-                          type="text"
-                          placeholder="Busca un producto del catalogo"
-                          autocomplete="off"
-                        />
-                        <button type="button" id="direct-order-load-product-button" class="secondary">
-                          Cargar
-                        </button>
-                      </div>
+                      <input
+                        id="direct-order-product-select"
+                        type="text"
+                        placeholder="Busca un producto del catalogo"
+                        autocomplete="off"
+                      />
                     </label>
                   </section>
 
@@ -849,10 +922,6 @@
                     <div class="panel-header panel-header-inline">
                       <div>
                         <h3>Productos de esta compra</h3>
-                        <p>
-                          Calcula cada producto con su valor real y luego agrégalo para consolidar
-                          la compra completa.
-                        </p>
                       </div>
                     </div>
                     <div id="direct-order-line-items" class="catalog-empty">
@@ -921,7 +990,7 @@
                     </label>
 
                     <label>
-                      <span>Precio USD neto</span>
+                      <span>Precio USD</span>
                       <input
                         name="price_usd_net"
                         type="number"
@@ -932,7 +1001,7 @@
                       />
                     </label>
 
-                    <label>
+                    <label hidden>
                       <span>Tax USA %</span>
                       <input
                         name="tax_usa_percent"
@@ -945,12 +1014,12 @@
                     </label>
 
                     <label>
-                      <span>Costo viaje asignado USD</span>
+                      <span>Costo viaje USD</span>
                       <input name="travel_cost_usd" type="number" min="0" step="0.01" value="0" required />
                     </label>
 
                     <label>
-                      <span>Envio / casillero USD</span>
+                      <span>Casillero USD</span>
                       <input
                         name="locker_shipping_usd"
                         type="number"
@@ -961,23 +1030,16 @@
                       />
                     </label>
 
-                    <label>
+                    <label hidden>
                       <span>Gastos locales asignados COP</span>
                       <input name="local_costs_cop" type="number" min="0" step="1" value="0" required />
                     </label>
 
                     <label>
-                      <span>Precio final del producto COP</span>
+                      <span>Precio COP</span>
                       <input name="final_sale_price_cop" type="number" min="0" step="1" placeholder="Opcional" />
                     </label>
                   </div>
-
-                  <p id="direct-order-purchase-type-helper" class="field-helper">
-                    El tipo de compra y la TRM general se aplicaran a todos los productos al crear la compra.
-                  </p>
-                  <p id="direct-order-inventory-helper" class="field-helper">
-                    Activa esta opcion solo cuando el producto ya esta disponible en tienda para entrega inmediata.
-                  </p>
 
                   <label class="full-width">
                     <span>Productos para PDF / WhatsApp</span>
@@ -999,30 +1061,46 @@
 
                   <div class="actions quote-actions-bar">
                     <button type="button" id="direct-order-add-item-button">Agregar producto a la compra</button>
-                    <button type="button" id="direct-order-create-button">Crear compra directa</button>
-                    <button type="submit" class="secondary">Recalcular manual</button>
+                    <button type="button" id="direct-order-create-button">Crear compra</button>
                     <button type="button" id="direct-order-clear-button" class="secondary">
                       Limpiar compra
                     </button>
                   </div>
+                  <p id="direct-order-status-message" class="field-helper direct-order-status-inline"></p>
                 </form>
+                <div id="direct-order-confirmation-modal" class="direct-order-confirmation-modal" hidden>
+                  <div
+                    class="direct-order-confirmation-card"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="direct-order-confirmation-title"
+                  >
+                    <button
+                      type="button"
+                      id="direct-order-confirmation-close"
+                      class="direct-order-confirmation-close"
+                      aria-label="Cerrar confirmacion"
+                    >
+                      x
+                    </button>
+                    <span class="catalog-chip">Compra creada</span>
+                    <h3 id="direct-order-confirmation-title">La compra quedo registrada</h3>
+                    <p id="direct-order-confirmation-copy">
+                      Ya puedes revisar el detalle de la compra o empezar otra de inmediato.
+                    </p>
+                    <div class="actions direct-order-confirmation-actions">
+                      <button type="button" id="direct-order-confirmation-view">Ver detalle</button>
+                      <button type="button" id="direct-order-confirmation-new" class="secondary">
+                        Hacer otra compra
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </section>
 
-              <section class="panel result-panel quote-result-panel">
-                <div class="panel-header">
-                  <h2>Resultado de la compra</h2>
-                  <p id="direct-order-status-message">
-                    Ajusta los valores del producto actual y luego agrégalo a la compra.
-                  </p>
-                </div>
-
-                <div id="direct-order-results" class="results-empty">
-                  <p>Cuando calcules, aqui veras el costo real, el precio sugerido y el cierre del producto actual.</p>
-                </div>
-              </section>
             </section>
 
-            <section class="panel purchases-panel">
+            <section id="compras-seguimiento" class="panel purchases-panel">
               <div class="panel-header">
                 <h2>Seguimiento operativo</h2>
                 <p>Lista activa de compras por mover, con codigo clickeable y siguiente paso al final.</p>
@@ -1112,54 +1190,9 @@
               </p>
             </header>
 
-            <section class="catalog-layout admin-layout">
-              <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-order-status-create">
-                <button
-                  class="panel-header collapsible-toggle"
-                  type="button"
-                  data-collapsible-target="admin-order-status-create"
-                  data-default-open="true"
-                  aria-expanded="true"
-                >
-                  <div>
-                    <h2>Nuevo estado</h2>
-                    <p>Crea nuevos pasos del flujo y ubicalos en el orden correcto.</p>
-                  </div>
-                  <span class="collapsible-indicator" aria-hidden="true"></span>
-                </button>
-
-                <div class="collapsible-body" data-collapsible-body="admin-order-status-create">
-                <form id="order-status-form" class="catalog-form">
-                  <div class="field-grid">
-                    <label>
-                      <span>Nombre del estado</span>
-                      <input name="label" type="text" placeholder="Ej. Listo para entrega" required />
-                    </label>
-
-                    <label>
-                      <span>Ubicar despues de</span>
-                      <select id="order-status-insert-after" name="insert_after_key">
-                        <option value="">Agregar al final del flujo</option>
-                      </select>
-                    </label>
-                  </div>
-
-                  <label class="full-width">
-                    <span>Descripcion</span>
-                    <textarea
-                      name="description"
-                      rows="3"
-                      placeholder="Explica que significa este estado dentro de la operacion."
-                    ></textarea>
-                  </label>
-
-                  <div class="actions">
-                    <button type="submit" class="primary">Crear estado</button>
-                  </div>
-                </form>
-                </div>
-              </section>
-
+            <section class="admin-shell">
+              <div class="admin-content">
+                <div class="admin-screen" data-admin-screen="statuses">
               <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-order-status-list">
                 <button
                   class="panel-header collapsible-toggle"
@@ -1175,12 +1208,65 @@
                   <span class="collapsible-indicator" aria-hidden="true"></span>
                 </button>
                 <div class="collapsible-body" data-collapsible-body="admin-order-status-list">
+                  <div class="panel-header panel-header-inline admin-subsection-header">
+                    <div>
+                      <h3>Estados del flujo</h3>
+                      <p>Consulta el flujo activo y abre el editor solo cuando necesites crear un nuevo estado.</p>
+                    </div>
+                    <div class="admin-section-actions">
+                      <button type="button" class="secondary" data-admin-reset="status">Nuevo estado</button>
+                    </div>
+                  </div>
+
                   <div id="order-statuses-list" class="catalog-empty">
                     <p>Aun no hay estados configurados.</p>
                   </div>
+
+                  <div id="order-status-editor" class="admin-inline-editor" hidden>
+                    <div class="panel-header panel-header-inline admin-subsection-header">
+                      <div>
+                        <h3>Editor de estado</h3>
+                        <p>Abre este formulario solo cuando vayas a crear un nuevo paso del flujo.</p>
+                      </div>
+                      <div class="admin-section-actions">
+                        <button type="button" class="secondary" data-admin-editor-close="status">Cerrar</button>
+                      </div>
+                    </div>
+
+                    <form id="order-status-form" class="catalog-form">
+                      <div class="field-grid">
+                        <label>
+                          <span>Nombre del estado</span>
+                          <input name="label" type="text" placeholder="Ej. Listo para entrega" required />
+                        </label>
+
+                        <label>
+                          <span>Ubicar despues de</span>
+                          <select id="order-status-insert-after" name="insert_after_key">
+                            <option value="">Agregar al final del flujo</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      <label class="full-width">
+                        <span>Descripcion</span>
+                        <textarea
+                          name="description"
+                          rows="3"
+                          placeholder="Explica que significa este estado dentro de la operacion."
+                        ></textarea>
+                      </label>
+
+                      <div class="actions">
+                        <button type="submit" class="primary">Crear estado</button>
+                      </div>
+                    </form>
+                  </div>
                 </div>
               </section>
+                </div>
 
+                <div class="admin-screen" data-admin-screen="categories">
               <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-categories">
                 <button
                   class="panel-header collapsible-toggle"
@@ -1197,34 +1283,15 @@
                 </button>
 
                 <div class="collapsible-body" data-collapsible-body="admin-categories">
-                <form id="product-category-form" class="catalog-form">
-                  <label>
-                    <input name="id" type="hidden" />
-                    <span>Nombre de la categoria</span>
-                    <input
-                      name="name"
-                      type="text"
-                      placeholder="Ej. Sueters, polos, zapatos"
-                      autocomplete="off"
-                      required
-                    />
-                  </label>
-
-                  <label class="full-width">
-                    <span>Descripcion</span>
-                    <textarea
-                      name="description"
-                      rows="3"
-                      placeholder="Explica para que tipo de productos usas esta categoria."
-                    ></textarea>
-                  </label>
-
-                  <div class="actions">
-                    <button type="submit" class="primary" data-category-submit-button>Guardar categoria</button>
-                    <button type="button" class="secondary" data-category-cancel-button hidden>Cancelar edicion</button>
+                <div class="panel-header panel-header-inline admin-subsection-header">
+                  <div>
+                    <h3>Categorias del catalogo</h3>
+                    <p>Crea, busca y edita las categorias base en un solo lugar.</p>
                   </div>
-                </form>
-
+                  <div class="admin-section-actions">
+                    <button type="button" class="secondary" data-admin-reset="category">Nueva categoria</button>
+                  </div>
+                </div>
                 <label class="search-field admin-search-field">
                   <span>Buscar categoria</span>
                   <input
@@ -1238,9 +1305,51 @@
                 <div id="product-categories-list" class="catalog-empty">
                   <p>Aun no hay categorias creadas.</p>
                 </div>
+
+                <div id="product-category-editor" class="admin-inline-editor" hidden>
+                  <div class="panel-header panel-header-inline admin-subsection-header">
+                    <div>
+                      <h3>Editor de categoria</h3>
+                      <p>Abre este formulario solo cuando vayas a crear o editar una categoria.</p>
+                    </div>
+                    <div class="admin-section-actions">
+                      <button type="button" class="secondary" data-admin-editor-close="category">Cerrar</button>
+                    </div>
+                  </div>
+
+                  <form id="product-category-form" class="catalog-form">
+                    <label>
+                      <input name="id" type="hidden" />
+                      <span>Nombre de la categoria</span>
+                      <input
+                        name="name"
+                        type="text"
+                        placeholder="Ej. Sueters, polos, zapatos"
+                        autocomplete="off"
+                        required
+                      />
+                    </label>
+
+                    <label class="full-width">
+                      <span>Descripcion</span>
+                      <textarea
+                        name="description"
+                        rows="3"
+                        placeholder="Explica para que tipo de productos usas esta categoria."
+                      ></textarea>
+                    </label>
+
+                    <div class="actions">
+                      <button type="submit" class="primary" data-category-submit-button>Guardar categoria</button>
+                      <button type="button" class="secondary" data-category-cancel-button hidden>Cancelar edicion</button>
+                    </div>
+                  </form>
+                </div>
                 </div>
               </section>
+                </div>
 
+                <div class="admin-screen" data-admin-screen="stores">
               <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-stores">
                 <button
                   class="panel-header collapsible-toggle"
@@ -1257,34 +1366,15 @@
                 </button>
 
                 <div class="collapsible-body" data-collapsible-body="admin-stores">
-                <form id="product-store-form" class="catalog-form">
-                  <label>
-                    <input name="id" type="hidden" />
-                    <span>Nombre de la tienda</span>
-                    <input
-                      name="name"
-                      type="text"
-                      placeholder="Ej. Nike, Zara, Ralph Lauren"
-                      autocomplete="off"
-                      required
-                    />
-                  </label>
-
-                  <label class="full-width">
-                    <span>Descripcion</span>
-                    <textarea
-                      name="description"
-                      rows="3"
-                      placeholder="Notas para ubicar esta tienda, su enfoque o por que la usas."
-                    ></textarea>
-                  </label>
-
-                  <div class="actions">
-                    <button type="submit" class="primary" data-store-submit-button>Guardar tienda</button>
-                    <button type="button" class="secondary" data-store-cancel-button hidden>Cancelar edicion</button>
+                <div class="panel-header panel-header-inline admin-subsection-header">
+                  <div>
+                    <h3>Tiendas de referencia</h3>
+                    <p>Manten la lista de tiendas organizada y lista para buscar.</p>
                   </div>
-                </form>
-
+                  <div class="admin-section-actions">
+                    <button type="button" class="secondary" data-admin-reset="store">Nueva tienda</button>
+                  </div>
+                </div>
                 <label class="search-field admin-search-field">
                   <span>Buscar tienda</span>
                   <input
@@ -1298,9 +1388,51 @@
                 <div id="product-stores-list" class="catalog-empty">
                   <p>Aun no hay tiendas creadas.</p>
                 </div>
+
+                <div id="product-store-editor" class="admin-inline-editor" hidden>
+                  <div class="panel-header panel-header-inline admin-subsection-header">
+                    <div>
+                      <h3>Editor de tienda</h3>
+                      <p>Abre este formulario solo cuando vayas a crear o editar una tienda.</p>
+                    </div>
+                    <div class="admin-section-actions">
+                      <button type="button" class="secondary" data-admin-editor-close="store">Cerrar</button>
+                    </div>
+                  </div>
+
+                  <form id="product-store-form" class="catalog-form">
+                    <label>
+                      <input name="id" type="hidden" />
+                      <span>Nombre de la tienda</span>
+                      <input
+                        name="name"
+                        type="text"
+                        placeholder="Ej. Nike, Zara, Ralph Lauren"
+                        autocomplete="off"
+                        required
+                      />
+                    </label>
+
+                    <label class="full-width">
+                      <span>Descripcion</span>
+                      <textarea
+                        name="description"
+                        rows="3"
+                        placeholder="Notas para ubicar esta tienda, su enfoque o por que la usas."
+                      ></textarea>
+                    </label>
+
+                    <div class="actions">
+                      <button type="submit" class="primary" data-store-submit-button>Guardar tienda</button>
+                      <button type="button" class="secondary" data-store-cancel-button hidden>Cancelar edicion</button>
+                    </div>
+                  </form>
+                </div>
                 </div>
               </section>
+                </div>
 
+                <div class="admin-screen is-active" data-admin-screen="clients">
               <section class="panel catalog-panel admin-collapsible admin-collapsible-wide" data-collapsible-panel="admin-clients">
                 <button
                   class="panel-header collapsible-toggle"
@@ -1323,13 +1455,16 @@
                         <h3>Base de clientes</h3>
                         <p>Crea tu base comercial y luego seleccionalos desde la calculadora.</p>
                       </div>
-                      <div class="view-toggle-group" aria-label="Vista de clientes">
-                        <button type="button" class="view-toggle-button is-active" data-client-view="list" aria-pressed="true">
-                          Lista
-                        </button>
-                        <button type="button" class="view-toggle-button" data-client-view="cards" aria-pressed="false">
-                          Tarjetas
-                        </button>
+                      <div class="admin-section-actions">
+                        <button type="button" class="secondary" data-admin-reset="client">Nuevo cliente</button>
+                        <div class="view-toggle-group" aria-label="Vista de clientes">
+                          <button type="button" class="view-toggle-button is-active" data-client-view="list" aria-pressed="true">
+                            Lista
+                          </button>
+                          <button type="button" class="view-toggle-button" data-client-view="cards" aria-pressed="false">
+                            Tarjetas
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -1343,113 +1478,125 @@
                       />
                     </label>
 
-                    <form id="client-form" class="catalog-form">
-                      <input name="id" type="hidden" />
-                      <div class="field-grid">
-                        <label>
-                          <span>Nombre</span>
-                          <input name="name" type="text" placeholder="Ej. Laura Ramirez" required />
-                        </label>
-
-                        <label>
-                          <span>Identificacion</span>
-                          <input name="identification" type="text" placeholder="Ej. 123456789" autocomplete="off" />
-                        </label>
-
-                        <label>
-                          <span>Telefono</span>
-                          <input name="phone" type="text" placeholder="Ej. 3001234567" />
-                        </label>
-
-                        <label>
-                          <span>Email</span>
-                          <input name="email" type="email" placeholder="Opcional" />
-                        </label>
-
-                        <label>
-                          <span>Ciudad</span>
-                          <input name="city" type="text" placeholder="Ej. Bogota" />
-                        </label>
-
-                        <label>
-                          <span>Direccion</span>
-                          <input name="address" type="text" placeholder="Ej. Cra 15 # 93 - 40" />
-                        </label>
-
-                        <label>
-                          <span>Barrio / zona</span>
-                          <input name="neighborhood" type="text" placeholder="Ej. Chico, Laureles, Cedritos" />
-                        </label>
-
-                        <label>
-                          <span>WhatsApp</span>
-                          <input
-                            name="whatsapp_phone"
-                            type="text"
-                            placeholder="Ej. +573001234567 o 3001234567"
-                            autocomplete="off"
-                          />
-                        </label>
-
-                        <label>
-                          <span>Canal preferido</span>
-                          <input
-                            name="preferred_contact_channel"
-                            type="text"
-                            placeholder="Ej. WhatsApp, llamada, Instagram"
-                          />
-                        </label>
-
-                        <label>
-                          <span>Pago preferido</span>
-                          <input
-                            name="preferred_payment_method"
-                            type="text"
-                            placeholder="Ej. transferencia, efectivo, anticipo 50%"
-                          />
-                        </label>
-                      </div>
-
-                      <label class="full-width">
-                        <span>Descripcion comercial</span>
-                        <textarea
-                          name="description"
-                          rows="3"
-                          placeholder="Resumen corto para identificar al cliente, su perfil o contexto comercial."
-                        ></textarea>
-                      </label>
-
-                      <label class="checkbox-field">
-                        <input name="whatsapp_opt_in" type="checkbox" />
-                        <span>Autorizo notificaciones de compra por WhatsApp</span>
-                      </label>
-
-                      <label class="full-width">
-                        <span>Intereses del cliente</span>
-                        <textarea
-                          name="interests"
-                          rows="3"
-                          placeholder="Ej. Apple, gama premium, regalos, combos, tecnologia, accesorios"
-                        ></textarea>
-                      </label>
-
-                      <label class="full-width">
-                        <span>Notas del cliente</span>
-                        <textarea name="notes" rows="3" placeholder="Preferencias, tiempos, historial o acuerdos."></textarea>
-                      </label>
-
-                      <div class="actions">
-                        <button type="submit" class="primary" data-client-submit-button>Guardar cliente</button>
-                        <button type="button" class="secondary" data-client-cancel-button hidden>Cancelar edicion</button>
-                      </div>
-                    </form>
-
                     <div id="clients-list" class="catalog-empty">
                       <p>Aun no hay clientes guardados.</p>
                     </div>
+
+                    <div id="client-editor" class="admin-inline-editor" hidden>
+                      <div class="panel-header panel-header-inline admin-subsection-header">
+                        <div>
+                          <h3>Editor de cliente</h3>
+                          <p>Abre este formulario solo cuando vayas a crear o editar un cliente.</p>
+                        </div>
+                        <div class="admin-section-actions">
+                          <button type="button" class="secondary" data-admin-editor-close="client">Cerrar</button>
+                        </div>
+                      </div>
+
+                      <form id="client-form" class="catalog-form">
+                        <input name="id" type="hidden" />
+                        <div class="field-grid">
+                          <label>
+                            <span>Nombre</span>
+                            <input name="name" type="text" placeholder="Ej. Laura Ramirez" required />
+                          </label>
+
+                          <label>
+                            <span>Identificacion</span>
+                            <input name="identification" type="text" placeholder="Ej. 123456789" autocomplete="off" />
+                          </label>
+
+                          <label>
+                            <span>Telefono</span>
+                            <input name="phone" type="text" placeholder="Ej. 3001234567" />
+                          </label>
+
+                          <label>
+                            <span>Email</span>
+                            <input name="email" type="email" placeholder="Opcional" />
+                          </label>
+
+                          <label>
+                            <span>Ciudad</span>
+                            <input name="city" type="text" placeholder="Ej. Bogota" />
+                          </label>
+
+                          <label>
+                            <span>Direccion</span>
+                            <input name="address" type="text" placeholder="Ej. Cra 15 # 93 - 40" />
+                          </label>
+
+                          <label>
+                            <span>Barrio / zona</span>
+                            <input name="neighborhood" type="text" placeholder="Ej. Chico, Laureles, Cedritos" />
+                          </label>
+
+                          <label>
+                            <span>WhatsApp</span>
+                            <input
+                              name="whatsapp_phone"
+                              type="text"
+                              placeholder="Ej. +573001234567 o 3001234567"
+                              autocomplete="off"
+                            />
+                          </label>
+
+                          <label>
+                            <span>Canal preferido</span>
+                            <input
+                              name="preferred_contact_channel"
+                              type="text"
+                              placeholder="Ej. WhatsApp, llamada, Instagram"
+                            />
+                          </label>
+
+                          <label>
+                            <span>Pago preferido</span>
+                            <input
+                              name="preferred_payment_method"
+                              type="text"
+                              placeholder="Ej. transferencia, efectivo, anticipo 50%"
+                            />
+                          </label>
+                        </div>
+
+                        <label class="full-width">
+                          <span>Descripcion comercial</span>
+                          <textarea
+                            name="description"
+                            rows="3"
+                            placeholder="Resumen corto para identificar al cliente, su perfil o contexto comercial."
+                          ></textarea>
+                        </label>
+
+                        <label class="checkbox-field">
+                          <input name="whatsapp_opt_in" type="checkbox" />
+                          <span>Autorizo notificaciones de compra por WhatsApp</span>
+                        </label>
+
+                        <label class="full-width">
+                          <span>Intereses del cliente</span>
+                          <textarea
+                            name="interests"
+                            rows="3"
+                            placeholder="Ej. Apple, gama premium, regalos, combos, tecnologia, accesorios"
+                          ></textarea>
+                        </label>
+
+                        <label class="full-width">
+                          <span>Notas del cliente</span>
+                          <textarea name="notes" rows="3" placeholder="Preferencias, tiempos, historial o acuerdos."></textarea>
+                        </label>
+
+                        <div class="actions">
+                          <button type="submit" class="primary" data-client-submit-button>Guardar cliente</button>
+                          <button type="button" class="secondary" data-client-cancel-button hidden>Cancelar edicion</button>
+                        </div>
+                      </form>
+                    </div>
                   </section>
 
-                  <section id="client-detail-section" class="panel client-detail-panel admin-detail-panel">
+              <section id="client-detail-section" class="panel client-detail-panel admin-detail-panel">
                     <div class="panel-header">
                       <div>
                         <h3>Ficha del cliente</h3>
@@ -1463,7 +1610,9 @@
                   </section>
                 </div>
               </section>
+                </div>
 
+                <div class="admin-screen" data-admin-screen="products">
               <section class="panel catalog-panel admin-collapsible admin-collapsible-wide" data-collapsible-panel="admin-products">
                 <button
                   class="panel-header collapsible-toggle"
@@ -1481,9 +1630,14 @@
 
                 <div class="collapsible-body" data-collapsible-body="admin-products">
                   <section id="productos" class="admin-embedded-section">
-                    <div class="panel-header">
-                      <h3>Catalogo de productos</h3>
-                      <p>Guarda costos base para cotizar mas rapido sin volver a escribir todo.</p>
+                    <div class="panel-header panel-header-stackable">
+                      <div>
+                        <h3>Catalogo de productos</h3>
+                        <p>Guarda costos base para cotizar mas rapido sin volver a escribir todo.</p>
+                      </div>
+                      <div class="admin-section-actions">
+                        <button type="button" class="secondary" data-admin-reset="product">Nuevo producto</button>
+                      </div>
                     </div>
 
                     <label class="search-field admin-search-field">
@@ -1496,103 +1650,115 @@
                       />
                     </label>
 
-                    <form id="product-form" class="catalog-form">
-                      <input name="id" type="hidden" />
-                      <input name="image_data_url" type="hidden" />
-                      <div class="field-grid">
-                        <label>
-                          <span>Nombre</span>
-                          <input name="name" type="text" placeholder="Ej. iPhone 15 Pro Max" required />
-                        </label>
+                    <div id="products-list" class="catalog-empty">
+                      <p>Aun no hay productos guardados.</p>
+                    </div>
 
-                        <label>
-                          <span>Referencia</span>
-                          <input name="reference" type="text" placeholder="Opcional" />
-                        </label>
+                    <div id="product-editor" class="admin-inline-editor" hidden>
+                      <div class="panel-header panel-header-inline admin-subsection-header">
+                        <div>
+                          <h3>Editor de producto</h3>
+                          <p>Abre este formulario solo cuando vayas a crear o editar un producto.</p>
+                        </div>
+                        <div class="admin-section-actions">
+                          <button type="button" class="secondary" data-admin-editor-close="product">Cerrar</button>
+                        </div>
+                      </div>
 
-                        <label>
-                          <span>Categoria</span>
-                          <input
-                            id="product-category-input"
-                            name="category"
-                            type="text"
-                            placeholder="Busca o selecciona una categoria"
-                            autocomplete="off"
-                          />
-                        </label>
+                      <form id="product-form" class="catalog-form">
+                        <input name="id" type="hidden" />
+                        <input name="image_data_url" type="hidden" />
+                        <div class="field-grid">
+                          <label>
+                            <span>Nombre</span>
+                            <input name="name" type="text" placeholder="Ej. iPhone 15 Pro Max" required />
+                          </label>
 
-                        <label>
-                          <span>Tienda</span>
-                          <input
-                            id="product-store-input"
-                            name="store"
-                            type="text"
-                            placeholder="Busca o selecciona una tienda"
-                            autocomplete="off"
-                          />
-                        </label>
+                          <label>
+                            <span>Referencia</span>
+                            <input name="reference" type="text" placeholder="Opcional" />
+                          </label>
 
-                        <label>
-                          <span>Precio USD neto</span>
-                          <input name="price_usd_net" type="number" min="0" step="0.01" required />
-                        </label>
+                          <label>
+                            <span>Categoria</span>
+                            <input
+                              id="product-category-input"
+                              name="category"
+                              type="text"
+                              placeholder="Busca o selecciona una categoria"
+                              autocomplete="off"
+                            />
+                          </label>
 
-                        <label>
-                          <span>Tax USA %</span>
-                          <input name="tax_usa_percent" type="number" min="0" step="0.01" value="0" required />
-                        </label>
+                          <label>
+                            <span>Tienda</span>
+                            <input
+                              id="product-store-input"
+                              name="store"
+                              type="text"
+                              placeholder="Busca o selecciona una tienda"
+                              autocomplete="off"
+                            />
+                          </label>
 
-                        <label>
-                          <span>Envio casillero USD</span>
-                          <input name="locker_shipping_usd" type="number" min="0" step="0.01" value="0" required />
-                        </label>
+                          <label>
+                            <span>Precio USD neto</span>
+                            <input name="price_usd_net" type="number" min="0" step="0.01" required />
+                          </label>
 
-                        <label class="checkbox-field">
-                          <input name="inventory_enabled" type="checkbox" />
-                          <span>Manejar inventario de tienda</span>
-                        </label>
+                          <label>
+                            <span>Tax USA %</span>
+                            <input name="tax_usa_percent" type="number" min="0" step="0.01" value="0" required />
+                          </label>
 
-                        <label>
-                          <span>Stock inicial</span>
-                          <input name="initial_stock_quantity" type="number" min="0" step="1" value="0" />
+                          <label>
+                            <span>Envio casillero USD</span>
+                            <input name="locker_shipping_usd" type="number" min="0" step="0.01" value="0" required />
+                          </label>
+
+                          <label class="checkbox-field">
+                            <input name="inventory_enabled" type="checkbox" />
+                            <span>Manejar inventario de tienda</span>
+                          </label>
+
+                          <label>
+                            <span>Stock inicial</span>
+                            <input name="initial_stock_quantity" type="number" min="0" step="1" value="0" />
+                          </label>
+
+                          <label class="full-width">
+                            <span>Imagen del producto</span>
+                            <input id="product-image-file" type="file" accept="image/*" />
+                          </label>
+                        </div>
+
+                        <div id="product-image-preview" class="image-preview-card image-preview-card-empty">
+                          <p>Aun no has cargado imagen para este producto.</p>
+                        </div>
+
+                        <label class="full-width">
+                          <span>Descripcion comercial</span>
+                          <textarea
+                            name="description"
+                            rows="3"
+                            placeholder="Resumen corto del producto, publico ideal, coleccion o contexto comercial."
+                          ></textarea>
                         </label>
 
                         <label class="full-width">
-                          <span>Imagen del producto</span>
-                          <input id="product-image-file" type="file" accept="image/*" />
+                          <span>Notas del producto</span>
+                          <textarea
+                            name="notes"
+                            rows="3"
+                            placeholder="Capacidad, color, proveedor, version o consideraciones."
+                          ></textarea>
                         </label>
-                      </div>
 
-                      <div id="product-image-preview" class="image-preview-card image-preview-card-empty">
-                        <p>Aun no has cargado imagen para este producto.</p>
-                      </div>
-
-                      <label class="full-width">
-                        <span>Descripcion comercial</span>
-                        <textarea
-                          name="description"
-                          rows="3"
-                          placeholder="Resumen corto del producto, publico ideal, coleccion o contexto comercial."
-                        ></textarea>
-                      </label>
-
-                      <label class="full-width">
-                        <span>Notas del producto</span>
-                        <textarea
-                          name="notes"
-                          rows="3"
-                          placeholder="Capacidad, color, proveedor, version o consideraciones."
-                        ></textarea>
-                      </label>
-
-                      <div class="actions">
-                        <button type="submit" class="primary" data-product-submit-button>Guardar producto</button>
-                        <button type="button" class="secondary" data-product-cancel-button hidden>Cancelar edicion</button>
-                      </div>
-                    </form>
-
-                    <div id="products-list" class="catalog-empty">
-                      <p>Aun no hay productos guardados.</p>
+                        <div class="actions">
+                          <button type="submit" class="primary" data-product-submit-button>Guardar producto</button>
+                          <button type="button" class="secondary" data-product-cancel-button hidden>Cancelar edicion</button>
+                        </div>
+                      </form>
                     </div>
                   </section>
 
@@ -1610,7 +1776,9 @@
                   </section>
                 </div>
               </section>
+                </div>
 
+                <div class="admin-screen" data-admin-screen="registration">
               <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-public-registration">
                 <button
                   class="panel-header collapsible-toggle"
@@ -1654,7 +1822,9 @@
                 </div>
                 </div>
               </section>
+                </div>
 
+                <div class="admin-screen" data-admin-screen="whatsapp">
               <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-whatsapp-settings">
                 <button
                   class="panel-header collapsible-toggle"
@@ -1796,6 +1966,8 @@
                 </div>
                 </div>
               </section>
+                </div>
+              </div>
             </section>
           </section>
         </main>

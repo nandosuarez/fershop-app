@@ -27,6 +27,8 @@ const followupSummaryContainer = document.getElementById("followup-summary");
 const followupAgendaContainer = document.getElementById("followup-agenda");
 const followupPendingContainer = document.getElementById("followup-pending");
 const followupPipelineContainer = document.getElementById("followup-pipeline");
+const globalSearchInput = document.getElementById("global-search-input");
+const globalSearchResults = document.getElementById("global-search-results");
 const clientDetailSection = document.getElementById("client-detail-section");
 const clientDetailContainer = document.getElementById("client-detail");
 const clientDetailClearButton = document.getElementById("client-detail-clear");
@@ -38,6 +40,9 @@ const menuToggleButton = document.getElementById("menu-toggle-button");
 const menuOverlay = document.getElementById("menu-overlay");
 const modulePages = Array.from(document.querySelectorAll("[data-module-page]"));
 const moduleLinks = Array.from(document.querySelectorAll("[data-module-link]"));
+const menuGroupButtons = Array.from(document.querySelectorAll("[data-menu-group-button]"));
+const menuGroupBodies = Array.from(document.querySelectorAll("[data-menu-group-body]"));
+const adminMenuSectionLinks = Array.from(document.querySelectorAll("[data-admin-menu-target]"));
 const expenseForm = document.getElementById("expense-form");
 const expenseCategorySelect = document.getElementById("expense-category");
 const expensesListContainer = document.getElementById("expenses-list");
@@ -52,6 +57,11 @@ const orderStatusesListContainer = document.getElementById("order-statuses-list"
 const orderStatusInsertAfterSelect = document.getElementById("order-status-insert-after");
 const productCategoryForm = document.getElementById("product-category-form");
 const productStoreForm = document.getElementById("product-store-form");
+const clientEditor = document.getElementById("client-editor");
+const productEditor = document.getElementById("product-editor");
+const orderStatusEditor = document.getElementById("order-status-editor");
+const productCategoryEditor = document.getElementById("product-category-editor");
+const productStoreEditor = document.getElementById("product-store-editor");
 const productCategoriesListContainer = document.getElementById("product-categories-list");
 const productStoresListContainer = document.getElementById("product-stores-list");
 const clientsListSearchInput = document.getElementById("clients-list-search");
@@ -90,6 +100,11 @@ const directOrderLiveSummaryContainer = document.getElementById("direct-order-li
 const directOrderResultsContainer = document.getElementById("direct-order-results");
 const directOrderStatusMessage = document.getElementById("direct-order-status-message");
 const directOrderModeBadge = document.getElementById("direct-order-mode-badge");
+const directOrderConfirmationModal = document.getElementById("direct-order-confirmation-modal");
+const directOrderConfirmationCopy = document.getElementById("direct-order-confirmation-copy");
+const directOrderConfirmationCloseButton = document.getElementById("direct-order-confirmation-close");
+const directOrderConfirmationViewButton = document.getElementById("direct-order-confirmation-view");
+const directOrderConfirmationNewButton = document.getElementById("direct-order-confirmation-new");
 const directOrderPurchaseTypeHelper = document.getElementById("direct-order-purchase-type-helper");
 const directOrderInventoryHelper = document.getElementById("direct-order-inventory-helper");
 const clientViewButtons = Array.from(document.querySelectorAll("[data-client-view]"));
@@ -114,6 +129,10 @@ const categorySubmitButton = productCategoryForm?.querySelector("[data-category-
 const categoryCancelButton = productCategoryForm?.querySelector("[data-category-cancel-button]");
 const storeSubmitButton = productStoreForm?.querySelector("[data-store-submit-button]");
 const storeCancelButton = productStoreForm?.querySelector("[data-store-cancel-button]");
+const adminSectionButtons = Array.from(document.querySelectorAll("[data-admin-section-button]"));
+const adminScreens = Array.from(document.querySelectorAll("[data-admin-screen]"));
+const adminResetButtons = Array.from(document.querySelectorAll("[data-admin-reset]"));
+const adminEditorCloseButtons = Array.from(document.querySelectorAll("[data-admin-editor-close]"));
 
 const state = {
   session: null,
@@ -138,6 +157,7 @@ const state = {
   dashboard: null,
   followup: null,
   activeModule: "dashboard",
+  activeMenuGroup: "overview",
   menuOpen: false,
   clientDetail: null,
   clientDetailScope: null,
@@ -166,6 +186,7 @@ const state = {
   editingProductCategoryId: null,
   editingProductStoreId: null,
   clientCatalogView: "list",
+  activeAdminSection: "clients",
   adminFilters: {
     clients: "",
     products: "",
@@ -173,6 +194,7 @@ const state = {
     stores: "",
   },
   collapsiblePanels: {},
+  globalSearchQuery: "",
 };
 
 const autocompleteControllers = [];
@@ -316,6 +338,33 @@ function syncResponsiveShell() {
   }
 }
 
+function loadRecentAccesses() {
+  // Feature removed: recent accesses are no longer persisted or rendered.
+}
+
+function saveRecentAccesses() {
+  // Feature removed: recent accesses are no longer persisted or rendered.
+}
+
+function rememberRecentAccess() {
+  // Feature removed: recent accesses are no longer persisted or rendered.
+}
+
+function renderRecentAccesses() {
+  // Feature removed: recent accesses are no longer persisted or rendered.
+}
+
+function getDashboardPeriodLabel(periodKey) {
+  const mapping = {
+    daily: "Diario",
+    weekly: "Semanal",
+    biweekly: "Quincenal",
+    monthly: "Mensual",
+    quarterly: "Trimestral",
+  };
+  return mapping[String(periodKey || "").trim()] || "Actual";
+}
+
 const MODULE_ALIASES = {
   dashboard: "dashboard",
   seguimiento: "seguimiento",
@@ -325,10 +374,23 @@ const MODULE_ALIASES = {
   historial: "comercial",
   clientes: "comercial",
   productos: "comercial",
+  "compra-directa": "compras",
+  "compras-seguimiento": "compras",
   abastecimiento: "abastecimiento",
   compras: "compras",
   gastos: "gastos",
   administracion: "administracion",
+};
+
+const MODULE_GROUP_ALIASES = {
+  dashboard: "overview",
+  seguimiento: "commercial",
+  pendientes: "commercial",
+  comercial: "commercial",
+  abastecimiento: "purchase",
+  compras: "purchase",
+  gastos: "finance",
+  administracion: "admin",
 };
 
 function resolveModuleFromHash(hashValue) {
@@ -340,8 +402,31 @@ function resolveModuleFromHash(hashValue) {
   return MODULE_ALIASES[cleanHash] || "dashboard";
 }
 
+function resolveMenuGroupFromModule(moduleKey) {
+  return MODULE_GROUP_ALIASES[moduleKey] || "overview";
+}
+
+function setActiveMenuGroup(groupKey) {
+  const nextGroup = String(groupKey || "").trim().toLowerCase();
+  state.activeMenuGroup = nextGroup;
+
+  menuGroupButtons.forEach((button) => {
+    const isActive = nextGroup && button.getAttribute("data-menu-group-button") === nextGroup;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-expanded", isActive ? "true" : "false");
+  });
+
+  menuGroupBodies.forEach((body) => {
+    const isActive = nextGroup && body.getAttribute("data-menu-group-body") === nextGroup;
+    body.hidden = !isActive;
+    body.classList.toggle("is-active", isActive);
+  });
+}
+
 function setActiveModule(moduleKey) {
   state.activeModule = moduleKey;
+  closeDirectOrderConfirmationModal();
+  setActiveMenuGroup(resolveMenuGroupFromModule(moduleKey));
 
   modulePages.forEach((page) => {
     page.classList.toggle("is-active", page.dataset.modulePage === moduleKey);
@@ -372,6 +457,495 @@ function syncModuleFromHash() {
       });
     }
   }
+}
+
+function setActiveAdminSection(sectionKey) {
+  const nextSection = String(sectionKey || "").trim().toLowerCase() || "clients";
+  state.activeAdminSection = nextSection;
+
+  adminSectionButtons.forEach((button) => {
+    const isActive = button.getAttribute("data-admin-section-button") === nextSection;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+
+  adminMenuSectionLinks.forEach((link) => {
+    const isActive = link.getAttribute("data-admin-menu-target") === nextSection;
+    link.classList.toggle("is-active", isActive);
+  });
+
+  adminScreens.forEach((screen) => {
+    screen.classList.toggle("is-active", screen.getAttribute("data-admin-screen") === nextSection);
+  });
+}
+
+function openAdminSection(sectionKey) {
+  setActiveAdminSection(sectionKey);
+  setActiveMenuGroup("admin");
+  if (window.location.hash !== "#administracion") {
+    window.location.hash = "administracion";
+  } else {
+    setActiveModule("administracion");
+  }
+}
+
+function focusModule(moduleKey) {
+  if (!moduleKey) {
+    return;
+  }
+  if (window.location.hash !== `#${moduleKey}`) {
+    window.location.hash = moduleKey;
+  } else {
+    setActiveModule(resolveModuleFromHash(moduleKey));
+  }
+}
+
+function resetPendingFormState() {
+  if (!pendingForm) {
+    return;
+  }
+  pendingForm.reset();
+  clearPendingClientSelection();
+  if (pendingClientSelect) {
+    pendingClientSelect.value = "";
+  }
+  if (pendingForm.elements.namedItem("quantity")) {
+    pendingForm.elements.namedItem("quantity").value = 1;
+  }
+  if (pendingForm.elements.namedItem("priority_key")) {
+    pendingForm.elements.namedItem("priority_key").value = "normal";
+  }
+}
+
+function resetExpenseFormState() {
+  if (!expenseForm) {
+    return;
+  }
+  expenseForm.reset();
+  expenseForm.elements.namedItem("expense_date").value = toDateInputValue(new Date());
+}
+
+function runQuickAction(actionKey) {
+  switch (actionKey) {
+    case "new-quote":
+      focusModule("comercial");
+      resetQuoteComposerState({ statusText: "Cotizacion lista para empezar una nueva." });
+      break;
+    case "new-order":
+      focusModule("compras");
+      resetDirectOrderComposerState({ statusText: "Compra directa lista para empezar una nueva." });
+      break;
+    case "new-client":
+      openAdminSection("clients");
+      openCollapsiblePanel("admin-clients");
+      resetClientForm({ keepOpen: true });
+      break;
+    case "new-product":
+      openAdminSection("products");
+      openCollapsiblePanel("admin-products");
+      resetProductForm({ keepOpen: true });
+      break;
+    case "new-pending":
+      focusModule("pendientes");
+      resetPendingFormState();
+      break;
+    case "new-expense":
+      focusModule("gastos");
+      resetExpenseFormState();
+      break;
+    default:
+      return;
+  }
+}
+
+function buildGlobalSearchItems(query) {
+  const normalizedQuery = String(query || "").trim().toLowerCase();
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const matches = [];
+  const pushMatch = (item) => {
+    matches.push({ score: item.score || 0, ...item });
+  };
+
+  state.clients.forEach((client) => {
+    const haystack = [
+      client.name,
+      client.identification,
+      client.phone,
+      client.city,
+      client.email,
+      client.whatsapp_phone,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    if (!haystack.includes(normalizedQuery)) {
+      return;
+    }
+    pushMatch({
+      type: "Cliente",
+      id: client.id,
+      label: client.name,
+      meta: client.identification || client.city || client.phone || "Abrir ficha del cliente",
+      score: haystack.startsWith(normalizedQuery) ? 100 : 70,
+    });
+  });
+
+  state.products.forEach((product) => {
+    const label = productLabel(product);
+    const haystack = [label, product.reference, product.category, product.store]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    if (!haystack.includes(normalizedQuery)) {
+      return;
+    }
+    pushMatch({
+      type: "Producto",
+      id: product.id,
+      label,
+      meta: product.category || product.store || "Abrir ficha del producto",
+      score: haystack.startsWith(normalizedQuery) ? 96 : 68,
+    });
+  });
+
+  state.orders.forEach((order) => {
+    const haystack = [
+      formatOrderCode(order.id),
+      order.client_name,
+      order.product_name,
+      order.status_label,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    if (!haystack.includes(normalizedQuery)) {
+      return;
+    }
+    pushMatch({
+      type: "Compra",
+      id: order.id,
+      label: formatOrderCode(order.id),
+      meta: `${order.client_name || "Cliente"} · ${order.status_label || "Estado"}`,
+      score: haystack.startsWith(normalizedQuery) ? 94 : 64,
+    });
+  });
+
+  state.quoteHistory.forEach((quote) => {
+    const haystack = [
+      `cotizacion ${quote.id}`,
+      quote.client_name,
+      quote.product_name,
+      quote.result?.summary?.client_quote_items_text,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    if (!haystack.includes(normalizedQuery)) {
+      return;
+    }
+    pushMatch({
+      type: "Cotizacion",
+      id: quote.id,
+      label: `Cotizacion #${quote.id}`,
+      meta: `${quote.client_name || "Cliente"} · ${quote.product_name || "Producto"}`,
+      score: haystack.startsWith(normalizedQuery) ? 90 : 60,
+    });
+  });
+
+  state.pendingRequests.forEach((pending) => {
+    const haystack = [
+      pending.title,
+      pending.client_name,
+      pending.category,
+      pending.desired_store,
+      pending.desired_color,
+      pending.desired_size,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    if (!haystack.includes(normalizedQuery)) {
+      return;
+    }
+    pushMatch({
+      type: "Pendiente",
+      id: pending.id,
+      label: pending.title || `Pendiente #${pending.id}`,
+      meta: pending.client_name || pending.category || "Abrir pendiente comercial",
+      score: haystack.startsWith(normalizedQuery) ? 88 : 58,
+    });
+  });
+
+  state.productCategories.forEach((item) => {
+    const haystack = [item.name, item.description].filter(Boolean).join(" ").toLowerCase();
+    if (!haystack.includes(normalizedQuery)) {
+      return;
+    }
+    pushMatch({
+      type: "Categoria",
+      id: item.id,
+      label: item.name,
+      meta: item.description || "Abrir catálogo de categorías",
+      score: 40,
+    });
+  });
+
+  state.productStores.forEach((item) => {
+    const haystack = [item.name, item.description].filter(Boolean).join(" ").toLowerCase();
+    if (!haystack.includes(normalizedQuery)) {
+      return;
+    }
+    pushMatch({
+      type: "Tienda",
+      id: item.id,
+      label: item.name,
+      meta: item.description || "Abrir catálogo de tiendas",
+      score: 40,
+    });
+  });
+
+  return matches.sort((a, b) => b.score - a.score).slice(0, 12);
+}
+
+function renderGlobalSearchResults(query = state.globalSearchQuery) {
+  if (!globalSearchResults) {
+    return;
+  }
+
+  const normalizedQuery = String(query || "").trim();
+  if (!normalizedQuery) {
+    globalSearchResults.hidden = true;
+    globalSearchResults.innerHTML = "<p>Empieza a escribir para encontrar rapido lo que necesitas.</p>";
+    return;
+  }
+
+  const items = buildGlobalSearchItems(normalizedQuery);
+  globalSearchResults.hidden = false;
+
+  if (!items.length) {
+    globalSearchResults.innerHTML = `<p>No encontramos resultados para <strong>${escapeHtml(
+      normalizedQuery
+    )}</strong>.</p>`;
+    return;
+  }
+
+  globalSearchResults.innerHTML = items
+    .map(
+      (item) => `
+        <button
+          type="button"
+          class="utility-search-result"
+          data-global-search-type="${escapeHtml(item.type)}"
+          data-global-search-id="${escapeHtml(String(item.id))}"
+        >
+          <span class="utility-search-kind">${escapeHtml(item.type)}</span>
+          <strong>${escapeHtml(item.label)}</strong>
+          <small>${escapeHtml(item.meta)}</small>
+        </button>
+      `
+    )
+    .join("");
+}
+
+function openOrderDetailById(orderId, { scroll = true } = {}) {
+  const numericOrderId = Number(orderId);
+  if (!numericOrderId) {
+    return;
+  }
+  focusModule("compras");
+  state.activeOrderId = numericOrderId;
+  renderOrders(state.orders);
+  if (scroll) {
+    ordersListContainer?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+async function openGlobalSearchResult(type, id) {
+  const normalizedType = String(type || "").trim().toLowerCase();
+  const normalizedId = String(id || "").trim();
+  if (!normalizedType || !normalizedId) {
+    return;
+  }
+
+  switch (normalizedType) {
+    case "cliente": {
+      const client = state.clients.find((item) => String(item.id) === normalizedId);
+      if (!client) {
+        throw new Error("No encontramos ese cliente.");
+      }
+      openAdminSection("clients");
+      openCollapsiblePanel("admin-clients");
+      await loadClientDetail(client.id, { source: "admin" });
+      rememberRecentAccess({
+        type: "Cliente",
+        id: client.id,
+        label: client.name,
+        meta: client.identification || client.city || "Ficha comercial",
+      });
+      break;
+    }
+    case "producto": {
+      const product = state.products.find((item) => String(item.id) === normalizedId);
+      if (!product) {
+        throw new Error("No encontramos ese producto.");
+      }
+      openAdminSection("products");
+      openCollapsiblePanel("admin-products");
+      await loadProductDetail(product.id);
+      rememberRecentAccess({
+        type: "Producto",
+        id: product.id,
+        label: productLabel(product),
+        meta: product.category || product.store || "Ficha comercial",
+      });
+      break;
+    }
+    case "compra": {
+      const order = state.orders.find((item) => String(item.id) === normalizedId);
+      if (!order) {
+        throw new Error("No encontramos esa compra.");
+      }
+      openOrderDetailById(order.id);
+      rememberRecentAccess({
+        type: "Compra",
+        id: order.id,
+        label: formatOrderCode(order.id),
+        meta: `${order.client_name || "Cliente"} · ${order.status_label || "Estado"}`,
+      });
+      break;
+    }
+    case "cotizacion": {
+      focusModule("comercial");
+      const payload = await requestJson(`/api/quotes/${encodeURIComponent(normalizedId)}`);
+      applyQuoteRecordToForm(payload.item);
+      rememberRecentAccess({
+        type: "Cotizacion",
+        id: normalizedId,
+        label: `Cotizacion #${normalizedId}`,
+        meta: `${payload.item?.client_name || "Cliente"} · ${payload.item?.product_name || "Producto"}`,
+      });
+      break;
+    }
+    case "pendiente": {
+      const pending = state.pendingRequests.find((item) => String(item.id) === normalizedId);
+      if (!pending) {
+        throw new Error("No encontramos ese pendiente.");
+      }
+      focusModule("pendientes");
+      pendingListContainer?.scrollIntoView({ behavior: "smooth", block: "start" });
+      statusMessage.textContent = `Pendiente #${normalizedId} listo para revisar en el listado.`;
+      rememberRecentAccess({
+        type: "Pendiente",
+        id: pending.id,
+        label: pending.title || `Pendiente #${pending.id}`,
+        meta: pending.client_name || pending.category || "Seguimiento comercial",
+      });
+      break;
+    }
+    case "categoria": {
+      const item = state.productCategories.find((entry) => String(entry.id) === normalizedId);
+      if (!item) {
+        throw new Error("No encontramos esa categoria.");
+      }
+      openAdminSection("categories");
+      openCollapsiblePanel("admin-categories");
+      state.adminFilters.categories = item.name || "";
+      if (productCategoriesSearchInput) {
+        productCategoriesSearchInput.value = item.name || "";
+      }
+      refreshAdminCatalogViews();
+      rememberRecentAccess({
+        type: "Categoria",
+        id: item.id,
+        label: item.name,
+        meta: "Catálogo administrativo",
+      });
+      break;
+    }
+    case "tienda": {
+      const item = state.productStores.find((entry) => String(entry.id) === normalizedId);
+      if (!item) {
+        throw new Error("No encontramos esa tienda.");
+      }
+      openAdminSection("stores");
+      openCollapsiblePanel("admin-stores");
+      state.adminFilters.stores = item.name || "";
+      if (productStoresSearchInput) {
+        productStoresSearchInput.value = item.name || "";
+      }
+      refreshAdminCatalogViews();
+      rememberRecentAccess({
+        type: "Tienda",
+        id: item.id,
+        label: item.name,
+        meta: "Catálogo administrativo",
+      });
+      break;
+    }
+    default:
+      break;
+  }
+
+  if (globalSearchInput) {
+    globalSearchInput.value = "";
+    state.globalSearchQuery = "";
+  }
+  renderGlobalSearchResults("");
+}
+
+function setInlineEditorOpen(editorElement, isOpen) {
+  if (!editorElement) {
+    return;
+  }
+  editorElement.hidden = !isOpen;
+  if (isOpen) {
+    requestAnimationFrame(() => {
+      editorElement.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+}
+
+function openCategoryEditor() {
+  setInlineEditorOpen(productCategoryEditor, true);
+}
+
+function closeCategoryEditor() {
+  setInlineEditorOpen(productCategoryEditor, false);
+}
+
+function openStoreEditor() {
+  setInlineEditorOpen(productStoreEditor, true);
+}
+
+function closeStoreEditor() {
+  setInlineEditorOpen(productStoreEditor, false);
+}
+
+function openClientEditor() {
+  setInlineEditorOpen(clientEditor, true);
+}
+
+function closeClientEditor() {
+  setInlineEditorOpen(clientEditor, false);
+}
+
+function openProductEditor() {
+  setInlineEditorOpen(productEditor, true);
+}
+
+function closeProductEditor() {
+  setInlineEditorOpen(productEditor, false);
+}
+
+function openOrderStatusEditor() {
+  setInlineEditorOpen(orderStatusEditor, true);
+}
+
+function closeOrderStatusEditor() {
+  setInlineEditorOpen(orderStatusEditor, false);
 }
 
 function clientSearchLabel(client) {
@@ -979,14 +1553,15 @@ function renderDirectOrderLiveSummary() {
     ? `${state.directOrderLineItems.length} item${state.directOrderLineItems.length === 1 ? "" : "s"}`
     : "Sin items";
 
-  if (!clientName && !productName && !state.directOrderLineItems.length && !finalData) {
+  if (!state.directOrderLineItems.length && !finalData) {
     directOrderLiveSummaryContainer.className = "quote-live-summary quote-live-summary-empty";
-    directOrderLiveSummaryContainer.innerHTML =
-      "<p>Selecciona cliente y producto para empezar a armar la compra directa.</p>";
+    directOrderLiveSummaryContainer.hidden = true;
+    directOrderLiveSummaryContainer.innerHTML = "";
     return;
   }
 
   directOrderLiveSummaryContainer.className = "quote-live-summary";
+  directOrderLiveSummaryContainer.hidden = false;
   directOrderLiveSummaryContainer.innerHTML = `
     <div class="quote-live-summary-grid">
       <article class="quote-live-summary-card">
@@ -1524,44 +2099,45 @@ function enhanceDirectOrderComposerLayout() {
   const fieldGrid = directOrderForm.querySelector(".field-grid");
   const topGrid = directOrderForm.querySelector(".direct-order-top-grid");
   const listPanel = directOrderLineItemsContainer?.closest(".quote-items-panel");
-    const legacyResultPanel = directOrderResultsContainer?.closest(".panel");
-    const legacyActionsBar = directOrderForm.querySelector(".actions.quote-actions-bar");
+  const legacyResultPanel = directOrderResultsContainer?.closest(".panel");
+  const legacyActionsBar = directOrderForm.querySelector(".actions.quote-actions-bar");
   const notesLabel = getDirectOrderField("notes")?.closest("label");
   const advanceLabel = getDirectOrderField("advance_paid_cop")?.closest("label");
   const discountLabel = getDirectOrderField("general_discount_cop")?.closest("label");
   const inventoryLabel = getDirectOrderField("uses_inventory_stock")?.closest("label");
   const purchaseTypeLabel = getDirectOrderField("purchase_type")?.closest("label");
-    const hiddenFieldNames = [
-      "exchange_rate_cop_legacy",
-      "tax_usa_percent",
-      "desired_margin_percent",
-      "local_costs_cop",
-    ];
-    const removeFieldNames = new Set(hiddenFieldNames);
+  let metaRow = null;
+  const hiddenFieldNames = [
+    "exchange_rate_cop_legacy",
+    "tax_usa_percent",
+    "desired_margin_percent",
+    "local_costs_cop",
+  ];
+  const removeFieldNames = new Set(hiddenFieldNames);
 
   hiddenFieldNames.forEach((fieldName) => {
-      const label = getDirectOrderField(fieldName)?.closest("label");
-      if (label) {
-        label.hidden = true;
-      }
-    });
+    const label = getDirectOrderField(fieldName)?.closest("label");
+    if (label) {
+      label.hidden = true;
+    }
+  });
 
   const clientQuoteItemsInput = getDirectOrderField("client_quote_items_text");
   const clientQuoteItemsLabel = clientQuoteItemsInput?.closest("label");
-    if (clientQuoteItemsLabel) {
-      clientQuoteItemsLabel.hidden = true;
-    } else if (clientQuoteItemsInput) {
-      clientQuoteItemsInput.hidden = true;
-    }
+  if (clientQuoteItemsLabel) {
+    clientQuoteItemsLabel.hidden = true;
+  } else if (clientQuoteItemsInput) {
+    clientQuoteItemsInput.hidden = true;
+  }
 
-    if (topGrid && purchaseTypeLabel && !topGrid.contains(purchaseTypeLabel)) {
-      topGrid.insertBefore(purchaseTypeLabel, topGrid.lastElementChild || null);
-    }
+  if (topGrid && purchaseTypeLabel && !topGrid.contains(purchaseTypeLabel)) {
+    topGrid.insertBefore(purchaseTypeLabel, topGrid.lastElementChild || null);
+  }
 
-    if (productPanel && fieldGrid) {
-      fieldGrid.classList.add("direct-order-line-grid");
-      if (productLabel && !fieldGrid.contains(productLabel)) {
-        fieldGrid.prepend(productLabel);
+  if (productPanel && fieldGrid) {
+    fieldGrid.classList.add("direct-order-line-grid");
+    if (productLabel && !fieldGrid.contains(productLabel)) {
+      fieldGrid.prepend(productLabel);
     }
 
     const keepFieldNames = new Set([
@@ -1602,7 +2178,7 @@ function enhanceDirectOrderComposerLayout() {
       productPanel.append(fieldGrid);
     }
 
-    let metaRow = productPanel.querySelector(".direct-order-line-meta-row");
+    metaRow = productPanel.querySelector(".direct-order-line-meta-row");
     if (!metaRow) {
       metaRow = document.createElement("div");
       metaRow.className = "direct-order-line-meta-row";
@@ -1612,12 +2188,6 @@ function enhanceDirectOrderComposerLayout() {
       inventoryLabel.classList.add("direct-order-stock-toggle");
       metaRow.append(inventoryLabel);
     }
-    if (directOrderPurchaseTypeHelper) {
-      metaRow.append(directOrderPurchaseTypeHelper);
-    }
-    if (directOrderInventoryHelper) {
-      productPanel.append(directOrderInventoryHelper);
-    }
   }
 
   if (productPanel && legacyActionsBar) {
@@ -1625,56 +2195,26 @@ function enhanceDirectOrderComposerLayout() {
     if (!lineActions) {
       lineActions = document.createElement("div");
       lineActions.className = "actions quote-actions-bar direct-order-line-actions";
+    }
+
+    if (metaRow) {
+      metaRow.append(lineActions);
+    } else {
       productPanel.append(lineActions);
     }
 
-    const recalcButton = legacyActionsBar.querySelector('button[type="submit"]');
     if (directOrderAddItemButton) {
       lineActions.append(directOrderAddItemButton);
     }
-    if (recalcButton) {
-      lineActions.append(recalcButton);
-    }
   }
 
-  if (directOrderForm && legacyResultPanel) {
-    const resultSection = document.createElement("section");
-    resultSection.className = "quote-items-panel direct-order-results-block";
-
-    const header = legacyResultPanel.querySelector(".panel-header");
-    if (header) {
-      const title = header.querySelector("h2");
-      if (title) {
-        title.textContent = "Resultado de la linea actual";
-      }
-      resultSection.append(header);
-    }
-    if (directOrderResultsContainer) {
-      resultSection.append(directOrderResultsContainer);
-    }
-
-    if (listPanel) {
-      directOrderForm.insertBefore(resultSection, listPanel);
-    } else if (productPanel) {
-      productPanel.insertAdjacentElement("afterend", resultSection);
-    } else {
-      directOrderForm.append(resultSection);
-    }
-
+  if (legacyResultPanel) {
     legacyResultPanel.remove();
   }
 
   if (directOrderForm && (advanceLabel || discountLabel || notesLabel)) {
     const advanceSection = document.createElement("section");
     advanceSection.className = "quote-items-panel direct-order-advance-panel";
-    advanceSection.innerHTML = `
-      <div class="panel-header panel-header-inline">
-        <div>
-          <h3>Cierre de la compra</h3>
-          <p>Despues de armar los productos, registra el anticipo real del cliente.</p>
-        </div>
-      </div>
-    `;
     const footerGrid = document.createElement("div");
     footerGrid.className = "direct-order-footer-grid";
     if (advanceLabel) {
@@ -1823,12 +2363,34 @@ function resetDirectOrderComposerState(
     "Cuando calcules, aqui veras el costo real, el precio sugerido y el cierre del producto actual."
   );
   if (directOrderStatusMessage) {
-    directOrderStatusMessage.textContent = "Ajusta los valores del producto actual y luego agregalo a la compra.";
+    directOrderStatusMessage.textContent = "";
   }
   invalidateDirectOrderCalculation();
   statusMessage.textContent = statusText;
   renderDirectOrderLiveSummary();
   syncDirectOrderCreateState();
+}
+
+function closeDirectOrderConfirmationModal() {
+  if (directOrderConfirmationModal) {
+    directOrderConfirmationModal.hidden = true;
+  }
+}
+
+function openDirectOrderConfirmationModal(order) {
+  if (!directOrderConfirmationModal || !order) {
+    return;
+  }
+  const orderCode = formatOrderCode(order.id);
+  if (directOrderConfirmationCopy) {
+    directOrderConfirmationCopy.textContent = `${
+      order.client_name || "El cliente"
+    } ya quedo registrado en compras como ${orderCode}. Puedes ver el detalle o empezar otra compra.`;
+  }
+  if (directOrderConfirmationViewButton) {
+    directOrderConfirmationViewButton.dataset.orderId = String(order.id);
+  }
+  directOrderConfirmationModal.hidden = false;
 }
 
 function syncSaveButtonState() {
@@ -1859,7 +2421,7 @@ function setQuoteItemEditorState(index = null) {
     createOrderButton.textContent =
       state.editingQuoteId || state.editingQuoteItemIndex !== null
         ? "Actualizar y crear compra"
-        : "Crear compra directa";
+        : "Crear compra";
   }
   renderQuoteLiveSummary();
 }
@@ -2681,10 +3243,11 @@ function readFileAsDataUrl(file) {
   });
 }
 
-function resetClientForm() {
+function resetClientForm(options = {}) {
   if (!clientForm) {
     return;
   }
+  const keepOpen = Boolean(options.keepOpen);
   clientForm.reset();
   clientForm.elements.namedItem("id").value = "";
   state.editingClientId = null;
@@ -2694,12 +3257,19 @@ function resetClientForm() {
   if (clientCancelButton) {
     clientCancelButton.hidden = true;
   }
+  if (keepOpen) {
+    openClientEditor();
+  } else {
+    closeClientEditor();
+  }
 }
 
 function startClientEdit(client) {
   if (!clientForm || !client) {
     return;
   }
+  openCollapsiblePanel("admin-clients");
+  openClientEditor();
   state.editingClientId = Number(client.id);
   clientForm.elements.namedItem("id").value = String(client.id || "");
   clientForm.elements.namedItem("name").value = client.name || "";
@@ -2726,10 +3296,11 @@ function startClientEdit(client) {
   }
 }
 
-function resetProductForm() {
+function resetProductForm(options = {}) {
   if (!productForm) {
     return;
   }
+  const keepOpen = Boolean(options.keepOpen);
   productForm.reset();
   productForm.elements.namedItem("id").value = "";
   productForm.elements.namedItem("tax_usa_percent").value = 0;
@@ -2746,12 +3317,19 @@ function resetProductForm() {
   if (productCancelButton) {
     productCancelButton.hidden = true;
   }
+  if (keepOpen) {
+    openProductEditor();
+  } else {
+    closeProductEditor();
+  }
 }
 
 function startProductEdit(product) {
   if (!productForm || !product) {
     return;
   }
+  openCollapsiblePanel("admin-products");
+  openProductEditor();
   state.editingProductId = Number(product.id);
   productForm.elements.namedItem("id").value = String(product.id || "");
   productForm.elements.namedItem("name").value = product.name || "";
@@ -2777,10 +3355,24 @@ function startProductEdit(product) {
   }
 }
 
-function resetProductCategoryForm() {
+function resetOrderStatusForm(options = {}) {
+  if (!orderStatusForm) {
+    return;
+  }
+  const keepOpen = Boolean(options.keepOpen);
+  orderStatusForm.reset();
+  if (keepOpen) {
+    openOrderStatusEditor();
+  } else {
+    closeOrderStatusEditor();
+  }
+}
+
+function resetProductCategoryForm(options = {}) {
   if (!productCategoryForm) {
     return;
   }
+  const keepOpen = Boolean(options.keepOpen);
   productCategoryForm.reset();
   productCategoryForm.elements.namedItem("id").value = "";
   state.editingProductCategoryId = null;
@@ -2790,12 +3382,19 @@ function resetProductCategoryForm() {
   if (categoryCancelButton) {
     categoryCancelButton.hidden = true;
   }
+  if (keepOpen) {
+    openCategoryEditor();
+  } else {
+    closeCategoryEditor();
+  }
 }
 
 function startProductCategoryEdit(item) {
   if (!productCategoryForm || !item) {
     return;
   }
+  openCollapsiblePanel("admin-categories");
+  openCategoryEditor();
   state.editingProductCategoryId = Number(item.id);
   productCategoryForm.elements.namedItem("id").value = String(item.id || "");
   productCategoryForm.elements.namedItem("name").value = item.name || "";
@@ -2808,10 +3407,11 @@ function startProductCategoryEdit(item) {
   }
 }
 
-function resetProductStoreForm() {
+function resetProductStoreForm(options = {}) {
   if (!productStoreForm) {
     return;
   }
+  const keepOpen = Boolean(options.keepOpen);
   productStoreForm.reset();
   productStoreForm.elements.namedItem("id").value = "";
   state.editingProductStoreId = null;
@@ -2821,12 +3421,19 @@ function resetProductStoreForm() {
   if (storeCancelButton) {
     storeCancelButton.hidden = true;
   }
+  if (keepOpen) {
+    openStoreEditor();
+  } else {
+    closeStoreEditor();
+  }
 }
 
 function startProductStoreEdit(item) {
   if (!productStoreForm || !item) {
     return;
   }
+  openCollapsiblePanel("admin-stores");
+  openStoreEditor();
   state.editingProductStoreId = Number(item.id);
   productStoreForm.elements.namedItem("id").value = String(item.id || "");
   productStoreForm.elements.namedItem("name").value = item.name || "";
@@ -4634,9 +5241,21 @@ async function loadClientDetail(clientId, options = {}) {
       referenceDate: referenceDate || "",
     };
     renderClientDetail(state.clientDetail);
+    if (state.clientDetail?.client) {
+      const client = state.clientDetail.client;
+      rememberRecentAccess({
+        type: "Cliente",
+        id: client.id,
+        label: client.name,
+        meta:
+          source === "dashboard"
+            ? `Ficha ${getDashboardPeriodLabel(state.dashboardPeriod)}`
+            : client.identification || client.city || "Ficha comercial",
+      });
+    }
     if (shouldScroll && clientDetailSection) {
       window.location.hash = "administracion";
-      openCollapsiblePanel("admin-clients");
+      openAdminSection("clients");
       clientDetailSection.scrollIntoView({ block: "start", behavior: "smooth" });
     }
   } catch (error) {
@@ -5084,9 +5703,18 @@ async function loadProductDetail(productId, options = {}) {
     const payload = await requestJson(`/api/products/${encodeURIComponent(productId)}`);
     state.productDetail = payload.item || null;
     renderProductDetail(state.productDetail);
+    if (state.productDetail?.product) {
+      const product = state.productDetail.product;
+      rememberRecentAccess({
+        type: "Producto",
+        id: product.id,
+        label: productLabel(product),
+        meta: product.category || product.store || "Ficha comercial",
+      });
+    }
     if (shouldScroll && productDetailSection) {
       window.location.hash = "administracion";
-      openCollapsiblePanel("admin-products");
+      openAdminSection("products");
       productDetailSection.scrollIntoView({ block: "start", behavior: "smooth" });
     }
   } catch (error) {
@@ -6508,11 +7136,11 @@ function renderOrders(items) {
   ordersListContainer.className = "orders-list";
   ordersListContainer.innerHTML = `
     <section class="orders-board-summary">
-      ${makeMetricCard("Compras activas", String(visibleItems.length), "Pedidos abiertos que debes mover en operacion")}
+      ${makeMetricCard("Pedidos abiertos", String(visibleItems.length), "Pedidos abiertos que debes mover en operacion")}
       ${makeMetricCard("Por cobrar", String(pendingCollectionCount), "Clientes notificados y pendientes de segundo pago")}
       ${makeMetricCard("Ruta por definir", String(travelRoutePendingCount), "Compras en viaje que aun no tienen casillero o maleta")}
       ${makeMetricCard("Listas para avanzar", String(readyToAdvanceCount), "Pedidos que ya pueden pasar al siguiente estado")}
-      ${makeMetricCard("Venta activa", formatCop(activeSalesTotal), "Valor comprometido en compras aun abiertas")}
+      ${makeMetricCard("Venta abierta", formatCop(activeSalesTotal), "Valor comprometido en compras aun abiertas")}
     </section>
     <div class="orders-card-grid">
       ${visibleItems
@@ -6816,6 +7444,12 @@ function applyClientToQuote(client) {
   clientSelect.value = clientSearchLabel(client);
   setQuoteField("client_id", client.id);
   setQuoteField("client_name", client.name);
+  rememberRecentAccess({
+    type: "Cliente",
+    id: client.id,
+    label: client.name,
+    meta: client.identification || client.city || "Usado en cotizacion",
+  });
   renderQuoteLiveSummary();
   scheduleQuoteCalculation();
 }
@@ -6976,7 +7610,7 @@ function resetQuoteEditingState() {
   }
   saveButton.textContent = "Guardar cotizacion";
   if (createOrderButton) {
-    createOrderButton.textContent = "Crear compra directa";
+    createOrderButton.textContent = "Crear compra";
   }
 }
 
@@ -7123,6 +7757,14 @@ function addCurrentCalculationToQuote() {
 }
 
 function applyProductToQuote(product) {
+  if (product) {
+    rememberRecentAccess({
+      type: "Producto",
+      id: product.id,
+      label: productLabel(product),
+      meta: product.category || product.store || "Usado en cotizacion",
+    });
+  }
   loadProductIntoCalculator(product);
 }
 
@@ -7979,11 +8621,11 @@ function renderOrders(items) {
   ordersListContainer.className = "orders-list";
   ordersListContainer.innerHTML = `
     <section class="orders-board-summary">
-      ${makeMetricCard("Compras activas", String(visibleItems.length), "Pedidos abiertos que debes mover en operacion")}
+      ${makeMetricCard("Pedidos abiertos", String(visibleItems.length), "Pedidos abiertos que debes mover en operacion")}
       ${makeMetricCard("Por cobrar", String(pendingCollectionCount), "Clientes notificados y pendientes de segundo pago")}
       ${makeMetricCard("Ruta por definir", String(travelRoutePendingCount), "Compras en viaje que aun no tienen casillero o maleta")}
       ${makeMetricCard("Listas para avanzar", String(readyToAdvanceCount), "Pedidos que ya pueden pasar al siguiente estado")}
-      ${makeMetricCard("Venta activa", formatCop(activeSalesTotal), "Valor comprometido en compras aun abiertas")}
+      ${makeMetricCard("Venta abierta", formatCop(activeSalesTotal), "Valor comprometido en compras aun abiertas")}
     </section>
     <div class="orders-table-wrap">
       <table class="orders-table">
@@ -8049,6 +8691,8 @@ async function loadHistory() {
     const payload = await requestJson("/api/quotes");
     state.quoteHistory = payload.items || [];
     renderHistory(state.quoteHistory);
+    renderGlobalSearchResults();
+    renderRecentAccesses();
   } catch (error) {
     state.quoteHistory = [];
     historyContainer.className = "history-empty";
@@ -8087,6 +8731,8 @@ async function loadCatalog() {
     refreshAdminCatalogViews();
     autocompleteControllers.forEach((controller) => controller.refresh());
     syncInventorySaleUi();
+    renderGlobalSearchResults();
+    renderRecentAccesses();
   } catch (error) {
     clientsListContainer.className = "catalog-empty";
     productsListContainer.className = "catalog-empty";
@@ -8117,6 +8763,8 @@ async function loadPendingRequests() {
     state.pendingPriorities = payload.priorities || [];
     renderPendingRequests(state.pendingRequests);
     autocompleteControllers.forEach((controller) => controller.refresh());
+    renderGlobalSearchResults();
+    renderRecentAccesses();
   } catch (error) {
     pendingListContainer.className = "catalog-empty";
     pendingListContainer.innerHTML = `<p>${error.message}</p>`;
@@ -8216,6 +8864,8 @@ async function loadOrders() {
     );
     renderOrderStatusesAdmin(state.orderStatuses);
     renderOrders(state.orders);
+    renderGlobalSearchResults();
+    renderRecentAccesses();
     if (!state.orders.some((item) => item.status_key !== "cycle_closed")) {
       ordersListContainer.className = "catalog-empty";
       ordersListContainer.innerHTML = "<p>Aun no hay compras abiertas.</p>";
@@ -8284,6 +8934,66 @@ async function loadWhatsAppAdmin() {
 quoteForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await calculateQuoteFromForm({ manual: true });
+});
+
+menuGroupButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const groupKey = button.getAttribute("data-menu-group-button") || "overview";
+    setActiveMenuGroup(state.activeMenuGroup === groupKey ? "" : groupKey);
+  });
+});
+
+if (globalSearchInput) {
+  globalSearchInput.addEventListener("input", () => {
+    state.globalSearchQuery = globalSearchInput.value || "";
+    renderGlobalSearchResults(state.globalSearchQuery);
+  });
+
+  globalSearchInput.addEventListener("focus", () => {
+    renderGlobalSearchResults(globalSearchInput.value || "");
+  });
+
+  globalSearchInput.addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    const firstResult = globalSearchResults?.querySelector("[data-global-search-type]");
+    if (!firstResult) {
+      return;
+    }
+    event.preventDefault();
+    try {
+      await openGlobalSearchResult(
+        firstResult.getAttribute("data-global-search-type"),
+        firstResult.getAttribute("data-global-search-id")
+      );
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+  });
+}
+
+if (globalSearchResults) {
+  globalSearchResults.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-global-search-type]");
+    if (!button) {
+      return;
+    }
+    try {
+      await openGlobalSearchResult(
+        button.getAttribute("data-global-search-type"),
+        button.getAttribute("data-global-search-id")
+      );
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+  });
+}
+
+adminMenuSectionLinks.forEach((link) => {
+  link.addEventListener("click", () => {
+    openAdminSection(link.getAttribute("data-admin-menu-target") || "clients");
+  });
 });
 
 if (addQuoteItemButton) {
@@ -8383,11 +9093,50 @@ if (directOrderAddItemButton) {
 
 if (directOrderClearButton) {
   directOrderClearButton.addEventListener("click", () => {
+    closeDirectOrderConfirmationModal();
     resetDirectOrderComposerState({
       statusText: "Compra directa limpiada. Ya puedes empezar una nueva.",
     });
   });
 }
+
+if (directOrderConfirmationCloseButton) {
+  directOrderConfirmationCloseButton.addEventListener("click", () => {
+    closeDirectOrderConfirmationModal();
+  });
+}
+
+if (directOrderConfirmationNewButton) {
+  directOrderConfirmationNewButton.addEventListener("click", () => {
+    closeDirectOrderConfirmationModal();
+    directOrderClientSelect?.focus();
+  });
+}
+
+if (directOrderConfirmationViewButton) {
+  directOrderConfirmationViewButton.addEventListener("click", () => {
+    const orderId = directOrderConfirmationViewButton.dataset.orderId;
+    closeDirectOrderConfirmationModal();
+    if (!orderId) {
+      return;
+    }
+    openOrderDetailById(orderId);
+  });
+}
+
+if (directOrderConfirmationModal) {
+  directOrderConfirmationModal.addEventListener("click", (event) => {
+    if (event.target === directOrderConfirmationModal) {
+      closeDirectOrderConfirmationModal();
+    }
+  });
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && directOrderConfirmationModal && !directOrderConfirmationModal.hidden) {
+    closeDirectOrderConfirmationModal();
+  }
+});
 
 enhanceDirectOrderComposerLayout();
 
@@ -8419,13 +9168,14 @@ if (directOrderCreateButton) {
       await Promise.all([loadOrders(), loadDashboard(), loadFollowup(), loadCatalog(), loadHistory()]);
       await refreshActiveClientDetail();
       await refreshActiveProductDetail();
+      closeDirectOrderConfirmationModal();
       resetDirectOrderComposerState({
         statusText: `Compra #${response.item.id} creada desde el modulo de compras.`,
       });
       if (directOrderStatusMessage) {
-        directOrderStatusMessage.textContent =
-          "Compra creada correctamente. Ya puedes armar una nueva.";
+        directOrderStatusMessage.textContent = "Compra creada correctamente.";
       }
+      openDirectOrderConfirmationModal(response.item);
       window.location.hash = "compras";
     } catch (error) {
       if (directOrderStatusMessage) {
@@ -8596,6 +9346,9 @@ if (createOrderButton) {
         : "Compra creada desde el modulo comercial con anticipo y precio real confirmados.";
       resetQuoteComposerState({ statusText: successMessage });
       statusMessage.textContent = successMessage;
+      if (payload.item?.id) {
+        openDirectOrderConfirmationModal(payload.item);
+      }
       window.location.hash = "compras";
     } catch (error) {
       statusMessage.textContent = error.message;
@@ -8848,7 +9601,7 @@ orderStatusForm.addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify(payload),
     });
-    orderStatusForm.reset();
+    resetOrderStatusForm();
     await Promise.all([loadOrders(), loadWhatsAppAdmin()]);
     statusMessage.textContent = "Estado creado y agregado al flujo secuencial.";
     window.location.hash = "administracion";
@@ -9281,8 +10034,7 @@ clientsListContainer.addEventListener("click", (event) => {
       return;
     }
     startClientEdit(client);
-    window.location.hash = "administracion";
-    openCollapsiblePanel("admin-clients");
+    openAdminSection("clients");
     statusMessage.textContent = `Editando cliente ${client.name}.`;
     return;
   }
@@ -9447,8 +10199,7 @@ productsListContainer.addEventListener("click", (event) => {
       return;
     }
     startProductEdit(product);
-    window.location.hash = "administracion";
-    openCollapsiblePanel("admin-products");
+    openAdminSection("products");
     statusMessage.textContent = `Editando producto ${product.name}.`;
     return;
   }
@@ -9539,7 +10290,7 @@ if (productCategoriesListContainer) {
         return;
       }
       startProductCategoryEdit(item);
-      window.location.hash = "administracion";
+      openAdminSection("categories");
       statusMessage.textContent = `Editando categoria ${item.name}.`;
       return;
     }
@@ -9580,7 +10331,7 @@ if (productStoresListContainer) {
         return;
       }
       startProductStoreEdit(item);
-      window.location.hash = "administracion";
+      openAdminSection("stores");
       statusMessage.textContent = `Editando tienda ${item.name}.`;
       return;
     }
@@ -9654,6 +10405,17 @@ ordersListContainer.addEventListener("click", async (event) => {
     }
     state.activeOrderId =
       Number(state.activeOrderId) === Number(orderId) ? null : Number(orderId);
+    if (state.activeOrderId) {
+      const order = state.orders.find((item) => Number(item.id) === Number(orderId));
+      if (order) {
+        rememberRecentAccess({
+          type: "Compra",
+          id: order.id,
+          label: formatOrderCode(order.id),
+          meta: `${order.client_name || "Cliente"} · ${order.status_label || "Estado"}`,
+        });
+      }
+    }
     renderOrders(state.orders);
     return;
   }
@@ -9665,6 +10427,17 @@ ordersListContainer.addEventListener("click", async (event) => {
       return;
     }
     state.activeOrderId = Number(orderId);
+    {
+      const order = state.orders.find((item) => Number(item.id) === Number(orderId));
+      if (order) {
+        rememberRecentAccess({
+          type: "Compra",
+          id: order.id,
+          label: formatOrderCode(order.id),
+          meta: `${order.client_name || "Cliente"} · ${order.status_label || "Estado"}`,
+        });
+      }
+    }
     renderOrders(state.orders);
     return;
   }
@@ -10369,6 +11142,7 @@ function setupAutocomplete() {
 async function loadSession() {
   const session = await requestJson("/api/session");
   state.session = session;
+  loadRecentAccesses();
   applyCompanyBranding(session);
   return session;
 }
@@ -10395,6 +11169,7 @@ async function initApp() {
   resetProductCategoryForm();
   resetProductStoreForm();
   syncClientViewButtons();
+  setActiveAdminSection(state.activeAdminSection);
   syncCollapsiblePanels();
   setupAutocomplete();
   await loadSession();
@@ -10455,6 +11230,82 @@ clientViewButtons.forEach((button) => {
   });
 });
 
+adminSectionButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    openAdminSection(button.getAttribute("data-admin-section-button") || "clients");
+  });
+});
+
+adminResetButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const target = button.getAttribute("data-admin-reset");
+    switch (target) {
+      case "status":
+        openAdminSection("statuses");
+        openCollapsiblePanel("admin-order-status-list");
+        resetOrderStatusForm({ keepOpen: true });
+        statusMessage.textContent = "Formulario de estado listo para crear uno nuevo.";
+        break;
+      case "client":
+        openAdminSection("clients");
+        openCollapsiblePanel("admin-clients");
+        resetClientForm({ keepOpen: true });
+        statusMessage.textContent = "Formulario de cliente listo para un nuevo registro.";
+        break;
+      case "product":
+        openAdminSection("products");
+        openCollapsiblePanel("admin-products");
+        resetProductForm({ keepOpen: true });
+        statusMessage.textContent = "Formulario de producto listo para un nuevo registro.";
+        break;
+      case "category":
+        openAdminSection("categories");
+        openCollapsiblePanel("admin-categories");
+        resetProductCategoryForm({ keepOpen: true });
+        statusMessage.textContent = "Formulario de categoria listo para crear una nueva.";
+        break;
+      case "store":
+        openAdminSection("stores");
+        openCollapsiblePanel("admin-stores");
+        resetProductStoreForm({ keepOpen: true });
+        statusMessage.textContent = "Formulario de tienda listo para crear una nueva.";
+        break;
+      default:
+        break;
+    }
+  });
+});
+
+adminEditorCloseButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const target = button.getAttribute("data-admin-editor-close");
+    if (target === "status") {
+      resetOrderStatusForm();
+      statusMessage.textContent = "Editor de estado cerrado.";
+      return;
+    }
+    if (target === "client") {
+      resetClientForm();
+      statusMessage.textContent = "Editor de cliente cerrado.";
+      return;
+    }
+    if (target === "product") {
+      resetProductForm();
+      statusMessage.textContent = "Editor de producto cerrado.";
+      return;
+    }
+    if (target === "category") {
+      resetProductCategoryForm();
+      statusMessage.textContent = "Editor de categoria cerrado.";
+      return;
+    }
+    if (target === "store") {
+      resetProductStoreForm();
+      statusMessage.textContent = "Editor de tienda cerrado.";
+    }
+  });
+});
+
 [
   [clientsListSearchInput, "clients"],
   [productsListSearchInput, "products"],
@@ -10473,6 +11324,11 @@ clientViewButtons.forEach((button) => {
 document.addEventListener("click", (event) => {
   const toggleButton = event.target.closest("[data-collapsible-target]");
   if (!toggleButton) {
+    const clickedInsideSearch =
+      globalSearchInput?.contains(event.target) || globalSearchResults?.contains(event.target);
+    if (!clickedInsideSearch && globalSearchResults && !globalSearchResults.hidden) {
+      globalSearchResults.hidden = true;
+    }
     return;
   }
 
