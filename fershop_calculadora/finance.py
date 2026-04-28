@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from .runtime_time import today_local
+
 
 LEGACY_INVENTORY_RESTOCK_CATEGORY_KEY = "inventory_restock"
 LEGACY_EXPENSE_CATEGORY_LABELS = {
@@ -91,7 +93,7 @@ def get_period_bounds(
     if clean_period not in PERIOD_LABELS:
         raise ValueError("El periodo solicitado no es valido.")
 
-    today = normalize_date_input(reference_date) if reference_date else datetime.now().date()
+    today = normalize_date_input(reference_date) if reference_date else today_local()
 
     if clean_period == "daily":
         start_date = today

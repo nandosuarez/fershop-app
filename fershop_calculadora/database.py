@@ -44,6 +44,7 @@ from .pending import (
     normalize_pending_priority,
     normalize_pending_status,
 )
+from .runtime_time import today_local
 from .whatsapp import (
     DEFAULT_WHATSAPP_COUNTRY_CODE,
     build_whatsapp_trigger_catalog,
@@ -7415,7 +7416,7 @@ def build_followup_summary(
 ) -> dict[str, Any]:
     init_db()
     company_id = _normalize_company_id(company_id)
-    today = normalize_date_input(reference_date) if reference_date else datetime.now(timezone.utc).date()
+    today = normalize_date_input(reference_date) if reference_date else today_local()
     due_soon_limit = today.fromordinal(today.toordinal() + 3)
     quote_followup_days = 2
     order_stale_days = 4

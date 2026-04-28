@@ -38,6 +38,10 @@ from .database import (
     save_quote,
     update_order_status,
 )
+from .runtime_time import configure_process_timezone
+
+
+configure_process_timezone()
 from .documents import build_quote_message, generate_quote_pdf
 from .orders import is_valid_order_status
 

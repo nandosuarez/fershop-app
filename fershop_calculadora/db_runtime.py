@@ -5,6 +5,8 @@ import re
 from collections.abc import Iterator, Mapping
 from typing import Any
 
+from .runtime_time import get_app_timezone_name
+
 
 _POSTGRES_URL_PREFIXES = ("postgres://", "postgresql://")
 _AUTOINCREMENT_PATTERN = re.compile(
@@ -119,7 +121,10 @@ def connect_postgres() -> CompatConnection:
             "PostgreSQL esta habilitado, pero falta instalar la dependencia 'psycopg'."
         ) from exc
 
-    return CompatConnection(psycopg.connect(get_database_url(), autocommit=False))
+    raw_connection = psycopg.connect(get_database_url(), autocommit=False)
+    with raw_connection.cursor() as cursor:
+        cursor.execute("SET TIME ZONE %s", (get_app_timezone_name(),))
+    return CompatConnection(raw_connection)
 
 
 def _translate_postgres_sql(sql: str) -> str:

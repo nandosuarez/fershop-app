@@ -5,6 +5,8 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
+from .runtime_time import today_local
+
 
 DEFAULT_ORDER_STATUSES = [
     {
@@ -224,7 +226,7 @@ def build_order_from_quote(
 def normalize_second_payment_date(received_at: str | None = None) -> str:
     normalized = str(received_at or "").strip()
     if not normalized:
-        return datetime.now(timezone.utc).date().isoformat()
+        return today_local().isoformat()
 
     try:
         return datetime.strptime(normalized, "%Y-%m-%d").date().isoformat()

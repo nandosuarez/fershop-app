@@ -34,7 +34,8 @@ body.menu-open {
 }
 
 .page-shell {
-  width: min(1380px, calc(100vw - 32px));
+  width: calc(100vw - 40px);
+  max-width: 1880px;
   margin: 0 auto;
   padding: 28px 0 48px;
 }
@@ -2163,7 +2164,7 @@ button:disabled {
   }
 
   .page-shell {
-    width: min(100vw - 24px, 1380px);
+    width: calc(100vw - 24px);
     padding-top: 20px;
   }
 
@@ -2346,7 +2347,7 @@ button:disabled {
   }
 
   .page-shell {
-    width: min(100vw - 20px, 1220px);
+    width: calc(100vw - 20px);
     padding-top: 18px;
   }
 
