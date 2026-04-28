@@ -123,7 +123,10 @@ def connect_postgres() -> CompatConnection:
 
     raw_connection = psycopg.connect(get_database_url(), autocommit=False)
     with raw_connection.cursor() as cursor:
-        cursor.execute("SET TIME ZONE %s", (get_app_timezone_name(),))
+        cursor.execute(
+            "SELECT set_config('TIMEZONE', %s, false)",
+            (get_app_timezone_name(),),
+        )
     return CompatConnection(raw_connection)
 
 
