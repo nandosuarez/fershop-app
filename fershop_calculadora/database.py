@@ -44,7 +44,7 @@ from .pending import (
     normalize_pending_priority,
     normalize_pending_status,
 )
-from .runtime_time import today_local
+from .runtime_time import now_local, today_local
 from .whatsapp import (
     DEFAULT_WHATSAPP_COUNTRY_CODE,
     build_whatsapp_trigger_catalog,
@@ -2923,14 +2923,37 @@ def update_pending_request_status(
     return record
 
 
+def _resolve_record_created_at(
+    created_at: str | None = None,
+    *,
+    field_name: str = "fecha",
+) -> str:
+    raw_value = str(created_at or "").strip()
+    if not raw_value:
+        return datetime.now(timezone.utc).isoformat()
+
+    selected_date = parse_business_date(raw_value, field_name=field_name)
+    local_timezone = now_local().tzinfo
+    return datetime(
+        selected_date.year,
+        selected_date.month,
+        selected_date.day,
+        12,
+        0,
+        0,
+        tzinfo=local_timezone,
+    ).isoformat()
+
+
 def save_quote(
     input_data: dict[str, Any],
     result_data: dict[str, Any],
     company_id: int | None = None,
+    created_at: str | None = None,
 ) -> dict[str, Any]:
     init_db()
     company_id = _normalize_company_id(company_id)
-    created_at = datetime.now(timezone.utc).isoformat()
+    created_at = _resolve_record_created_at(created_at, field_name="fecha de la compra")
     raw_pending_request_id = input_data.get("pending_request_id")
     pending_request_id = None
     if raw_pending_request_id not in (None, "", 0):
@@ -5608,6 +5631,7 @@ def create_order_from_quote(
     quote_id: int,
     advance_paid_cop: float | None = None,
     actual_purchase_prices: list[dict[str, Any]] | None = None,
+    created_at: str | None = None,
     company_id: int | None = None,
 ) -> tuple[dict[str, Any], bool]:
     init_db()
@@ -5646,7 +5670,7 @@ def create_order_from_quote(
             effective_quote_record,
             advance_paid_cop=advance_paid_cop,
         )
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = _resolve_record_created_at(created_at, field_name="fecha de la compra")
         order_id = _insert_and_get_id(
             connection,
             """
@@ -5761,14 +5785,21 @@ def create_direct_order(
     result_data: dict[str, Any],
     *,
     advance_paid_cop: float | None = None,
+    created_at: str | None = None,
     company_id: int | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     init_db()
     company_id = _normalize_company_id(company_id)
-    quote_record = save_quote(input_data, result_data, company_id=company_id)
+    quote_record = save_quote(
+        input_data,
+        result_data,
+        company_id=company_id,
+        created_at=created_at,
+    )
     order_record, _ = create_order_from_quote(
         int(quote_record["id"]),
         advance_paid_cop=advance_paid_cop,
+        created_at=created_at,
         company_id=company_id,
     )
     return order_record, quote_record

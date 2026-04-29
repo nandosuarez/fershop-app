@@ -1259,6 +1259,14 @@ function getDirectOrderField(name) {
   return directOrderForm?.elements?.namedItem(name) || null;
 }
 
+function getBrowserTodayInputValue() {
+  const now = new Date();
+  const year = String(now.getFullYear()).padStart(4, "0");
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function setDirectOrderField(name, value) {
   const field = getDirectOrderField(name);
   if (field) {
@@ -1694,6 +1702,7 @@ function readDirectOrderCurrentPayload() {
   return {
     product_id: toNumberOrNull(data.get("product_id")),
     client_id: toNumberOrNull(data.get("client_id")),
+    purchase_date: String(data.get("purchase_date") || "").trim(),
     product_name: String(data.get("product_name") || "").trim(),
     client_name: String(data.get("client_name") || "").trim(),
     reference: String(data.get("reference") || "").trim(),
@@ -2315,9 +2324,15 @@ function buildDirectOrderSavePayload() {
     throw new Error("Ingresa un anticipo real valido para esta compra.");
   }
 
+  const purchaseDate = String(getDirectOrderField("purchase_date")?.value || "").trim();
+  if (!purchaseDate) {
+    throw new Error("Selecciona la fecha de la compra.");
+  }
+
   return {
     client_id: currentPayload.client_id,
     client_name: currentPayload.client_name,
+    purchase_date: purchaseDate,
     notes: currentPayload.notes,
     client_quote_items_text: currentPayload.client_quote_items_text,
     general_discount_cop: generalDiscountCop,
@@ -2345,6 +2360,7 @@ function resetDirectOrderComposerState(
   state.editingDirectOrderItemIndex = null;
   directOrderForm.reset();
   setDirectOrderField("exchange_rate_cop", 3790);
+  setDirectOrderField("purchase_date", getBrowserTodayInputValue());
   setDirectOrderField("desired_margin_percent", 30);
   setDirectOrderField("advance_paid_cop", 0);
   setDirectOrderField("general_discount_cop", 0);

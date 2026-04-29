@@ -378,6 +378,40 @@ class OrderPersistenceTests(unittest.TestCase):
         self.assertAlmostEqual(order["balance_due_cop"], 384000)
         self.assertEqual(len(order["snapshot"]["input"]["quote_items"]), 2)
 
+    def test_create_direct_order_can_store_selected_purchase_date(self) -> None:
+        quote = QuoteInput.from_dict(
+            {
+                "product_name": "Sueter basico",
+                "client_name": "Andrea",
+                "quantity": 1,
+                "purchase_type": "online",
+                "price_usd_net": 20,
+                "tax_usa_percent": 7,
+                "travel_cost_usd": 0,
+                "locker_shipping_usd": 3,
+                "exchange_rate_cop": 4000,
+                "local_costs_cop": 0,
+                "desired_margin_percent": 25,
+                "advance_percent": 50,
+                "final_sale_price_cop": 150000,
+            }
+        )
+        result = calculate_quote(quote)
+
+        order, quote_record = create_direct_order(
+            quote.to_dict(),
+            result,
+            advance_paid_cop=75000,
+            created_at="2026-04-18",
+        )
+
+        fetched_quote = get_quote(quote_record["id"])
+
+        self.assertTrue(str(quote_record["created_at"]).startswith("2026-04-18T"))
+        self.assertTrue(str(order["created_at"]).startswith("2026-04-18T"))
+        self.assertIsNotNone(fetched_quote)
+        self.assertTrue(str(fetched_quote["created_at"]).startswith("2026-04-18T"))
+
     def test_travel_purchase_can_store_transport_route(self) -> None:
         quote = QuoteInput.from_dict(
             {

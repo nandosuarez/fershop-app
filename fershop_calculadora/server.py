@@ -1048,6 +1048,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
             if self.path == "/api/orders/direct":
                 payload = self._read_json()
+                purchase_date = str(payload.get("purchase_date") or "").strip()
                 raw_advance_paid_cop = payload.get("advance_paid_cop")
                 advance_paid_cop = None
                 if raw_advance_paid_cop not in (None, ""):
@@ -1062,6 +1063,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
                 quote_payload = json.loads(json.dumps(payload, ensure_ascii=False))
                 quote_payload.pop("advance_paid_cop", None)
+                quote_payload.pop("purchase_date", None)
                 if advance_paid_cop is not None:
                     quote_payload = self._apply_direct_order_advance(
                         quote_payload,
@@ -1073,6 +1075,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
                     input_data,
                     result,
                     advance_paid_cop=advance_paid_cop,
+                    created_at=purchase_date or None,
                     company_id=session["company"]["id"],
                 )
                 notification = maybe_auto_send_order_whatsapp_notification(
