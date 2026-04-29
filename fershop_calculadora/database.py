@@ -6843,6 +6843,7 @@ def delete_order(
 def update_confirmed_order(
     order_id: int,
     *,
+    created_at: str | None = None,
     exchange_rate_cop: float | None = None,
     advance_paid_cop: float | None = None,
     notes: str | None = None,
@@ -6873,6 +6874,12 @@ def update_confirmed_order(
 
         snapshot = json.loads(existing["snapshot_json"])
         normalized_notes = str(existing["notes"] or "").strip() if notes is None else str(notes or "").strip()
+        normalized_created_at = str(existing["created_at"] or "")
+        if created_at is not None:
+            normalized_created_at = _resolve_record_created_at(
+                created_at,
+                field_name="fecha de la compra",
+            )
 
         normalized_exchange_rate: float | None = None
         if exchange_rate_cop is not None:
@@ -6921,7 +6928,8 @@ def update_confirmed_order(
         connection.execute(
             """
             UPDATE orders
-            SET client_id = ?,
+            SET created_at = ?,
+                client_id = ?,
                 product_id = ?,
                 client_name = ?,
                 product_name = ?,
@@ -6933,6 +6941,7 @@ def update_confirmed_order(
             WHERE id = ? AND company_id = ?
             """,
             (
+                normalized_created_at,
                 order_data.get("client_id"),
                 order_data.get("product_id"),
                 order_data["client_name"],
@@ -6946,17 +6955,33 @@ def update_confirmed_order(
                 company_id,
             ),
         )
+        connection.execute(
+            """
+            UPDATE quotes
+            SET created_at = ?
+            WHERE id = ? AND company_id = ?
+            """,
+            (
+                normalized_created_at,
+                existing["quote_id"],
+                company_id,
+            ),
+        )
         _sync_advance_payment_event(
             connection,
             company_id=company_id,
             order_id=order_id,
             amount_cop=float(order_data["advance_paid_cop"] or 0),
-            payment_date=normalize_date_input(existing["created_at"]).isoformat(),
+            payment_date=normalize_date_input(normalized_created_at).isoformat(),
         )
 
         changes: list[str] = []
         if normalized_exchange_rate is not None:
             changes.append(f"TRM: {int(round(normalized_exchange_rate))}")
+        if created_at is not None:
+            changes.append(
+                f"Fecha compra: {normalize_date_input(normalized_created_at).isoformat()}"
+            )
         if advance_paid_cop is not None:
             changes.append(
                 f"Anticipo real: {_format_cop_plain(float(order_data['advance_paid_cop'] or 0))}"

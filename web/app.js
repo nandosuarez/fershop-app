@@ -8326,6 +8326,14 @@ function renderOrderDetailPanel(order) {
         </p>
         <div class="order-payment-fields">
           <label>
+            <span>Fecha compra</span>
+            <input
+              type="date"
+              value="${escapeHtml(toDateInputValue(order.created_at))}"
+              data-order-edit-purchase-date="${order.id}"
+            />
+          </label>
+          <label>
             <span>TRM</span>
             <input
               type="text"
@@ -10586,6 +10594,9 @@ ordersListContainer.addEventListener("click", async (event) => {
     const exchangeRateInput = ordersListContainer.querySelector(
       `[data-order-edit-exchange-rate="${orderId}"]`
     );
+    const purchaseDateInput = ordersListContainer.querySelector(
+      `[data-order-edit-purchase-date="${orderId}"]`
+    );
     const advanceInput = ordersListContainer.querySelector(
       `[data-order-edit-advance="${orderId}"]`
     );
@@ -10602,6 +10613,12 @@ ordersListContainer.addEventListener("click", async (event) => {
     const exchangeRateCop = parseCurrencyInput(exchangeRateInput ? exchangeRateInput.value : "");
     if (exchangeRateCop === null || exchangeRateCop <= 0) {
       statusMessage.textContent = "Ingresa una TRM valida para actualizar la compra.";
+      return;
+    }
+
+    const purchaseDate = String(purchaseDateInput?.value || "").trim();
+    if (!purchaseDate) {
+      statusMessage.textContent = "Selecciona una fecha valida para la compra.";
       return;
     }
 
@@ -10658,6 +10675,7 @@ ordersListContainer.addEventListener("click", async (event) => {
       await requestJson(`/api/orders/${orderId}/edit`, {
         method: "POST",
         body: JSON.stringify({
+          purchase_date: purchaseDate,
           exchange_rate_cop: exchangeRateCop,
           advance_paid_cop: advancePaidCop,
           general_discount_cop: generalDiscountCop,

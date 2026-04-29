@@ -462,6 +462,7 @@ class OrderPersistenceTests(unittest.TestCase):
 
         updated = update_confirmed_order(
             order["id"],
+            created_at="2026-04-22",
             exchange_rate_cop=4200,
             advance_paid_cop=320000,
             notes="Compra ajustada por descuento final.",
@@ -486,12 +487,16 @@ class OrderPersistenceTests(unittest.TestCase):
 
         self.assertEqual(updated["advance_paid_cop"], 320000)
         self.assertEqual(updated["notes"], "Compra ajustada por descuento final.")
+        self.assertTrue(str(updated["created_at"]).startswith("2026-04-22T"))
         self.assertAlmostEqual(updated["sale_price_cop"], 900000)
         self.assertAlmostEqual(updated["balance_due_cop"], 580000)
         self.assertAlmostEqual(updated["snapshot"]["input"]["exchange_rate_cop"], 4200)
         self.assertAlmostEqual(updated["snapshot"]["input"]["price_usd_net"], 90)
         self.assertAlmostEqual(updated["snapshot"]["input"]["tax_usa_percent"], 5)
         self.assertAlmostEqual(updated["snapshot"]["input"]["locker_shipping_usd"], 8)
+        updated_quote = get_quote(record["id"])
+        self.assertIsNotNone(updated_quote)
+        self.assertTrue(str(updated_quote["created_at"]).startswith("2026-04-22T"))
         self.assertIn("Compra editada", updated["events"][-1]["note"])
 
     def test_update_confirmed_order_can_adjust_general_discount_on_bundle_order(self) -> None:

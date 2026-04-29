@@ -1167,6 +1167,10 @@ class FerShopHandler(BaseHTTPRequestHandler):
                         except (TypeError, ValueError) as exc:
                             raise ValueError("La TRM debe ser numerica.") from exc
 
+                    purchase_date = None
+                    if payload.get("purchase_date") not in (None, ""):
+                        purchase_date = str(payload.get("purchase_date") or "").strip()
+
                     raw_general_discount = payload.get("general_discount_cop")
                     general_discount_cop = None
                     if raw_general_discount not in (None, ""):
@@ -1184,6 +1188,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
                     item = update_confirmed_order(
                         order_id,
+                        created_at=purchase_date,
                         exchange_rate_cop=exchange_rate_cop,
                         advance_paid_cop=advance_paid_cop,
                         general_discount_cop=general_discount_cop,
