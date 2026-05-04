@@ -18,7 +18,23 @@ const historyContainer = document.getElementById("history");
 const clientsListContainer = document.getElementById("clients-list");
 const productsListContainer = document.getElementById("products-list");
 const ordersListContainer = document.getElementById("orders-list");
+const ordersFilterDateInput = document.getElementById("orders-filter-date");
+const ordersFilterQueryInput = document.getElementById("orders-filter-query");
+const ordersFilterResetButton = document.getElementById("orders-filter-reset");
+const ordersFilterHelp = document.getElementById("orders-filter-help");
+const ordersFilterCount = document.getElementById("orders-filter-count");
+const collectionsClientSelect = document.getElementById("collections-client-select");
+const collectionsReportContainer = document.getElementById("collections-report");
+const collectionsMinBalanceInput = document.getElementById("collections-min-balance");
+const collectionsStaleDaysInput = document.getElementById("collections-stale-days");
+const collectionsExportCsvButton = document.getElementById("collections-export-csv");
+const collectionsClearFiltersButton = document.getElementById("collections-clear-filters");
+const collectionsSummaryContainer = document.getElementById("collections-summary");
 const dashboardPeriodSelect = document.getElementById("dashboard-period");
+const dashboardReferenceDateInput = document.getElementById("dashboard-reference-date");
+const dashboardClientFilterInput = document.getElementById("dashboard-client-filter");
+const dashboardProductFilterInput = document.getElementById("dashboard-product-filter");
+const dashboardExpenseFilterInput = document.getElementById("dashboard-expense-filter");
 const dashboardSummaryContainer = document.getElementById("dashboard-summary");
 const dashboardExpensesContainer = document.getElementById("dashboard-expenses");
 const dashboardClientsContainer = document.getElementById("dashboard-clients");
@@ -107,6 +123,9 @@ const directOrderConfirmationViewButton = document.getElementById("direct-order-
 const directOrderConfirmationNewButton = document.getElementById("direct-order-confirmation-new");
 const directOrderPurchaseTypeHelper = document.getElementById("direct-order-purchase-type-helper");
 const directOrderInventoryHelper = document.getElementById("direct-order-inventory-helper");
+const directOrderTemplateButtons = Array.from(
+  document.querySelectorAll("[data-direct-order-template]")
+);
 const clientViewButtons = Array.from(document.querySelectorAll("[data-client-view]"));
 const brandLogo = document.querySelector(".brand-logo");
 const brandKicker = document.querySelector(".brand-kicker");
@@ -146,6 +165,8 @@ const state = {
   pendingStatuses: [],
   pendingPriorities: [],
   orders: [],
+  ordersFilterDate: "",
+  ordersFilterQuery: "",
   expenses: [],
   inventoryPurchases: [],
   expenseCategories: [],
@@ -154,6 +175,10 @@ const state = {
   whatsappTemplates: [],
   whatsappTriggers: [],
   dashboardPeriod: "daily",
+  dashboardReferenceDate: "",
+  dashboardClientFilter: "",
+  dashboardProductFilter: "",
+  dashboardExpenseFilter: "",
   dashboard: null,
   followup: null,
   activeModule: "dashboard",
@@ -196,6 +221,7 @@ const state = {
   collapsiblePanels: {},
   globalSearchQuery: "",
 };
+const DIRECT_ORDER_DRAFT_KEY = "fershop_direct_order_draft_v1";
 
 const autocompleteControllers = [];
 
@@ -1294,6 +1320,66 @@ function invalidateDirectOrderCalculation() {
     state.directOrderCalculationTimer = 0;
   }
   state.directOrderCalculationRequestId += 1;
+}
+
+function saveDirectOrderDraft() {
+  if (!directOrderForm) return;
+  const draft = {
+    client_id: String(getDirectOrderField("client_id")?.value || ""),
+    client_name: String(getDirectOrderField("client_name")?.value || ""),
+    purchase_type: String(getDirectOrderField("purchase_type")?.value || "online"),
+    exchange_rate_cop: String(getDirectOrderField("exchange_rate_cop")?.value || ""),
+    purchase_date: String(getDirectOrderField("purchase_date")?.value || ""),
+    advance_paid_cop: String(getDirectOrderField("advance_paid_cop")?.value || "0"),
+    general_discount_cop: String(getDirectOrderField("general_discount_cop")?.value || "0"),
+  };
+  window.localStorage.setItem(DIRECT_ORDER_DRAFT_KEY, JSON.stringify(draft));
+}
+
+function restoreDirectOrderDraft() {
+  if (!directOrderForm) return;
+  try {
+    const raw = window.localStorage.getItem(DIRECT_ORDER_DRAFT_KEY);
+    if (!raw) return;
+    const draft = JSON.parse(raw);
+    for (const [key, value] of Object.entries(draft)) {
+      if (key === "client_name" || key === "client_id") {
+        setDirectOrderField(key, value);
+        continue;
+      }
+      const field = getDirectOrderField(key);
+      if (field) field.value = String(value ?? "");
+    }
+    if (directOrderClientSelect && draft.client_name) {
+      directOrderClientSelect.value = draft.client_name;
+    }
+    syncDirectOrderPurchaseTypeUi();
+    renderDirectOrderLiveSummary();
+  } catch (_error) {
+    // no-op
+  }
+}
+
+function applyDirectOrderTemplate(templateKey) {
+  const template = String(templateKey || "").trim().toLowerCase();
+  if (template === "travel") {
+    setDirectOrderField("purchase_type", "travel");
+    setDirectOrderField("advance_paid_cop", 0);
+    setDirectOrderField("general_discount_cop", 0);
+  } else if (template === "mixed") {
+    setDirectOrderField("purchase_type", "online");
+    setDirectOrderField("advance_paid_cop", 100000);
+    setDirectOrderField("general_discount_cop", 0);
+  } else {
+    setDirectOrderField("purchase_type", "online");
+    setDirectOrderField("advance_paid_cop", 0);
+    setDirectOrderField("general_discount_cop", 0);
+  }
+  syncDirectOrderPurchaseTypeUi();
+  saveDirectOrderDraft();
+  if (directOrderStatusMessage) {
+    directOrderStatusMessage.textContent = "Plantilla aplicada. Ajusta los valores finales y agrega productos.";
+  }
 }
 
 function clearDirectOrderClientSelection() {
@@ -6130,8 +6216,13 @@ function renderDashboard(summary) {
   const period = summary.period || {};
   const clientInsights = summary.client_insights || {};
   const productInsights = summary.product_insights || {};
-  const recentExpenses = summary.recent_expenses || [];
-  const expensesByCategory = summary.expenses_by_category || [];
+  const expenseFilter = String(state.dashboardExpenseFilter || "").trim().toLowerCase();
+  const recentExpenses = (summary.recent_expenses || []).filter((item) =>
+    expenseFilter ? String(item.category_label || "").toLowerCase().includes(expenseFilter) : true
+  );
+  const expensesByCategory = (summary.expenses_by_category || []).filter((item) =>
+    expenseFilter ? String(item.category_label || "").toLowerCase().includes(expenseFilter) : true
+  );
   const financialPulseItems = [
     {
       label: "Vendido",
@@ -6159,9 +6250,28 @@ function renderDashboard(summary) {
       meta: "Despues de gastos operativos",
     },
   ];
+  const collectionRate = metrics.sales_total_cop
+    ? Number(metrics.cash_in_total_cop || 0) / Number(metrics.sales_total_cop || 1)
+    : 0;
+  const netMargin = metrics.sales_total_cop
+    ? Number(metrics.net_profit_cop || 0) / Number(metrics.sales_total_cop || 1)
+    : 0;
+  const receivableShare = metrics.sales_total_cop
+    ? Number(metrics.accounts_receivable_cop || 0) / Number(metrics.sales_total_cop || 1)
+    : 0;
 
   dashboardSummaryContainer.className = "results-ready";
   dashboardSummaryContainer.innerHTML = `
+    <section class="detail-panel">
+      <h3>Tablero gerencial rapido</h3>
+      <div class="metrics-grid dashboard-metrics-grid">
+        ${makeMetricCard("Tasa de recaudo", formatPercent(collectionRate), "Dinero recaudado frente a lo vendido")}
+        ${makeMetricCard("Margen neto", formatPercent(netMargin), "Utilidad neta sobre ventas")}
+        ${makeMetricCard("Peso de cartera", formatPercent(receivableShare), "Cartera por cobrar sobre ventas")}
+        ${makeMetricCard("Compras abiertas", String(metrics.open_orders_count || 0), "Seguimientos que siguen activos")}
+      </div>
+    </section>
+
     <div class="metrics-grid dashboard-metrics-grid">
       ${makeMetricCard("Vendido", formatCop(metrics.sales_total_cop), `${metrics.orders_count || 0} compras en el periodo`)}
       ${makeMetricCard("Recibido", formatCop(metrics.cash_in_total_cop), "Anticipos y pagos registrados")}
@@ -6174,7 +6284,6 @@ function renderDashboard(summary) {
       ${makeMetricCard("Inversion inventario", formatCop(metrics.inventory_investment_cop), "Dinero usado para abastecer stock durante el periodo")}
       ${makeMetricCard("Gastos operativos", formatCop(metrics.expenses_total_cop), "Publicidad, viaje, transporte y otros gastos del negocio")}
       ${makeMetricCard("Utilidad neta", formatCop(metrics.net_profit_cop), "Utilidad bruta menos gastos operativos")}
-      ${makeMetricCard("Compras abiertas", String(metrics.open_orders_count || 0), "Seguimientos que siguen activos")}
     </div>
 
     <div class="dashboard-chart-grid">
@@ -6211,6 +6320,14 @@ function renderDashboard(summary) {
         <div class="detail-item">
           <span>Costo viaje</span>
           <strong>${formatCop(metrics.travel_cost_total_cop)}</strong>
+        </div>
+        <div class="detail-item">
+          <span>Recaudo sobre ventas</span>
+          <strong>${formatPercent(collectionRate)}</strong>
+        </div>
+        <div class="detail-item">
+          <span>Margen neto</span>
+          <strong>${formatPercent(netMargin)}</strong>
         </div>
       </section>
     </div>
@@ -6630,8 +6747,13 @@ function renderDashboardClients(insights) {
     return;
   }
 
-  const topBuyers = insights.top_buyers || [];
-  const receivables = insights.receivables || [];
+  const clientFilter = String(state.dashboardClientFilter || "").trim().toLowerCase();
+  const topBuyers = (insights.top_buyers || []).filter((item) =>
+    clientFilter ? String(item.client_name || "").toLowerCase().includes(clientFilter) : true
+  );
+  const receivables = (insights.receivables || []).filter((item) =>
+    clientFilter ? String(item.client_name || "").toLowerCase().includes(clientFilter) : true
+  );
 
   if (!topBuyers.length && !receivables.length) {
     dashboardClientsContainer.className = "catalog-empty";
@@ -6733,8 +6855,13 @@ function renderDashboardProducts(insights) {
     return;
   }
 
-  const topSellers = insights.top_sellers || [];
-  const mostProfitable = insights.most_profitable || [];
+  const productFilter = String(state.dashboardProductFilter || "").trim().toLowerCase();
+  const topSellers = (insights.top_sellers || []).filter((item) =>
+    productFilter ? String(item.product_name || "").toLowerCase().includes(productFilter) : true
+  );
+  const mostProfitable = (insights.most_profitable || []).filter((item) =>
+    productFilter ? String(item.product_name || "").toLowerCase().includes(productFilter) : true
+  );
 
   if (!topSellers.length && !mostProfitable.length) {
     dashboardProductsContainer.className = "catalog-empty";
@@ -7315,6 +7442,70 @@ function renderOrders(items) {
       `;
     })
     .join("")}
+    </div>
+  `;
+}
+
+function renderCollectionsReport(payload) {
+  if (!collectionsReportContainer || !collectionsClientSelect) {
+    return;
+  }
+  const clients = payload?.clients || [];
+  const selectedClientId = String(payload?.selected_client_id || "");
+  collectionsClientSelect.innerHTML = `
+    <option value="">Todos con saldo pendiente</option>
+    ${clients.map((item) => `<option value="${item.client_id}" ${String(item.client_id) === selectedClientId ? "selected" : ""}>${escapeHtml(item.client_name)} (${formatCop(item.balance_due_cop)})</option>`).join("")}
+  `;
+
+  const orders = payload?.orders || [];
+  const metrics = payload?.metrics || {};
+  if (collectionsSummaryContainer) {
+    collectionsSummaryContainer.className = "results-ready";
+    collectionsSummaryContainer.innerHTML = `
+      <div class="metrics-grid dashboard-metrics-grid">
+        ${makeMetricCard("Clientes con saldo", String(metrics.clients_with_balance_count || 0), "Clientes con cartera pendiente")}
+        ${makeMetricCard("Compras por cobrar", String(metrics.pending_orders_count || 0), "Compras activas con saldo pendiente")}
+        ${makeMetricCard("Cartera pendiente", formatCop(metrics.total_balance_due_cop || 0), "Total por recuperar")}
+        ${makeMetricCard("Saldo promedio", formatCop(metrics.average_balance_due_cop || 0), "Promedio por compra pendiente")}
+        ${makeMetricCard("Cartera alta prioridad", formatCop(metrics.high_priority_balance_due_cop || 0), "Saldo de compras con prioridad alta")}
+      </div>
+    `;
+  }
+  if (!orders.length) {
+    collectionsReportContainer.className = "catalog-empty";
+    collectionsReportContainer.innerHTML = "<p>No hay compras pendientes por pagar para este filtro.</p>";
+    return;
+  }
+  collectionsReportContainer.className = "orders-list";
+  const classifyPriority = (order) => {
+    const balance = Number(order.balance_due_cop || 0);
+    const rawDate = order.last_status_changed_at || order.created_at;
+    const ageDays = rawDate ? Math.max(0, Math.floor((Date.now() - new Date(rawDate).getTime()) / 86400000)) : 0;
+    if (balance >= 1000000 || ageDays >= 14) return { key: "high", label: "Alta" };
+    if (balance >= 300000 || ageDays >= 7) return { key: "medium", label: "Media" };
+    return { key: "low", label: "Baja" };
+  };
+  collectionsReportContainer.innerHTML = `
+    <div class="orders-table-wrap">
+      <table class="orders-table">
+        <thead><tr><th>Codigo</th><th>Cliente</th><th>Producto</th><th>Estado</th><th>Prioridad</th><th>Venta</th><th>Saldo</th><th>Ultimo cambio</th><th>Accion</th></tr></thead>
+        <tbody>
+          ${orders.map((order) => {
+            const priority = classifyPriority(order);
+            return `<tr>
+            <td>${escapeHtml(formatOrderCode(order.id))}</td>
+            <td>${escapeHtml(order.client_name || "-")}</td>
+            <td>${escapeHtml(order.product_name || "-")}</td>
+            <td>${escapeHtml(order.status_label || "-")}</td>
+            <td><span class="catalog-chip collections-priority-chip collections-priority-${priority.key}">${priority.label}</span></td>
+            <td>${formatCop(order.sale_price_cop)}</td>
+            <td>${formatCop(order.balance_due_cop)}</td>
+            <td>${escapeHtml(formatStoredDate(order.last_status_changed_at || order.created_at))}</td>
+            <td><button type="button" class="secondary" data-collections-open-order="${order.id}">Gestionar</button></td>
+          </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
     </div>
   `;
 }
@@ -7903,9 +8094,37 @@ function readQuoteSavePayload() {
         input: item.input || {},
         result: item.result || null,
       }))
-    : state.lastResult
+      : state.lastResult
       ? [createQuoteItemFromCurrentCalculation()]
       : [];
+
+  if (!quoteItems.length) {
+    const manualSalePrice = Number(currentPayload.final_sale_price_cop || 0);
+    const manualProductName = String(currentPayload.product_name || "").trim();
+    if (manualSalePrice > 0 && manualProductName) {
+      quoteItems.push({
+        product_id: currentPayload.product_id || null,
+        product_name: manualProductName,
+        reference: currentPayload.reference || "",
+        category: currentPayload.category || "",
+        store: currentPayload.store || "",
+        quantity: Number(currentPayload.quantity || 1),
+        purchase_type: currentPayload.purchase_type || "online",
+        uses_inventory_stock: Boolean(currentPayload.uses_inventory_stock),
+        input: {
+          ...currentPayload,
+          final_sale_price_cop: manualSalePrice,
+        },
+        result: {
+          final: {
+            sale_price_cop: manualSalePrice,
+            advance_cop: Number(currentPayload.final_advance_cop || 0),
+            profit_cop: 0,
+          },
+        },
+      });
+    }
+  }
 
   return {
     pending_request_id: currentPayload.pending_request_id,
@@ -7920,7 +8139,7 @@ function readQuoteSavePayload() {
 function ensureQuoteCanBeSaved(payload) {
   ensureQuoteClientSelection(payload);
   if (!Array.isArray(payload.quote_items) || !payload.quote_items.length) {
-    throw new Error("Agrega al menos un producto calculado a la cotizacion.");
+    throw new Error("Agrega al menos un producto o define un precio final negociado para cotizacion rapida.");
   }
 }
 
@@ -8615,11 +8834,39 @@ function renderOrderDetailPanel(order) {
 }
 
 function renderOrders(items) {
-  const visibleItems = (items || []).filter((item) => item.status_key !== "cycle_closed");
+  const nowMs = Date.now();
+  const defaultWindowStartMs = nowMs - 72 * 60 * 60 * 1000;
+  const activeDateFilter = String(state.ordersFilterDate || "").trim();
+  const visibleItems = (items || []).filter((item) => {
+    if (item.status_key === "cycle_closed") {
+      return false;
+    }
+    const rawDate = item.last_status_changed_at || item.created_at;
+    const orderDate = new Date(rawDate);
+    if (Number.isNaN(orderDate.getTime())) {
+      return false;
+    }
+    if (activeDateFilter) {
+      return toDateInputValue(orderDate) === activeDateFilter;
+    }
+    return orderDate.getTime() >= defaultWindowStartMs;
+  });
+
+  if (ordersFilterHelp) {
+    ordersFilterHelp.textContent = activeDateFilter
+      ? `Mostrando operaciones del ${formatStoredDate(activeDateFilter)}.`
+      : "Mostrando operaciones de las ultimas 72 horas.";
+  }
+  if (ordersFilterCount) {
+    ordersFilterCount.textContent = `${visibleItems.length} operacion(es) visible(s).`;
+  }
+
   if (!visibleItems.length) {
     state.activeOrderId = null;
     ordersListContainer.className = "catalog-empty";
-    ordersListContainer.innerHTML = "<p>Aun no hay compras abiertas.</p>";
+    ordersListContainer.innerHTML = activeDateFilter
+      ? "<p>No hay operaciones para la fecha seleccionada.</p>"
+      : "<p>No hay operaciones en las ultimas 72 horas.</p>";
     return;
   }
 
@@ -8797,7 +9044,12 @@ async function loadPendingRequests() {
 
 async function loadDashboard() {
   try {
-    const payload = await requestJson(`/api/dashboard?period=${encodeURIComponent(state.dashboardPeriod)}`);
+    const params = new URLSearchParams();
+    params.set("period", state.dashboardPeriod);
+    if (state.dashboardReferenceDate) {
+      params.set("reference_date", state.dashboardReferenceDate);
+    }
+    const payload = await requestJson(`/api/dashboard?${params.toString()}`);
     state.dashboard = payload.item || null;
     renderDashboard(state.dashboard);
   } catch (error) {
@@ -8873,9 +9125,24 @@ async function loadInventoryPurchases() {
 
 async function loadOrders() {
   try {
+    if (ordersListContainer) {
+      ordersListContainer.className = "catalog-empty";
+      ordersListContainer.innerHTML = "<p>Cargando compras...</p>";
+    }
+    const params = new URLSearchParams();
+    if (state.ordersFilterDate) {
+      params.set("date", state.ordersFilterDate);
+    } else {
+      params.set("recent_hours", "72");
+    }
+    params.set("limit", "100");
+    if (state.ordersFilterQuery) {
+      params.set("q", state.ordersFilterQuery);
+    }
+    const ordersQuery = `?${params.toString()}`;
     const [statusesResponse, ordersResponse] = await Promise.all([
       requestJson("/api/order-statuses"),
-      requestJson("/api/orders"),
+      requestJson(`/api/orders${ordersQuery}`),
     ]);
 
     state.orderStatuses = statusesResponse.items || [];
@@ -8888,6 +9155,7 @@ async function loadOrders() {
     );
     renderOrderStatusesAdmin(state.orderStatuses);
     renderOrders(state.orders);
+    loadCollectionsReport();
     renderGlobalSearchResults();
     renderRecentAccesses();
     if (!state.orders.some((item) => item.status_key !== "cycle_closed")) {
@@ -8899,6 +9167,38 @@ async function loadOrders() {
     ordersListContainer.innerHTML = `<p>${error.message}</p>`;
     orderStatusesListContainer.className = "catalog-empty";
     orderStatusesListContainer.innerHTML = `<p>${error.message}</p>`;
+  }
+}
+
+async function loadCollectionsReport() {
+  if (!collectionsReportContainer) {
+    return;
+  }
+  try {
+    collectionsReportContainer.className = "catalog-empty";
+    collectionsReportContainer.innerHTML = "<p>Cargando reporte de cobros...</p>";
+    const params = new URLSearchParams();
+    const selectedClient = String(collectionsClientSelect?.value || "").trim();
+    if (selectedClient) {
+      params.set("client_id", selectedClient);
+    }
+    const minBalance = String(collectionsMinBalanceInput?.value || "0").trim();
+    if (minBalance) {
+      params.set("min_balance_cop", minBalance);
+    }
+    const staleDays = String(collectionsStaleDaysInput?.value || "0").trim();
+    if (staleDays) {
+      params.set("stale_days", staleDays);
+    }
+    const payload = await requestJson(`/api/collections-report?${params.toString()}`);
+    renderCollectionsReport(payload);
+  } catch (error) {
+    if (collectionsSummaryContainer) {
+      collectionsSummaryContainer.className = "results-empty";
+      collectionsSummaryContainer.innerHTML = `<p>${error.message}</p>`;
+    }
+    collectionsReportContainer.className = "catalog-empty";
+    collectionsReportContainer.innerHTML = `<p>${error.message}</p>`;
   }
 }
 
@@ -9848,6 +10148,18 @@ dashboardPeriodSelect.addEventListener("change", async () => {
     await refreshActiveClientDetail();
   }
 });
+
+[dashboardReferenceDateInput, dashboardClientFilterInput, dashboardProductFilterInput, dashboardExpenseFilterInput]
+  .filter(Boolean)
+  .forEach((input) => {
+    input.addEventListener("change", async () => {
+      state.dashboardReferenceDate = String(dashboardReferenceDateInput?.value || "").trim();
+      state.dashboardClientFilter = String(dashboardClientFilterInput?.value || "").trim();
+      state.dashboardProductFilter = String(dashboardProductFilterInput?.value || "").trim();
+      state.dashboardExpenseFilter = String(dashboardExpenseFilterInput?.value || "").trim();
+      await loadDashboard();
+    });
+  });
 
 historyContainer.addEventListener("click", async (event) => {
   const editButton = event.target.closest("[data-edit-quote]");
@@ -11194,6 +11506,7 @@ async function initApp() {
   syncResponsiveShell();
   syncPurchaseTypeUi();
   resetDirectOrderComposerState();
+  restoreDirectOrderDraft();
   resetQuoteEditingState();
   renderQuoteLineItems();
   renderQuoteLiveSummary();
@@ -11225,6 +11538,7 @@ async function initApp() {
     loadDashboard(),
     loadFollowup(),
     loadExpenses(),
+    loadCollectionsReport(),
   ]);
 }
 
@@ -11255,6 +11569,111 @@ if (copyPublicRegistrationUrlButton) {
     } catch (_error) {
       statusMessage.textContent = "No fue posible copiar el enlace publico en este navegador.";
     }
+  });
+}
+
+if (ordersFilterDateInput) {
+  ordersFilterDateInput.addEventListener("change", () => {
+    state.ordersFilterDate = String(ordersFilterDateInput.value || "").trim();
+    loadOrders();
+  });
+}
+if (ordersFilterQueryInput) {
+  ordersFilterQueryInput.addEventListener("input", () => {
+    state.ordersFilterQuery = String(ordersFilterQueryInput.value || "").trim();
+    loadOrders();
+  });
+}
+
+if (ordersFilterResetButton) {
+  ordersFilterResetButton.addEventListener("click", () => {
+    state.ordersFilterDate = "";
+    state.ordersFilterQuery = "";
+    if (ordersFilterDateInput) {
+      ordersFilterDateInput.value = "";
+    }
+    if (ordersFilterQueryInput) {
+      ordersFilterQueryInput.value = "";
+    }
+    loadOrders();
+  });
+}
+if (collectionsClientSelect) {
+  collectionsClientSelect.addEventListener("change", () => {
+    loadCollectionsReport();
+  });
+}
+if (collectionsMinBalanceInput) {
+  collectionsMinBalanceInput.addEventListener("change", () => {
+    loadCollectionsReport();
+  });
+}
+if (collectionsStaleDaysInput) {
+  collectionsStaleDaysInput.addEventListener("change", () => {
+    loadCollectionsReport();
+  });
+}
+if (collectionsClearFiltersButton) {
+  collectionsClearFiltersButton.addEventListener("click", () => {
+    if (collectionsClientSelect) collectionsClientSelect.value = "";
+    if (collectionsMinBalanceInput) collectionsMinBalanceInput.value = "0";
+    if (collectionsStaleDaysInput) collectionsStaleDaysInput.value = "0";
+    loadCollectionsReport();
+  });
+}
+if (collectionsExportCsvButton) {
+  collectionsExportCsvButton.addEventListener("click", async () => {
+    const rows = Array.from(collectionsReportContainer?.querySelectorAll("tbody tr") || []);
+    if (!rows.length) {
+      statusMessage.textContent = "No hay datos de cobro para exportar.";
+      return;
+    }
+    const header = ["Codigo", "Cliente", "Producto", "Estado", "Prioridad", "Venta", "Saldo", "Ultimo cambio"];
+    const csvRows = [header.join(",")];
+    rows.forEach((row) => {
+      const cols = Array.from(row.querySelectorAll("td")).slice(0, 8).map((cell) =>
+        `"${String(cell.textContent || "").trim().replaceAll('"', '""')}"`
+      );
+      csvRows.push(cols.join(","));
+    });
+    const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `cobros_${toDateInputValue(new Date())}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    statusMessage.textContent = "Reporte de cobros exportado en CSV.";
+  });
+}
+
+if (directOrderForm) {
+  directOrderForm.addEventListener("input", () => {
+    saveDirectOrderDraft();
+  });
+}
+
+directOrderTemplateButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    applyDirectOrderTemplate(button.getAttribute("data-direct-order-template"));
+  });
+});
+
+if (collectionsReportContainer) {
+  collectionsReportContainer.addEventListener("click", (event) => {
+    const manageButton = event.target.closest("[data-collections-open-order]");
+    if (!manageButton) {
+      return;
+    }
+    const orderId = manageButton.getAttribute("data-collections-open-order");
+    if (!orderId) {
+      return;
+    }
+    window.location.hash = "compras";
+    state.activeOrderId = Number(orderId);
+    renderOrders(state.orders);
   });
 }
 
@@ -11376,6 +11795,22 @@ document.addEventListener("click", (event) => {
     : getCollapsibleDefaultOpen(panelKey);
   state.collapsiblePanels[panelKey] = !currentValue;
   applyCollapsiblePanel(panelKey);
+});
+
+document.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    globalSearchInput?.focus();
+    globalSearchInput?.select?.();
+    return;
+  }
+  if (event.key === "Escape" && document.activeElement === globalSearchInput) {
+    globalSearchInput.value = "";
+    state.globalSearchQuery = "";
+    if (globalSearchResults) {
+      globalSearchResults.hidden = true;
+    }
+  }
 });
 
 window.addEventListener("resize", syncResponsiveShell);
