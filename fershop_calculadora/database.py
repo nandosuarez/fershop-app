@@ -3696,6 +3696,215 @@ def get_client_detail(
     }
 
 
+def list_collection_accounts(
+    *,
+    company_id: int | None = None,
+    client_id: int | None = None,
+    account_status: str = "pending",
+    limit: int = 300,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    normalized_status = str(account_status or "pending").strip().lower() or "pending"
+    if normalized_status not in {"all", "pending", "paid"}:
+        normalized_status = "pending"
+
+    requested_client_id = None
+    if client_id not in (None, "", 0):
+        try:
+            requested_client_id = int(client_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("El cliente enviado para cobros no es valido.") from exc
+
+    def _match_entity(
+        target_id: int,
+        target_name: str,
+        candidate_id: Any,
+        candidate_name: Any,
+    ) -> bool:
+        clean_candidate_id = str(candidate_id).strip() if candidate_id not in (None, "") else ""
+        if clean_candidate_id:
+            return clean_candidate_id == str(target_id)
+        return str(candidate_name or "").strip().casefold() == target_name.casefold()
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        _ensure_orders_runtime_columns(connection)
+        all_statuses = _list_status_rows(
+            connection,
+            company_id=company_id,
+            include_inactive=True,
+        )
+        active_statuses = [status for status in all_statuses if status["is_active"]]
+
+        client_row = None
+        client_name = ""
+        if requested_client_id is not None:
+            client_row = connection.execute(
+                """
+                SELECT
+                    id,
+                    created_at,
+                    company_id,
+                    name,
+                    identification,
+                    description,
+                    phone,
+                    email,
+                    city,
+                    address,
+                    neighborhood,
+                    whatsapp_phone,
+                    whatsapp_opt_in,
+                    whatsapp_opt_in_at,
+                    preferred_contact_channel,
+                    preferred_payment_method,
+                    interests,
+                    notes,
+                    is_active
+                FROM clients
+                WHERE id = ? AND company_id = ?
+                """,
+                (requested_client_id, company_id),
+            ).fetchone()
+            if client_row is None:
+                return {
+                    "client": None,
+                    "filters": {
+                        "client_id": requested_client_id,
+                        "account_status": normalized_status,
+                    },
+                    "summary": {
+                        "orders_count": 0,
+                        "pending_count": 0,
+                        "paid_count": 0,
+                        "sales_total_cop": 0.0,
+                        "advance_total_cop": 0.0,
+                        "second_payment_total_cop": 0.0,
+                        "collected_total_cop": 0.0,
+                        "balance_due_total_cop": 0.0,
+                    },
+                    "items": [],
+                }
+            client_name = str(client_row["name"] or "").strip()
+
+        order_rows = connection.execute(
+            """
+            SELECT *
+            FROM orders
+            WHERE company_id = ?
+            ORDER BY id DESC
+            """,
+            (company_id,),
+        ).fetchall()
+        matching_order_rows = [
+            row
+            for row in order_rows
+            if client_row is None
+            or _match_entity(
+                int(client_row["id"]),
+                client_name,
+                row["client_id"],
+                row["client_name"],
+            )
+        ]
+        events_by_order_id = _list_order_events(
+            connection,
+            [int(row["id"]) for row in matching_order_rows],
+            all_statuses,
+            company_id,
+        )
+
+    items: list[dict[str, Any]] = []
+    summary = {
+        "orders_count": 0,
+        "pending_count": 0,
+        "paid_count": 0,
+        "sales_total_cop": 0.0,
+        "advance_total_cop": 0.0,
+        "second_payment_total_cop": 0.0,
+        "collected_total_cop": 0.0,
+        "balance_due_total_cop": 0.0,
+    }
+
+    for row in matching_order_rows:
+        serialized = _serialize_order(
+            row,
+            events_by_order_id.get(int(row["id"]), []),
+            all_statuses,
+            active_statuses,
+        )
+        balance_due_cop = float(serialized.get("balance_due_cop") or 0)
+        payment_status_key = "pending" if balance_due_cop > 0 else "paid"
+        if normalized_status != "all" and payment_status_key != normalized_status:
+            continue
+
+        snapshot_input = serialized.get("snapshot", {}).get("input", {})
+        purchase_date = str(snapshot_input.get("purchase_date") or "").strip()
+        if not purchase_date:
+            purchase_date = str(serialized.get("created_at") or "")[:10]
+
+        sale_price_cop = float(serialized.get("sale_price_cop") or 0)
+        advance_paid_cop = float(serialized.get("advance_paid_cop") or 0)
+        second_payment_amount_cop = float(serialized.get("second_payment_amount_cop") or 0)
+        collected_total_cop = advance_paid_cop + second_payment_amount_cop
+
+        summary["orders_count"] += 1
+        summary["sales_total_cop"] += sale_price_cop
+        summary["advance_total_cop"] += advance_paid_cop
+        summary["second_payment_total_cop"] += second_payment_amount_cop
+        summary["collected_total_cop"] += collected_total_cop
+        summary["balance_due_total_cop"] += balance_due_cop
+        if payment_status_key == "pending":
+            summary["pending_count"] += 1
+        else:
+            summary["paid_count"] += 1
+
+        items.append(
+            {
+                "id": serialized["id"],
+                "quote_id": serialized.get("quote_id"),
+                "client_id": serialized.get("client_id"),
+                "client_name": serialized.get("client_name"),
+                "product_id": serialized.get("product_id"),
+                "product_name": serialized.get("product_name"),
+                "purchase_date": purchase_date,
+                "created_at": serialized.get("created_at"),
+                "status_key": serialized.get("status_key"),
+                "status_label": serialized.get("status_label"),
+                "sale_price_cop": sale_price_cop,
+                "advance_paid_cop": advance_paid_cop,
+                "second_payment_amount_cop": second_payment_amount_cop,
+                "collected_total_cop": collected_total_cop,
+                "balance_due_cop": balance_due_cop,
+                "payment_status_key": payment_status_key,
+                "payment_status_label": "Pendiente de pago" if payment_status_key == "pending" else "Pagada",
+                "can_register_payment": balance_due_cop > 0,
+                "second_payment_received_at": serialized.get("second_payment_received_at"),
+                "last_status_changed_at": serialized.get("last_status_changed_at"),
+            }
+        )
+
+    items.sort(
+        key=lambda item: (
+            str(item.get("purchase_date") or ""),
+            str(item.get("created_at") or ""),
+            int(item.get("id") or 0),
+        ),
+        reverse=True,
+    )
+
+    return {
+        "client": _serialize_client_row(client_row) if client_row is not None else None,
+        "filters": {
+            "client_id": requested_client_id,
+            "account_status": normalized_status,
+        },
+        "summary": summary,
+        "items": items[: max(1, min(int(limit or 300), 1000))],
+    }
+
+
 def list_product_categories(
     company_id: int | None = None,
     *,

@@ -9,9 +9,11 @@ from fershop_calculadora.database import (
     create_order_from_quote,
     get_quote,
     invalidate_order,
+    list_collection_accounts,
     list_orders,
     list_order_statuses,
     register_second_payment,
+    save_client,
     save_product,
     update_confirmed_order,
     update_order_travel_transport,
@@ -205,6 +207,87 @@ class OrderPersistenceTests(unittest.TestCase):
         self.assertEqual(updated["status_key"], "quote_confirmed")
         self.assertEqual(updated["balance_due_cop"], order["balance_due_cop"] - 1000000)
         self.assertIn("Fecha reportada: 2026-04-07", updated["events"][-1]["note"])
+
+    def test_list_collection_accounts_filters_by_client_and_payment_status(self) -> None:
+        client = save_client({"name": "Andrea Cobros", "identification": "112233"})
+        other_client = save_client({"name": "Cliente Extra", "identification": "445566"})
+
+        first_quote = QuoteInput.from_dict(
+            {
+                "client_id": client["id"],
+                "client_name": client["name"],
+                "product_name": "Bolso viaje",
+                "price_usd_net": 100,
+                "tax_usa_percent": 7,
+                "travel_cost_usd": 0,
+                "locker_shipping_usd": 10,
+                "exchange_rate_cop": 4000,
+                "local_costs_cop": 50000,
+                "desired_margin_percent": 30,
+                "advance_percent": 50,
+            }
+        )
+        first_result = calculate_quote(first_quote)
+        first_record = database.save_quote(first_quote.to_dict(), first_result)
+        pending_order, _ = create_order_from_quote(first_record["id"])
+
+        second_quote = QuoteInput.from_dict(
+            {
+                "client_id": client["id"],
+                "client_name": client["name"],
+                "product_name": "Zapato casual",
+                "price_usd_net": 90,
+                "tax_usa_percent": 7,
+                "travel_cost_usd": 0,
+                "locker_shipping_usd": 8,
+                "exchange_rate_cop": 4000,
+                "local_costs_cop": 40000,
+                "desired_margin_percent": 30,
+                "advance_percent": 40,
+            }
+        )
+        second_result = calculate_quote(second_quote)
+        second_record = database.save_quote(second_quote.to_dict(), second_result)
+        paid_order, _ = create_order_from_quote(second_record["id"])
+        paid_order = register_second_payment(
+            paid_order["id"],
+            amount_cop=paid_order["balance_due_cop"],
+            received_at="2026-05-03",
+        )
+
+        other_quote = QuoteInput.from_dict(
+            {
+                "client_id": other_client["id"],
+                "client_name": other_client["name"],
+                "product_name": "Reloj",
+                "price_usd_net": 60,
+                "tax_usa_percent": 7,
+                "travel_cost_usd": 0,
+                "locker_shipping_usd": 6,
+                "exchange_rate_cop": 4000,
+                "local_costs_cop": 30000,
+                "desired_margin_percent": 30,
+                "advance_percent": 50,
+            }
+        )
+        other_result = calculate_quote(other_quote)
+        other_record = database.save_quote(other_quote.to_dict(), other_result)
+        create_order_from_quote(other_record["id"], advance_paid_cop=300000)
+
+        all_accounts = list_collection_accounts(client_id=client["id"], account_status="all")
+        pending_accounts = list_collection_accounts(client_id=client["id"], account_status="pending")
+        paid_accounts = list_collection_accounts(client_id=client["id"], account_status="paid")
+
+        self.assertEqual(all_accounts["client"]["id"], client["id"])
+        self.assertEqual(len(all_accounts["items"]), 2)
+        self.assertEqual(all_accounts["summary"]["pending_count"], 1)
+        self.assertEqual(all_accounts["summary"]["paid_count"], 1)
+        self.assertEqual(len(pending_accounts["items"]), 1)
+        self.assertEqual(pending_accounts["items"][0]["id"], pending_order["id"])
+        self.assertEqual(pending_accounts["items"][0]["payment_status_key"], "pending")
+        self.assertEqual(len(paid_accounts["items"]), 1)
+        self.assertEqual(paid_accounts["items"][0]["id"], paid_order["id"])
+        self.assertEqual(paid_accounts["items"][0]["payment_status_key"], "paid")
 
     def test_create_order_from_quote_can_override_real_purchase_price(self) -> None:
         quote = QuoteInput.from_dict(

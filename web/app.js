@@ -27,6 +27,12 @@ const followupSummaryContainer = document.getElementById("followup-summary");
 const followupAgendaContainer = document.getElementById("followup-agenda");
 const followupPendingContainer = document.getElementById("followup-pending");
 const followupPipelineContainer = document.getElementById("followup-pipeline");
+const collectionsClientSelect = document.getElementById("collections-client-select");
+const collectionsClientIdInput = document.getElementById("collections-client-id");
+const collectionsAccountFilter = document.getElementById("collections-account-filter");
+const collectionsClearClientButton = document.getElementById("collections-clear-client");
+const collectionsSummaryContainer = document.getElementById("collections-summary");
+const collectionsListContainer = document.getElementById("collections-list");
 const globalSearchInput = document.getElementById("global-search-input");
 const globalSearchResults = document.getElementById("global-search-results");
 const clientDetailSection = document.getElementById("client-detail-section");
@@ -156,6 +162,7 @@ const state = {
   dashboardPeriod: "daily",
   dashboard: null,
   followup: null,
+  collections: null,
   activeModule: "dashboard",
   activeMenuGroup: "overview",
   menuOpen: false,
@@ -368,6 +375,7 @@ function getDashboardPeriodLabel(periodKey) {
 const MODULE_ALIASES = {
   dashboard: "dashboard",
   seguimiento: "seguimiento",
+  cobros: "cobros",
   pendientes: "pendientes",
   comercial: "comercial",
   cotizacion: "comercial",
@@ -385,6 +393,7 @@ const MODULE_ALIASES = {
 const MODULE_GROUP_ALIASES = {
   dashboard: "overview",
   seguimiento: "commercial",
+  cobros: "finance",
   pendientes: "commercial",
   comercial: "commercial",
   abastecimiento: "purchase",
@@ -438,6 +447,10 @@ function setActiveModule(moduleKey) {
 
   if (state.menuOpen) {
     setMenuOpen(false);
+  }
+
+  if (moduleKey === "cobros" && collectionsSummaryContainer && state.session) {
+    loadCollections();
   }
 }
 
@@ -761,6 +774,50 @@ function openOrderDetailById(orderId, { scroll = true } = {}) {
   if (scroll) {
     ordersListContainer?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+}
+
+function getCollectionsSelectedClient() {
+  const rawClientId = String(collectionsClientIdInput?.value || "").trim();
+  if (!rawClientId) {
+    return null;
+  }
+  return state.clients.find((item) => String(item.id) === rawClientId) || null;
+}
+
+function clearCollectionsClientSelection() {
+  if (collectionsClientIdInput) {
+    collectionsClientIdInput.value = "";
+  }
+  if (collectionsClientSelect) {
+    collectionsClientSelect.value = "";
+  }
+}
+
+function applyClientToCollections(client) {
+  if (!client) {
+    clearCollectionsClientSelection();
+    return;
+  }
+  if (collectionsClientIdInput) {
+    collectionsClientIdInput.value = String(client.id || "");
+  }
+  if (collectionsClientSelect) {
+    collectionsClientSelect.value = clientSearchLabel(client);
+  }
+}
+
+async function openCollectionsForClient(clientId, { accountStatus = "all" } = {}) {
+  const client = state.clients.find((item) => String(item.id) === String(clientId));
+  if (!client) {
+    throw new Error("No encontramos ese cliente para revisar sus cobros.");
+  }
+  applyClientToCollections(client);
+  if (collectionsAccountFilter) {
+    collectionsAccountFilter.value = accountStatus;
+  }
+  focusModule("cobros");
+  await loadCollections();
+  collectionsSummaryContainer?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function openGlobalSearchResult(type, id) {
@@ -5113,6 +5170,7 @@ function renderClientDetail(detail) {
         </p>
       </div>
       <div class="client-detail-actions">
+        <button class="secondary" type="button" data-open-client-collections="${client.id}">Ver cobros</button>
         <button class="primary" type="button" data-use-client-detail="${client.id}">Usar en cotizacion</button>
       </div>
     </section>
@@ -7055,6 +7113,141 @@ function renderFollowup(summary) {
   `;
 }
 
+function renderCollections(payload) {
+  if (!collectionsSummaryContainer || !collectionsListContainer) {
+    return;
+  }
+
+  const data = payload || {};
+  const summary = data.summary || {};
+  const items = data.items || [];
+  const selectedClient = data.client || null;
+  const filterKey = String(data.filters?.account_status || collectionsAccountFilter?.value || "pending");
+  const filterLabels = {
+    all: "todas las cuentas",
+    pending: "cuentas pendientes",
+    paid: "cuentas pagadas",
+  };
+  const activeFilterLabel = filterLabels[filterKey] || "cuentas";
+
+  collectionsSummaryContainer.className = "collections-summary-shell";
+  collectionsSummaryContainer.innerHTML = `
+    <section class="orders-board-summary">
+      ${makeMetricCard("Cliente", escapeHtml(selectedClient?.name || "Cartera general"), selectedClient ? "Historial completo del cliente seleccionado" : "Vista general para gestionar cobros")}
+      ${makeMetricCard("Compras visibles", String(summary.orders_count || 0), `Listado filtrado por ${activeFilterLabel}`)}
+      ${makeMetricCard("Pendientes", String(summary.pending_count || 0), "Compras que aun tienen saldo por cobrar")}
+      ${makeMetricCard("Pagadas", String(summary.paid_count || 0), "Compras con saldo completamente cubierto")}
+      ${makeMetricCard("Anticipos", formatCop(summary.advance_total_cop), "Primer pago recibido")}
+      ${makeMetricCard("Segundo pago", formatCop(summary.second_payment_total_cop), "Pagos complementarios ya registrados")}
+      ${makeMetricCard("Recaudado", formatCop(summary.collected_total_cop), "Dinero total recibido")}
+      ${makeMetricCard("Pendiente", formatCop(summary.balance_due_total_cop), "Saldo pendiente por cobrar")}
+    </section>
+  `;
+
+  if (!items.length) {
+    collectionsListContainer.className = "catalog-empty";
+    collectionsListContainer.innerHTML = `<p>No encontramos ${escapeHtml(activeFilterLabel)} en este momento.</p>`;
+    return;
+  }
+
+  collectionsListContainer.className = "collections-results";
+  collectionsListContainer.innerHTML = `
+    <div class="orders-table-wrap">
+      <table class="orders-table collections-table">
+        <thead>
+          <tr>
+            <th>Codigo</th>
+            <th>Fecha</th>
+            ${selectedClient ? "" : "<th>Cliente</th>"}
+            <th>Producto</th>
+            <th>Precio</th>
+            <th>Anticipo</th>
+            <th>Segundo pago</th>
+            <th>Pendiente</th>
+            <th>Cuenta</th>
+            <th>Estado compra</th>
+            <th>Accion</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items
+            .map(
+              (item) => `
+                <tr>
+                  <td>
+                    <button type="button" class="order-code-button" data-collection-view-order="${item.id}">
+                      ${escapeHtml(formatOrderCode(item.id))}
+                    </button>
+                  </td>
+                  <td>${escapeHtml(formatStoredDate(item.purchase_date || item.created_at))}</td>
+                  ${selectedClient ? "" : `<td>${escapeHtml(item.client_name || "-")}</td>`}
+                  <td>${escapeHtml(item.product_name || "-")}</td>
+                  <td>${formatCop(item.sale_price_cop)}</td>
+                  <td>${formatCop(item.advance_paid_cop)}</td>
+                  <td>${formatCop(item.second_payment_amount_cop)}</td>
+                  <td>${formatCop(item.balance_due_cop)}</td>
+                  <td>${escapeHtml(item.payment_status_label || "-")}</td>
+                  <td>${escapeHtml(item.status_label || "-")}</td>
+                  <td class="collections-action-cell">
+                    ${
+                      item.can_register_payment
+                        ? `
+                          <div class="collections-payment-box">
+                            <input
+                              type="text"
+                              inputmode="numeric"
+                              value="${escapeHtml(String(Math.round(item.balance_due_cop || 0)))}"
+                              placeholder="Valor"
+                              data-collection-payment-amount="${item.id}"
+                            />
+                            <input
+                              type="date"
+                              value="${escapeHtml(
+                                item.second_payment_received_at
+                                  ? toDateInputValue(item.second_payment_received_at)
+                                  : toDateInputValue(new Date())
+                              )}"
+                              data-collection-payment-date="${item.id}"
+                            />
+                            <div class="collections-payment-actions">
+                              <button
+                                class="primary"
+                                type="button"
+                                data-collection-register-payment="${item.id}"
+                              >
+                                Registrar
+                              </button>
+                              <button
+                                class="secondary"
+                                type="button"
+                                data-collection-view-order="${item.id}"
+                              >
+                                Ver compra
+                              </button>
+                            </div>
+                          </div>
+                        `
+                        : `
+                          <button
+                            class="secondary"
+                            type="button"
+                            data-collection-view-order="${item.id}"
+                          >
+                            Ver compra
+                          </button>
+                        `
+                    }
+                  </td>
+                </tr>
+              `
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function renderOrderStatusesAdmin(items) {
   if (!items.length) {
     orderStatusesListContainer.className = "catalog-empty";
@@ -8843,6 +9036,30 @@ async function loadFollowup() {
   }
 }
 
+async function loadCollections() {
+  if (!collectionsSummaryContainer || !collectionsListContainer) {
+    return;
+  }
+
+  try {
+    const params = new URLSearchParams();
+    const client = getCollectionsSelectedClient();
+    if (client?.id) {
+      params.set("client_id", client.id);
+    }
+    params.set("account_status", collectionsAccountFilter?.value || "pending");
+    const payload = await requestJson(`/api/collections?${params.toString()}`);
+    state.collections = payload.item || null;
+    renderCollections(state.collections);
+  } catch (error) {
+    state.collections = null;
+    collectionsSummaryContainer.className = "results-empty";
+    collectionsSummaryContainer.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
+    collectionsListContainer.className = "catalog-empty";
+    collectionsListContainer.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
+  }
+}
+
 async function loadExpenses() {
   try {
     const payload = await requestJson("/api/expenses");
@@ -9057,6 +9274,43 @@ if (directOrderClientSelect) {
     }
     directOrderClientSelect.value = "";
     clearDirectOrderClientSelection();
+  });
+}
+
+if (collectionsClientSelect) {
+  collectionsClientSelect.addEventListener("change", async () => {
+    const client = findClientBySearchValue(collectionsClientSelect.value);
+    if (client) {
+      applyClientToCollections(client);
+      if (collectionsAccountFilter) {
+        collectionsAccountFilter.value = "all";
+      }
+      await loadCollections();
+      statusMessage.textContent = "Cliente aplicado al modulo de cobros.";
+      return;
+    }
+    clearCollectionsClientSelection();
+    if (collectionsAccountFilter) {
+      collectionsAccountFilter.value = "pending";
+    }
+    await loadCollections();
+  });
+}
+
+if (collectionsClearClientButton) {
+  collectionsClearClientButton.addEventListener("click", async () => {
+    clearCollectionsClientSelection();
+    if (collectionsAccountFilter) {
+      collectionsAccountFilter.value = "pending";
+    }
+    await loadCollections();
+    statusMessage.textContent = "Vista de cobros reiniciada a cartera general.";
+  });
+}
+
+if (collectionsAccountFilter) {
+  collectionsAccountFilter.addEventListener("change", async () => {
+    await loadCollections();
   });
 }
 
@@ -10819,6 +11073,71 @@ ordersListContainer.addEventListener("click", async (event) => {
   }
 });
 
+if (collectionsListContainer) {
+  collectionsListContainer.addEventListener("click", async (event) => {
+    const viewOrderButton = event.target.closest("[data-collection-view-order]");
+    if (viewOrderButton) {
+      const orderId = viewOrderButton.getAttribute("data-collection-view-order");
+      if (orderId) {
+        openOrderDetailById(orderId);
+      }
+      return;
+    }
+
+    const paymentButton = event.target.closest("[data-collection-register-payment]");
+    if (!paymentButton) {
+      return;
+    }
+
+    const orderId = paymentButton.getAttribute("data-collection-register-payment");
+    if (!orderId) {
+      return;
+    }
+
+    const amountInput = collectionsListContainer.querySelector(
+      `[data-collection-payment-amount="${orderId}"]`
+    );
+    const dateInput = collectionsListContainer.querySelector(
+      `[data-collection-payment-date="${orderId}"]`
+    );
+
+    const amountCop = parseCurrencyInput(amountInput ? amountInput.value : "");
+    if (amountCop === null) {
+      statusMessage.textContent = "Ingresa un valor valido para registrar el pago.";
+      return;
+    }
+
+    const receivedAt = String(dateInput ? dateInput.value : "").trim();
+    if (!receivedAt) {
+      statusMessage.textContent = "Selecciona la fecha del pago recibido.";
+      return;
+    }
+
+    const originalText = paymentButton.textContent;
+    paymentButton.disabled = true;
+    paymentButton.textContent = "Registrando...";
+
+    try {
+      await requestJson(`/api/orders/${orderId}/second-payment`, {
+        method: "POST",
+        body: JSON.stringify({
+          amount_cop: amountCop,
+          received_at: receivedAt,
+        }),
+      });
+      await Promise.all([loadOrders(), loadDashboard(), loadFollowup(), loadCollections()]);
+      await refreshActiveClientDetail();
+      await refreshActiveProductDetail();
+      statusMessage.textContent = "Pago registrado desde el modulo de cobros.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    } finally {
+      paymentButton.disabled = false;
+      paymentButton.textContent = originalText;
+    }
+  });
+}
+
 ordersListContainer.addEventListener("change", async (event) => {
   const imageInput = event.target.closest("[data-order-image-input]");
   if (!imageInput) {
@@ -10880,6 +11199,18 @@ if (clientDetailContainer) {
           copyButton.disabled = false;
           copyButton.textContent = originalText;
         }, 1500);
+      }
+      return;
+    }
+
+    const collectionsButton = event.target.closest("[data-open-client-collections]");
+    if (collectionsButton) {
+      const clientId = collectionsButton.getAttribute("data-open-client-collections");
+      try {
+        await openCollectionsForClient(clientId, { accountStatus: "all" });
+        statusMessage.textContent = "Cobros abiertos desde la ficha del cliente.";
+      } catch (error) {
+        statusMessage.textContent = error.message;
       }
       return;
     }
@@ -11072,6 +11403,20 @@ function setupAutocomplete() {
       },
       emptyMessage: "No hay clientes con esas letras",
     }),
+    createAutocompleteController(collectionsClientSelect, {
+      getItems: () => getActiveClients(),
+      getLabel: clientSearchLabel,
+      getSearchText: clientSearchLabel,
+      onSelect: async (client) => {
+        applyClientToCollections(client);
+        if (collectionsAccountFilter) {
+          collectionsAccountFilter.value = "all";
+        }
+        await loadCollections();
+        statusMessage.textContent = "Cliente aplicado al modulo de cobros.";
+      },
+      emptyMessage: "No hay clientes con esas letras",
+    }),
     createAutocompleteController(productSelect, {
       getItems: () => getActiveProducts(),
       getLabel: productSearchLabel,
@@ -11221,6 +11566,7 @@ async function initApp() {
     loadPendingRequests(),
     loadInventoryPurchases(),
     loadOrders(),
+    loadCollections(),
     loadWhatsAppAdmin(),
     loadDashboard(),
     loadFollowup(),

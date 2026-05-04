@@ -144,6 +144,10 @@
               <span class="menu-group-indicator" aria-hidden="true"></span>
             </button>
             <div class="menu-group-body" data-menu-group-body="finance" hidden>
+              <a class="module-link" data-module-link="cobros" href="#cobros">
+                <strong>Cobros y cartera</strong>
+                <span>Gestiona saldos pendientes y revisa lo comprado por cada cliente</span>
+              </a>
               <a class="module-link" data-module-link="gastos" href="#gastos">
                 <strong>Gastos del negocio</strong>
                 <span>Registra salidas de dinero y alimenta el dashboard</span>
@@ -1117,6 +1121,63 @@
               </div>
               <div id="orders-list" class="catalog-empty">
                 <p>Aun no hay compras abiertas.</p>
+              </div>
+            </section>
+          </section>
+
+          <section id="cobros" class="module-page" data-module-page="cobros">
+            <header class="module-page-header">
+              <p class="module-page-kicker">Finanzas</p>
+              <h2>Cobros y cartera</h2>
+              <p>
+                Revisa todo lo comprado por un cliente, filtra cuentas pagadas o pendientes y
+                registra el segundo pago desde un solo lugar.
+              </p>
+            </header>
+
+            <section class="panel collections-panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Gestion de cobros</h2>
+                  <p>Si no eliges cliente, veras la cartera general. Si eliges uno, ves todo su historial de compra.</p>
+                </div>
+              </div>
+
+              <div class="collections-filter-grid">
+                <label>
+                  <span>Cliente</span>
+                  <input
+                    id="collections-client-select"
+                    type="text"
+                    placeholder="Busca un cliente guardado"
+                    autocomplete="off"
+                  />
+                </label>
+
+                <input id="collections-client-id" type="hidden" />
+
+                <label>
+                  <span>Estado de cuenta</span>
+                  <select id="collections-account-filter">
+                    <option value="pending" selected>Pendiente</option>
+                    <option value="all">Todos</option>
+                    <option value="paid">Pagadas</option>
+                  </select>
+                </label>
+
+                <div class="collections-filter-actions">
+                  <button id="collections-clear-client" class="secondary" type="button">
+                    Limpiar cliente
+                  </button>
+                </div>
+              </div>
+
+              <div id="collections-summary" class="results-empty">
+                <p>Aqui veras el resumen de cartera y compras del cliente seleccionado.</p>
+              </div>
+
+              <div id="collections-list" class="catalog-empty">
+                <p>Aun no hay cuentas por mostrar en este filtro.</p>
               </div>
             </section>
           </section>

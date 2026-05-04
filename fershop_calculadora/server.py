@@ -16,6 +16,7 @@ from .database import (
     authenticate_user,
     build_followup_summary,
     build_dashboard_summary,
+    list_collection_accounts,
     create_product_category,
     create_product_store,
     create_direct_order,
@@ -476,6 +477,38 @@ class FerShopHandler(BaseHTTPRequestHandler):
             self._send_json(
                 HTTPStatus.OK,
                 {"items": list_orders(company_id=session["company"]["id"])},
+            )
+            return
+
+        if parsed.path == "/api/collections":
+            session = self._require_session()
+            if session is None:
+                return
+            params = parse_qs(parsed.query)
+            raw_client_id = str(params.get("client_id", [""])[0] or "").strip()
+            raw_account_status = str(params.get("account_status", ["pending"])[0] or "pending").strip()
+            raw_limit = params.get("limit", ["300"])[0]
+            client_id = None
+            if raw_client_id:
+                try:
+                    client_id = int(raw_client_id)
+                except ValueError:
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"error": "El cliente enviado no es valido."})
+                    return
+            try:
+                limit = max(1, min(int(raw_limit), 1000))
+            except ValueError:
+                limit = 300
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "item": list_collection_accounts(
+                        company_id=session["company"]["id"],
+                        client_id=client_id,
+                        account_status=raw_account_status,
+                        limit=limit,
+                    )
+                },
             )
             return
 

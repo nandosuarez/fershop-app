@@ -1664,6 +1664,33 @@ button:disabled {
   gap: 18px;
 }
 
+.collections-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.collections-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.4fr) minmax(180px, 0.8fr) auto;
+  gap: 14px;
+  align-items: end;
+}
+
+.collections-filter-actions {
+  display: flex;
+  align-items: end;
+}
+
+.collections-summary-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.collections-results {
+  display: grid;
+  gap: 14px;
+}
+
 .orders-table-wrap {
   overflow-x: auto;
   border-radius: 18px;
@@ -1702,6 +1729,26 @@ button:disabled {
 
 .orders-primary-action-cell {
   min-width: 180px;
+}
+
+.collections-action-cell {
+  min-width: 230px;
+}
+
+.collections-payment-box {
+  display: grid;
+  gap: 10px;
+  min-width: 220px;
+}
+
+.collections-payment-box input {
+  min-width: 0;
+}
+
+.collections-payment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .orders-inline-action {
@@ -2902,8 +2949,13 @@ button:disabled {
   .quote-mode-bar,
   .inline-input-action,
   .quote-line-actions,
-  .pending-actions-row {
+  .pending-actions-row,
+  .collections-payment-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .collections-filter-grid {
+    grid-template-columns: 1fr;
   }
 }
