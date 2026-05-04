@@ -238,6 +238,24 @@
                     </select>
                   </label>
                 </div>
+                <div class="field-grid" style="margin-bottom: 1rem;">
+                  <label>
+                    <span>Fecha de corte</span>
+                    <input id="dashboard-reference-date" type="date" />
+                  </label>
+                  <label>
+                    <span>Filtro cliente</span>
+                    <input id="dashboard-client-filter" type="search" placeholder="Nombre cliente" />
+                  </label>
+                  <label>
+                    <span>Filtro producto</span>
+                    <input id="dashboard-product-filter" type="search" placeholder="Nombre producto" />
+                  </label>
+                  <label>
+                    <span>Categoria de gasto</span>
+                    <input id="dashboard-expense-filter" type="search" placeholder="Publicidad, viaje, etc." />
+                  </label>
+                </div>
 
                 <div id="dashboard-summary" class="results-empty">
                   <p>Aqui veras el resumen financiero del negocio.</p>
@@ -352,7 +370,7 @@
               <section class="panel form-panel quote-form-panel">
                 <div class="panel-header">
                   <h2>Datos de la cotizacion</h2>
-                  <p>Selecciona cliente y producto del catalogo. La cotizacion se recalcula sola mientras ajustas valores.</p>
+                  <p>Modo rapido: selecciona cliente, producto, descripcion y precio final de venta. Si quieres, tambien puedes usar la calculadora completa.</p>
                 </div>
 
                 <form id="quote-form" class="quote-form">
@@ -545,7 +563,7 @@
                     <button type="button" id="add-quote-item-button">Agregar producto a la cotizacion</button>
                     <button type="button" id="create-order-button">Crear compra</button>
                     <button type="button" id="save-button" class="secondary" disabled>
-                      Guardar cotizacion
+                      Guardar cotizacion (rapida o completa)
                     </button>
                   </div>
                 </form>
@@ -944,6 +962,26 @@
                   </section>
 
                   <div class="field-grid">
+                    <section class="quote-items-panel" style="grid-column: 1 / -1;">
+                      <div class="panel-header panel-header-inline">
+                        <div>
+                          <h3>Plantillas rapidas</h3>
+                          <p>Precarga valores recomendados para acelerar la compra.</p>
+                        </div>
+                      </div>
+                      <div class="actions">
+                        <button type="button" class="secondary" data-direct-order-template="online">
+                          Compra online estandar
+                        </button>
+                        <button type="button" class="secondary" data-direct-order-template="travel">
+                          Compra en viaje
+                        </button>
+                        <button type="button" class="secondary" data-direct-order-template="mixed">
+                          Compra mixta
+                        </button>
+                      </div>
+                    </section>
+
                     <label>
                       <span>Tipo de compra general</span>
                       <select name="purchase_type" id="direct-order-purchase-type" required>
@@ -1119,9 +1157,66 @@
                 <h2>Seguimiento operativo</h2>
                 <p>Lista activa de compras por mover, con codigo clickeable y siguiente paso al final.</p>
               </div>
+              <div class="field-grid" style="margin-bottom: 1rem;">
+                <label>
+                  <span>Buscar por fecha</span>
+                  <input id="orders-filter-date" type="date" />
+                </label>
+                <label>
+                  <span>Buscar compra</span>
+                  <input id="orders-filter-query" type="search" placeholder="Codigo, cliente, producto o estado" />
+                </label>
+                <label>
+                  <span>Filtro rapido</span>
+                  <button id="orders-filter-reset" type="button" class="secondary">
+                    Volver a ultimas 72 horas
+                  </button>
+                </label>
+              </div>
+              <p id="orders-filter-help" class="catalog-card-note">
+                Mostrando operaciones de las ultimas 72 horas.
+              </p>
+              <p id="orders-filter-count" class="catalog-card-note">0 operaciones visibles.</p>
               <div id="orders-list" class="catalog-empty">
                 <p>Aun no hay compras abiertas.</p>
               </div>
+
+              <section class="panel dashboard-panel" style="margin-top: 1.25rem;">
+                <div class="panel-header">
+                  <h2>Modulo de cobros por cliente</h2>
+                  <p>Selecciona un cliente y revisa compras pendientes por pagar.</p>
+                </div>
+                <div class="field-grid" style="margin-bottom: 1rem;">
+                  <label>
+                    <span>Cliente</span>
+                    <select id="collections-client-select">
+                      <option value="">Todos con saldo pendiente</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Saldo minimo (COP)</span>
+                    <input id="collections-min-balance" type="number" min="0" step="1" value="0" />
+                  </label>
+                  <label>
+                    <span>Sin movimiento desde (dias)</span>
+                    <input id="collections-stale-days" type="number" min="0" step="1" value="0" />
+                  </label>
+                </div>
+                <div class="actions" style="margin-bottom: 1rem;">
+                  <button id="collections-export-csv" type="button" class="secondary">
+                    Exportar cobros CSV
+                  </button>
+                  <button id="collections-clear-filters" type="button" class="secondary">
+                    Limpiar filtros de cobros
+                  </button>
+                </div>
+                <div id="collections-summary" class="results-empty" style="margin-bottom: 1rem;">
+                  <p>Resumen de cartera pendiente.</p>
+                </div>
+                <div id="collections-report" class="catalog-empty">
+                  <p>Aun no hay datos de cobros para mostrar.</p>
+                </div>
+              </section>
             </section>
           </section>
 
