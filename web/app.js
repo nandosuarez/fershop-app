@@ -23,13 +23,6 @@ const ordersFilterQueryInput = document.getElementById("orders-filter-query");
 const ordersFilterResetButton = document.getElementById("orders-filter-reset");
 const ordersFilterHelp = document.getElementById("orders-filter-help");
 const ordersFilterCount = document.getElementById("orders-filter-count");
-const collectionsClientSelect = document.getElementById("collections-client-select");
-const collectionsReportContainer = document.getElementById("collections-report");
-const collectionsMinBalanceInput = document.getElementById("collections-min-balance");
-const collectionsStaleDaysInput = document.getElementById("collections-stale-days");
-const collectionsExportCsvButton = document.getElementById("collections-export-csv");
-const collectionsClearFiltersButton = document.getElementById("collections-clear-filters");
-const collectionsSummaryContainer = document.getElementById("collections-summary");
 const dashboardPeriodSelect = document.getElementById("dashboard-period");
 const dashboardReferenceDateInput = document.getElementById("dashboard-reference-date");
 const dashboardClientFilterInput = document.getElementById("dashboard-client-filter");
@@ -7639,70 +7632,6 @@ function renderOrders(items) {
   `;
 }
 
-function renderCollectionsReport(payload) {
-  if (!collectionsReportContainer || !collectionsClientSelect) {
-    return;
-  }
-  const clients = payload?.clients || [];
-  const selectedClientId = String(payload?.selected_client_id || "");
-  collectionsClientSelect.innerHTML = `
-    <option value="">Todos con saldo pendiente</option>
-    ${clients.map((item) => `<option value="${item.client_id}" ${String(item.client_id) === selectedClientId ? "selected" : ""}>${escapeHtml(item.client_name)} (${formatCop(item.balance_due_cop)})</option>`).join("")}
-  `;
-
-  const orders = payload?.orders || [];
-  const metrics = payload?.metrics || {};
-  if (collectionsSummaryContainer) {
-    collectionsSummaryContainer.className = "results-ready";
-    collectionsSummaryContainer.innerHTML = `
-      <div class="metrics-grid dashboard-metrics-grid">
-        ${makeMetricCard("Clientes con saldo", String(metrics.clients_with_balance_count || 0), "Clientes con cartera pendiente")}
-        ${makeMetricCard("Compras por cobrar", String(metrics.pending_orders_count || 0), "Compras activas con saldo pendiente")}
-        ${makeMetricCard("Cartera pendiente", formatCop(metrics.total_balance_due_cop || 0), "Total por recuperar")}
-        ${makeMetricCard("Saldo promedio", formatCop(metrics.average_balance_due_cop || 0), "Promedio por compra pendiente")}
-        ${makeMetricCard("Cartera alta prioridad", formatCop(metrics.high_priority_balance_due_cop || 0), "Saldo de compras con prioridad alta")}
-      </div>
-    `;
-  }
-  if (!orders.length) {
-    collectionsReportContainer.className = "catalog-empty";
-    collectionsReportContainer.innerHTML = "<p>No hay compras pendientes por pagar para este filtro.</p>";
-    return;
-  }
-  collectionsReportContainer.className = "orders-list";
-  const classifyPriority = (order) => {
-    const balance = Number(order.balance_due_cop || 0);
-    const rawDate = order.last_status_changed_at || order.created_at;
-    const ageDays = rawDate ? Math.max(0, Math.floor((Date.now() - new Date(rawDate).getTime()) / 86400000)) : 0;
-    if (balance >= 1000000 || ageDays >= 14) return { key: "high", label: "Alta" };
-    if (balance >= 300000 || ageDays >= 7) return { key: "medium", label: "Media" };
-    return { key: "low", label: "Baja" };
-  };
-  collectionsReportContainer.innerHTML = `
-    <div class="orders-table-wrap">
-      <table class="orders-table">
-        <thead><tr><th>Codigo</th><th>Cliente</th><th>Producto</th><th>Estado</th><th>Prioridad</th><th>Venta</th><th>Saldo</th><th>Ultimo cambio</th><th>Accion</th></tr></thead>
-        <tbody>
-          ${orders.map((order) => {
-            const priority = classifyPriority(order);
-            return `<tr>
-            <td>${escapeHtml(formatOrderCode(order.id))}</td>
-            <td>${escapeHtml(order.client_name || "-")}</td>
-            <td>${escapeHtml(order.product_name || "-")}</td>
-            <td>${escapeHtml(order.status_label || "-")}</td>
-            <td><span class="catalog-chip collections-priority-chip collections-priority-${priority.key}">${priority.label}</span></td>
-            <td>${formatCop(order.sale_price_cop)}</td>
-            <td>${formatCop(order.balance_due_cop)}</td>
-            <td>${escapeHtml(formatStoredDate(order.last_status_changed_at || order.created_at))}</td>
-            <td><button type="button" class="secondary" data-collections-open-order="${order.id}">Gestionar</button></td>
-          </tr>`;
-          }).join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
 function clearPendingClientSelection() {
   if (pendingForm?.elements?.namedItem("client_id")) {
     pendingForm.elements.namedItem("client_id").value = "";
@@ -9372,7 +9301,6 @@ async function loadOrders() {
     );
     renderOrderStatusesAdmin(state.orderStatuses);
     renderOrders(state.orders);
-    loadCollectionsReport();
     renderGlobalSearchResults();
     renderRecentAccesses();
     if (!state.orders.some((item) => item.status_key !== "cycle_closed")) {
@@ -9384,38 +9312,6 @@ async function loadOrders() {
     ordersListContainer.innerHTML = `<p>${error.message}</p>`;
     orderStatusesListContainer.className = "catalog-empty";
     orderStatusesListContainer.innerHTML = `<p>${error.message}</p>`;
-  }
-}
-
-async function loadCollectionsReport() {
-  if (!collectionsReportContainer) {
-    return;
-  }
-  try {
-    collectionsReportContainer.className = "catalog-empty";
-    collectionsReportContainer.innerHTML = "<p>Cargando reporte de cobros...</p>";
-    const params = new URLSearchParams();
-    const selectedClient = String(collectionsClientSelect?.value || "").trim();
-    if (selectedClient) {
-      params.set("client_id", selectedClient);
-    }
-    const minBalance = String(collectionsMinBalanceInput?.value || "0").trim();
-    if (minBalance) {
-      params.set("min_balance_cop", minBalance);
-    }
-    const staleDays = String(collectionsStaleDaysInput?.value || "0").trim();
-    if (staleDays) {
-      params.set("stale_days", staleDays);
-    }
-    const payload = await requestJson(`/api/collections-report?${params.toString()}`);
-    renderCollectionsReport(payload);
-  } catch (error) {
-    if (collectionsSummaryContainer) {
-      collectionsSummaryContainer.className = "results-empty";
-      collectionsSummaryContainer.innerHTML = `<p>${error.message}</p>`;
-    }
-    collectionsReportContainer.className = "catalog-empty";
-    collectionsReportContainer.innerHTML = `<p>${error.message}</p>`;
   }
 }
 
@@ -11884,7 +11780,6 @@ async function initApp() {
     loadDashboard(),
     loadFollowup(),
     loadExpenses(),
-    loadCollectionsReport(),
   ]);
 }
 
@@ -11944,57 +11839,6 @@ if (ordersFilterResetButton) {
     loadOrders();
   });
 }
-if (collectionsClientSelect) {
-  collectionsClientSelect.addEventListener("change", () => {
-    loadCollectionsReport();
-  });
-}
-if (collectionsMinBalanceInput) {
-  collectionsMinBalanceInput.addEventListener("change", () => {
-    loadCollectionsReport();
-  });
-}
-if (collectionsStaleDaysInput) {
-  collectionsStaleDaysInput.addEventListener("change", () => {
-    loadCollectionsReport();
-  });
-}
-if (collectionsClearFiltersButton) {
-  collectionsClearFiltersButton.addEventListener("click", () => {
-    if (collectionsClientSelect) collectionsClientSelect.value = "";
-    if (collectionsMinBalanceInput) collectionsMinBalanceInput.value = "0";
-    if (collectionsStaleDaysInput) collectionsStaleDaysInput.value = "0";
-    loadCollectionsReport();
-  });
-}
-if (collectionsExportCsvButton) {
-  collectionsExportCsvButton.addEventListener("click", async () => {
-    const rows = Array.from(collectionsReportContainer?.querySelectorAll("tbody tr") || []);
-    if (!rows.length) {
-      statusMessage.textContent = "No hay datos de cobro para exportar.";
-      return;
-    }
-    const header = ["Codigo", "Cliente", "Producto", "Estado", "Prioridad", "Venta", "Saldo", "Ultimo cambio"];
-    const csvRows = [header.join(",")];
-    rows.forEach((row) => {
-      const cols = Array.from(row.querySelectorAll("td")).slice(0, 8).map((cell) =>
-        `"${String(cell.textContent || "").trim().replaceAll('"', '""')}"`
-      );
-      csvRows.push(cols.join(","));
-    });
-    const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `cobros_${toDateInputValue(new Date())}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    statusMessage.textContent = "Reporte de cobros exportado en CSV.";
-  });
-}
-
 if (directOrderForm) {
   directOrderForm.addEventListener("input", () => {
     saveDirectOrderDraft();
@@ -12006,22 +11850,6 @@ directOrderTemplateButtons.forEach((button) => {
     applyDirectOrderTemplate(button.getAttribute("data-direct-order-template"));
   });
 });
-
-if (collectionsReportContainer) {
-  collectionsReportContainer.addEventListener("click", (event) => {
-    const manageButton = event.target.closest("[data-collections-open-order]");
-    if (!manageButton) {
-      return;
-    }
-    const orderId = manageButton.getAttribute("data-collections-open-order");
-    if (!orderId) {
-      return;
-    }
-    window.location.hash = "compras";
-    state.activeOrderId = Number(orderId);
-    renderOrders(state.orders);
-  });
-}
 
 clientViewButtons.forEach((button) => {
   button.addEventListener("click", () => {

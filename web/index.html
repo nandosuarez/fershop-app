@@ -237,24 +237,6 @@
                       <option value="quarterly">Trimestral</option>
                     </select>
                   </label>
-                  <div class="field-grid" style="margin-bottom: 1rem;">
-                  <label>
-                    <span>Fecha de corte</span>
-                    <input id="dashboard-reference-date" type="date" />
-                  </label>
-                  <label>
-                    <span>Filtro cliente</span>
-                    <input id="dashboard-client-filter" type="search" placeholder="Nombre cliente" />
-                  </label>
-                  <label>
-                    <span>Filtro producto</span>
-                    <input id="dashboard-product-filter" type="search" placeholder="Nombre producto" />
-                  </label>
-                  <label>
-                    <span>Categoria de gasto</span>
-                    <input id="dashboard-expense-filter" type="search" placeholder="Publicidad, viaje, etc." />
-                  </label>
-                </div>
                 </div>
                 <div class="field-grid" style="margin-bottom: 1rem;">
                   <label>
@@ -1199,42 +1181,6 @@
                 <p>Aun no hay compras abiertas.</p>
               </div>
 
-              <section class="panel dashboard-panel" style="margin-top: 1.25rem;">
-                <div class="panel-header">
-                  <h2>Modulo de cobros por cliente</h2>
-                  <p>Selecciona un cliente y revisa compras pendientes por pagar.</p>
-                </div>
-                <div class="field-grid" style="margin-bottom: 1rem;">
-                  <label>
-                    <span>Cliente</span>
-                    <select id="collections-client-select">
-                      <option value="">Todos con saldo pendiente</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>Saldo minimo (COP)</span>
-                    <input id="collections-min-balance" type="number" min="0" step="1" value="0" />
-                  </label>
-                  <label>
-                    <span>Sin movimiento desde (dias)</span>
-                    <input id="collections-stale-days" type="number" min="0" step="1" value="0" />
-                  </label>
-                </div>
-                <div class="actions" style="margin-bottom: 1rem;">
-                  <button id="collections-export-csv" type="button" class="secondary">
-                    Exportar cobros CSV
-                  </button>
-                  <button id="collections-clear-filters" type="button" class="secondary">
-                    Limpiar filtros de cobros
-                  </button>
-                </div>
-                <div id="collections-summary" class="results-empty" style="margin-bottom: 1rem;">
-                  <p>Resumen de cartera pendiente.</p>
-                </div>
-                <div id="collections-report" class="catalog-empty">
-                  <p>Aun no hay datos de cobros para mostrar.</p>
-                </div>
-              </section>
             </section>
           </section>
 
