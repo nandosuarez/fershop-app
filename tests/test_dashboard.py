@@ -6,6 +6,7 @@ from fershop_calculadora.calculations import QuoteInput, calculate_quote
 from fershop_calculadora.database import (
     build_followup_summary,
     build_dashboard_summary,
+    build_executive_brief,
     create_order_from_quote,
     get_client_detail,
     get_product_detail,
@@ -726,6 +727,42 @@ class DashboardTests(unittest.TestCase):
             "Tenis blancos minimalistas",
         )
         self.assertTrue(summary["agenda"]["today"])
+        self.assertTrue(summary["rule_recommendations"])
+        self.assertEqual(summary["rule_recommendations"][0]["severity"], "high")
+
+    def test_executive_brief_aggregates_kpis_and_rules(self) -> None:
+        today = datetime.now(timezone.utc).date().isoformat()
+        client = save_client({"name": "Cliente Brief"})
+        quote = QuoteInput.from_dict(
+            {
+                "client_id": client["id"],
+                "client_name": client["name"],
+                "product_name": "Tenis Executive",
+                "price_usd_net": 150,
+                "tax_usa_percent": 7,
+                "travel_cost_usd": 0,
+                "locker_shipping_usd": 10,
+                "exchange_rate_cop": 4000,
+                "local_costs_cop": 0,
+                "desired_margin_percent": 30,
+                "advance_percent": 30,
+            }
+        )
+        quote_record = save_quote(quote.to_dict(), calculate_quote(quote))
+        order, _ = create_order_from_quote(quote_record["id"], advance_paid_cop=180000)
+        order = self._advance_order_to_client_notified(order["id"])
+        self.assertGreater(order["balance_due_cop"], 0)
+
+        brief = build_executive_brief(period_key="daily", reference_date=today)
+
+        self.assertIn("kpis", brief)
+        self.assertTrue(brief["kpis"])
+        self.assertEqual(brief["kpis"][0]["key"], "sales_total_cop")
+        self.assertIn("top_priorities", brief)
+        self.assertIn("rule_recommendations", brief)
+        self.assertTrue(brief["rule_recommendations"])
+        self.assertIn("summary_text", brief)
+        self.assertIn("Cartera por cobrar", brief["summary_text"])
 
 
 if __name__ == "__main__":

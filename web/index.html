@@ -294,6 +294,24 @@
                   <p>Aun no hay suficiente informacion por producto.</p>
                 </div>
               </section>
+
+              <section class="panel dashboard-panel">
+                <div class="panel-header panel-header-inline">
+                  <div>
+                    <h2>Brief ejecutivo</h2>
+                    <p>Lectura gerencial del periodo con prioridades y reglas de accion.</p>
+                  </div>
+                  <div class="inline-input-action">
+                    <button id="executive-brief-refresh" class="secondary" type="button">Actualizar</button>
+                    <button id="executive-brief-copy" class="secondary" type="button">Copiar</button>
+                    <button id="executive-brief-download" class="secondary" type="button">Descargar TXT</button>
+                  </div>
+                </div>
+
+                <div id="executive-brief" class="catalog-empty">
+                  <p>Aun no hay resumen ejecutivo para este periodo.</p>
+                </div>
+              </section>
             </section>
           </section>
 
@@ -351,6 +369,22 @@
 
                 <div id="followup-pipeline" class="catalog-empty">
                   <p>Aun no hay seguimiento comercial pendiente.</p>
+                </div>
+              </section>
+
+              <section class="panel dashboard-panel">
+                <div class="panel-header panel-header-inline">
+                  <div>
+                    <h2>Bitacora operativa</h2>
+                    <p>Acciones recientes para continuar rapido sin perder el hilo.</p>
+                  </div>
+                  <button id="activity-feed-clear" class="secondary" type="button">
+                    Limpiar
+                  </button>
+                </div>
+
+                <div id="activity-feed-list" class="catalog-empty">
+                  <p>Todavia no hay acciones registradas en esta sesion.</p>
                 </div>
               </section>
             </section>
@@ -1177,6 +1211,11 @@
                 Mostrando operaciones de las ultimas 72 horas.
               </p>
               <p id="orders-filter-count" class="catalog-card-note">0 operaciones visibles.</p>
+              <div class="orders-batch-actions">
+                <button id="orders-batch-advance-ready" class="secondary" type="button">
+                  Avanzar compras listas
+                </button>
+              </div>
               <div id="orders-list" class="catalog-empty">
                 <p>Aun no hay compras abiertas.</p>
               </div>
@@ -1229,6 +1268,16 @@
                     Limpiar cliente
                   </button>
                 </div>
+              </div>
+
+              <div class="collections-batch-actions">
+                <label class="collections-batch-date-label">
+                  <span>Fecha masiva de pago</span>
+                  <input id="collections-batch-date" type="date" />
+                </label>
+                <button id="collections-batch-register-visible" class="secondary" type="button">
+                  Registrar visibles
+                </button>
               </div>
 
               <div id="collections-summary" class="results-empty">

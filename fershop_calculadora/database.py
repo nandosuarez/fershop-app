@@ -2933,6 +2933,8 @@ def _resolve_record_created_at(
         return datetime.now(timezone.utc).isoformat()
 
     selected_date = parse_business_date(raw_value, field_name=field_name)
+    if selected_date > today_local():
+        raise ValueError(f"La {field_name} no puede quedar en una fecha futura.")
     local_timezone = now_local().tzinfo
     return datetime(
         selected_date.year,
@@ -7335,6 +7337,155 @@ def register_second_payment(
         return _serialize_order(updated, events, all_statuses, active_statuses)
 
 
+def _build_operational_rule_recommendations(
+    *,
+    dashboard_metrics: dict[str, Any] | None = None,
+    followup_metrics: dict[str, Any] | None = None,
+    receivable_clients: list[dict[str, Any]] | None = None,
+    stalled_orders: list[dict[str, Any]] | None = None,
+    followup_quotes: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    metrics = followup_metrics or {}
+    dashboard = dashboard_metrics or {}
+    receivables = receivable_clients or []
+    stalled = stalled_orders or []
+    stale_quotes = followup_quotes or []
+
+    rules: list[dict[str, Any]] = []
+
+    overdue_count = int(metrics.get("overdue_pending_count") or 0)
+    if overdue_count > 0:
+        rules.append(
+            {
+                "key": "overdue_pending",
+                "severity": "high",
+                "title": "Resolver pendientes vencidos",
+                "detail": f"Tienes {overdue_count} pendiente(s) vencido(s) que deberian priorizarse hoy.",
+                "target_module": "pendientes",
+                "action_label": "Abrir pendientes",
+            }
+        )
+
+    stalled_count = int(metrics.get("stalled_orders_count") or 0)
+    if stalled_count > 0:
+        critical_stalled = sum(1 for item in stalled if int(item.get("stale_days") or 0) >= 7)
+        severity = "high" if critical_stalled > 0 else "medium"
+        detail = (
+            f"Hay {critical_stalled} compra(s) sin movimiento por 7+ dias."
+            if critical_stalled > 0
+            else f"Hay {stalled_count} compra(s) quietas que necesitan empuje."
+        )
+        rules.append(
+            {
+                "key": "stalled_orders",
+                "severity": severity,
+                "title": "Destrabar compras en seguimiento",
+                "detail": detail,
+                "target_module": "compras",
+                "action_label": "Abrir compras",
+            }
+        )
+
+    receivable_count = int(metrics.get("clients_with_balance_count") or 0)
+    receivable_total = float(metrics.get("accounts_receivable_cop") or 0)
+    if receivable_count > 0 and receivable_total > 0:
+        top_client = receivables[0] if receivables else None
+        top_client_name = str(top_client.get("client_name") or "").strip() if top_client else ""
+        top_client_balance = float(top_client.get("balance_due_cop") or 0) if top_client else 0.0
+        rules.append(
+            {
+                "key": "accounts_receivable",
+                "severity": "high" if receivable_total >= 2_000_000 else "medium",
+                "title": "Plan de cobro del segundo pago",
+                "detail": (
+                    f"Cartera pendiente: {_format_cop_plain(receivable_total)}. "
+                    + (
+                        f"Mayor saldo: {top_client_name} con {_format_cop_plain(top_client_balance)}."
+                        if top_client_name
+                        else "Revisa clientes notificados con saldo pendiente."
+                    )
+                ),
+                "target_module": "cobros",
+                "action_label": "Abrir cobros",
+            }
+        )
+
+    quote_followup_count = int(metrics.get("quotes_followup_count") or 0)
+    if quote_followup_count > 0:
+        oldest_days = max((int(item.get("age_days") or 0) for item in stale_quotes), default=0)
+        rules.append(
+            {
+                "key": "quote_followup",
+                "severity": "medium",
+                "title": "Reactivar cotizaciones abiertas",
+                "detail": (
+                    f"Tienes {quote_followup_count} cotizacion(es) sin respuesta. "
+                    + (
+                        f"La mas antigua lleva {oldest_days} dia(s)."
+                        if oldest_days > 0
+                        else "Conviene retomar contacto comercial."
+                    )
+                ),
+                "target_module": "comercial",
+                "action_label": "Abrir cotizaciones",
+            }
+        )
+
+    net_profit = float(dashboard.get("net_profit_cop") or 0)
+    if dashboard and net_profit < 0:
+        rules.append(
+            {
+                "key": "negative_net_profit",
+                "severity": "high",
+                "title": "Utilidad neta en negativo",
+                "detail": (
+                    f"La utilidad neta del periodo va en {_format_cop_plain(net_profit)}. "
+                    "Revisa gasto operativo, descuentos y cartera por cobrar."
+                ),
+                "target_module": "dashboard",
+                "action_label": "Abrir dashboard",
+            }
+        )
+
+    sales_total = float(dashboard.get("sales_total_cop") or 0)
+    period_balance_due = float(dashboard.get("period_balance_due_cop") or 0)
+    if dashboard and sales_total > 0 and period_balance_due / sales_total >= 0.35:
+        rules.append(
+            {
+                "key": "high_period_balance_due",
+                "severity": "medium",
+                "title": "Pendiente alto dentro del periodo",
+                "detail": (
+                    f"El saldo abierto equivale al {round((period_balance_due / sales_total) * 100, 1)}% "
+                    "de las ventas del periodo."
+                ),
+                "target_module": "cobros",
+                "action_label": "Ver cartera",
+            }
+        )
+
+    if not rules:
+        rules.append(
+            {
+                "key": "operations_stable",
+                "severity": "low",
+                "title": "Operacion estable",
+                "detail": "No se detectaron alertas operativas criticas para hoy.",
+                "target_module": "seguimiento",
+                "action_label": "Ver seguimiento",
+            }
+        )
+
+    severity_rank = {"high": 0, "medium": 1, "low": 2}
+    rules.sort(
+        key=lambda item: (
+            severity_rank.get(str(item.get("severity") or "").strip(), 9),
+            str(item.get("title") or "").casefold(),
+        )
+    )
+    return rules
+
+
 def build_dashboard_summary(
     period_key: str = "daily",
     company_id: int | None = None,
@@ -7991,21 +8142,22 @@ def build_followup_summary(
         )
     )
 
+    metrics_payload = {
+        "active_pending_count": len(active_pending_items),
+        "overdue_pending_count": len(overdue_pending),
+        "due_today_count": len(due_today_pending),
+        "due_soon_count": len(due_soon_pending),
+        "ready_to_quote_count": len(ready_to_quote_pending),
+        "open_quotes_count": len(open_quotes),
+        "quotes_followup_count": len(quotes_needing_followup),
+        "active_orders_count": len(active_orders),
+        "stalled_orders_count": len(stalled_orders),
+        "clients_with_balance_count": len(receivable_clients),
+        "accounts_receivable_cop": sum(item["balance_due_cop"] for item in receivable_clients),
+    }
     return {
         "reference_date": today.isoformat(),
-        "metrics": {
-            "active_pending_count": len(active_pending_items),
-            "overdue_pending_count": len(overdue_pending),
-            "due_today_count": len(due_today_pending),
-            "due_soon_count": len(due_soon_pending),
-            "ready_to_quote_count": len(ready_to_quote_pending),
-            "open_quotes_count": len(open_quotes),
-            "quotes_followup_count": len(quotes_needing_followup),
-            "active_orders_count": len(active_orders),
-            "stalled_orders_count": len(stalled_orders),
-            "clients_with_balance_count": len(receivable_clients),
-            "accounts_receivable_cop": sum(item["balance_due_cop"] for item in receivable_clients),
-        },
+        "metrics": metrics_payload,
         "pending_dashboard": {
             "overdue": _sort_pending(overdue_pending)[:6],
             "due_today": _sort_pending(due_today_pending)[:6],
@@ -8023,4 +8175,114 @@ def build_followup_summary(
         "agenda": {
             "today": agenda_items[:16],
         },
+        "rule_recommendations": _build_operational_rule_recommendations(
+            followup_metrics=metrics_payload,
+            receivable_clients=receivable_clients,
+            stalled_orders=stalled_orders,
+            followup_quotes=quotes_needing_followup,
+        )[:8],
+    }
+
+
+def build_executive_brief(
+    period_key: str = "daily",
+    company_id: int | None = None,
+    reference_date: str | None = None,
+) -> dict[str, Any]:
+    dashboard = build_dashboard_summary(
+        period_key=period_key,
+        company_id=company_id,
+        reference_date=reference_date,
+    )
+    followup = build_followup_summary(
+        company_id=company_id,
+        reference_date=reference_date,
+    )
+    metrics = dashboard.get("metrics", {})
+    followup_metrics = followup.get("metrics", {})
+    receivables = dashboard.get("client_insights", {}).get("receivables", [])
+    stalled_orders = followup.get("order_dashboard", {}).get("stalled_orders", [])
+    followup_quotes = followup.get("quote_dashboard", {}).get("needs_followup", [])
+
+    sales_total = float(metrics.get("sales_total_cop") or 0)
+    cash_in_total = float(metrics.get("cash_in_total_cop") or 0)
+    net_profit = float(metrics.get("net_profit_cop") or 0)
+    accounts_receivable = float(metrics.get("accounts_receivable_cop") or 0)
+    collection_rate_percent = round((cash_in_total / sales_total) * 100, 1) if sales_total > 0 else 0.0
+    receivable_rate_percent = (
+        round((accounts_receivable / sales_total) * 100, 1) if sales_total > 0 else 0.0
+    )
+
+    rules = _build_operational_rule_recommendations(
+        dashboard_metrics=metrics,
+        followup_metrics=followup_metrics,
+        receivable_clients=receivables,
+        stalled_orders=stalled_orders,
+        followup_quotes=followup_quotes,
+    )
+    top_priorities = (followup.get("agenda", {}).get("today") or [])[:6]
+    top_receivables = receivables[:5]
+
+    summary_lines = [
+        f"Periodo: {dashboard.get('period', {}).get('period_label', 'Actual')} "
+        f"({dashboard.get('period', {}).get('start_date', '-')}"
+        f" a {dashboard.get('period', {}).get('end_date', '-')})",
+        f"Vendido: {_format_cop_plain(sales_total)} | Recaudado: {_format_cop_plain(cash_in_total)} | Utilidad neta: {_format_cop_plain(net_profit)}",
+        f"Cartera por cobrar: {_format_cop_plain(accounts_receivable)} ({receivable_rate_percent}% del vendido).",
+        f"Conversion de caja: {collection_rate_percent}% del vendido.",
+        f"Pendientes activos: {int(followup_metrics.get('active_pending_count') or 0)} | Compras activas: {int(followup_metrics.get('active_orders_count') or 0)} | Cobros abiertos: {int(followup_metrics.get('clients_with_balance_count') or 0)}",
+    ]
+
+    return {
+        "period": dashboard.get("period", {}),
+        "metrics": metrics,
+        "followup_metrics": followup_metrics,
+        "kpis": [
+            {
+                "key": "sales_total_cop",
+                "label": "Ventas del periodo",
+                "value": sales_total,
+                "kind": "currency",
+                "context": f"{int(metrics.get('orders_count') or 0)} compra(s)",
+            },
+            {
+                "key": "cash_in_total_cop",
+                "label": "Caja recaudada",
+                "value": cash_in_total,
+                "kind": "currency",
+                "context": f"{collection_rate_percent}% del vendido",
+            },
+            {
+                "key": "accounts_receivable_cop",
+                "label": "Cartera por cobrar",
+                "value": accounts_receivable,
+                "kind": "currency",
+                "context": f"{receivable_rate_percent}% del vendido",
+            },
+            {
+                "key": "net_profit_cop",
+                "label": "Utilidad neta",
+                "value": net_profit,
+                "kind": "currency",
+                "context": "Utilidad bruta menos gastos operativos",
+            },
+            {
+                "key": "stalled_orders_count",
+                "label": "Compras quietas",
+                "value": int(followup_metrics.get("stalled_orders_count") or 0),
+                "kind": "count",
+                "context": "Sin movimiento reciente",
+            },
+            {
+                "key": "quotes_followup_count",
+                "label": "Cotizaciones por seguir",
+                "value": int(followup_metrics.get("quotes_followup_count") or 0),
+                "kind": "count",
+                "context": "Sin respuesta comercial",
+            },
+        ],
+        "top_priorities": top_priorities,
+        "top_receivables": top_receivables,
+        "rule_recommendations": rules[:10],
+        "summary_text": "\n".join(summary_lines),
     }

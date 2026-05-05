@@ -17,6 +17,7 @@ from .database import (
     authenticate_user,
     build_followup_summary,
     build_dashboard_summary,
+    build_executive_brief,
     list_collection_accounts,
     create_product_category,
     create_product_store,
@@ -711,6 +712,25 @@ class FerShopHandler(BaseHTTPRequestHandler):
                 HTTPStatus.OK,
                 {
                     "item": build_followup_summary(
+                        company_id=session["company"]["id"],
+                        reference_date=reference_date,
+                    )
+                },
+            )
+            return
+
+        if parsed.path == "/api/executive-brief":
+            session = self._require_session()
+            if session is None:
+                return
+            params = parse_qs(parsed.query)
+            period_key = str(params.get("period", ["daily"])[0] or "daily")
+            reference_date = str(params.get("reference_date", [""])[0] or "").strip() or None
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "item": build_executive_brief(
+                        period_key=period_key,
                         company_id=session["company"]["id"],
                         reference_date=reference_date,
                     )

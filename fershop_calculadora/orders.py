@@ -229,9 +229,12 @@ def normalize_second_payment_date(received_at: str | None = None) -> str:
         return today_local().isoformat()
 
     try:
-        return datetime.strptime(normalized, "%Y-%m-%d").date().isoformat()
+        parsed_date = datetime.strptime(normalized, "%Y-%m-%d").date()
     except ValueError as exc:
         raise ValueError("La fecha del segundo pago debe tener formato AAAA-MM-DD.") from exc
+    if parsed_date > today_local():
+        raise ValueError("La fecha del segundo pago no puede estar en el futuro.")
+    return parsed_date.isoformat()
 
 
 def apply_second_payment(

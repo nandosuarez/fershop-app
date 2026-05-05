@@ -32,6 +32,10 @@ const dashboardSummaryContainer = document.getElementById("dashboard-summary");
 const dashboardExpensesContainer = document.getElementById("dashboard-expenses");
 const dashboardClientsContainer = document.getElementById("dashboard-clients");
 const dashboardProductsContainer = document.getElementById("dashboard-products");
+const executiveBriefContainer = document.getElementById("executive-brief");
+const executiveBriefRefreshButton = document.getElementById("executive-brief-refresh");
+const executiveBriefCopyButton = document.getElementById("executive-brief-copy");
+const executiveBriefDownloadButton = document.getElementById("executive-brief-download");
 const followupSummaryContainer = document.getElementById("followup-summary");
 const followupAgendaContainer = document.getElementById("followup-agenda");
 const followupPendingContainer = document.getElementById("followup-pending");
@@ -42,6 +46,10 @@ const collectionsAccountFilter = document.getElementById("collections-account-fi
 const collectionsClearClientButton = document.getElementById("collections-clear-client");
 const collectionsSummaryContainer = document.getElementById("collections-summary");
 const collectionsListContainer = document.getElementById("collections-list");
+const collectionsBatchDateInput = document.getElementById("collections-batch-date");
+const collectionsBatchRegisterVisibleButton = document.getElementById(
+  "collections-batch-register-visible"
+);
 const globalSearchInput = document.getElementById("global-search-input");
 const globalSearchResults = document.getElementById("global-search-results");
 const clientDetailSection = document.getElementById("client-detail-section");
@@ -125,6 +133,9 @@ const directOrderInventoryHelper = document.getElementById("direct-order-invento
 const directOrderTemplateButtons = Array.from(
   document.querySelectorAll("[data-direct-order-template]")
 );
+const ordersBatchAdvanceReadyButton = document.getElementById("orders-batch-advance-ready");
+const activityFeedListContainer = document.getElementById("activity-feed-list");
+const activityFeedClearButton = document.getElementById("activity-feed-clear");
 const clientViewButtons = Array.from(document.querySelectorAll("[data-client-view]"));
 const brandLogo = document.querySelector(".brand-logo");
 const brandKicker = document.querySelector(".brand-kicker");
@@ -179,8 +190,12 @@ const state = {
   dashboardProductFilter: "",
   dashboardExpenseFilter: "",
   dashboard: null,
+  executiveBrief: null,
   followup: null,
   collections: null,
+  visibleOrders: [],
+  visibleCollectionItems: [],
+  activityFeed: [],
   activeModule: "dashboard",
   activeMenuGroup: "overview",
   menuOpen: false,
@@ -286,6 +301,7 @@ const shortDateFormatter = new Intl.DateTimeFormat("es-CO", {
   dateStyle: "medium",
 });
 const COMPACT_NAV_BREAKPOINT = 1100;
+const ACTIVITY_FEED_KEY = "fershop_activity_feed_v1";
 
 function normalizeAdminCopy() {
   const adminSection = document.getElementById("administracion");
@@ -434,6 +450,191 @@ function resolveMenuGroupFromModule(moduleKey) {
   return MODULE_GROUP_ALIASES[moduleKey] || "overview";
 }
 
+function getModuleLabel(moduleKey) {
+  const labels = {
+    dashboard: "Dashboard",
+    seguimiento: "Seguimiento",
+    pendientes: "Pendientes",
+    comercial: "Cotizaciones",
+    compras: "Compras",
+    abastecimiento: "Abastecimiento",
+    cobros: "Cobros",
+    gastos: "Gastos",
+    administracion: "Administracion",
+  };
+  return labels[String(moduleKey || "").trim().toLowerCase()] || "Modulo";
+}
+
+function saveActivityFeedToStorage() {
+  try {
+    if (!window.localStorage) {
+      return;
+    }
+    const compactFeed = (state.activityFeed || []).slice(0, 120);
+    window.localStorage.setItem(ACTIVITY_FEED_KEY, JSON.stringify(compactFeed));
+  } catch (_error) {
+    // no-op: si el navegador bloquea storage, seguimos sin persistencia
+  }
+}
+
+function loadActivityFeedFromStorage() {
+  try {
+    if (!window.localStorage) {
+      state.activityFeed = [];
+      return;
+    }
+    const raw = window.localStorage.getItem(ACTIVITY_FEED_KEY);
+    if (!raw) {
+      state.activityFeed = [];
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      state.activityFeed = [];
+      return;
+    }
+    state.activityFeed = parsed
+      .filter((item) => item && typeof item === "object")
+      .map((item) => ({
+        title: String(item.title || "Accion operativa"),
+        detail: String(item.detail || ""),
+        moduleKey: String(item.moduleKey || "seguimiento"),
+        createdAt: String(item.createdAt || new Date().toISOString()),
+      }))
+      .slice(0, 120);
+  } catch (_error) {
+    state.activityFeed = [];
+  }
+}
+
+function renderActivityFeed() {
+  if (!activityFeedListContainer) {
+    return;
+  }
+
+  const entries = Array.isArray(state.activityFeed) ? state.activityFeed : [];
+  if (!entries.length) {
+    activityFeedListContainer.className = "catalog-empty";
+    activityFeedListContainer.innerHTML = "<p>Todavia no hay acciones registradas en esta sesion.</p>";
+    return;
+  }
+
+  activityFeedListContainer.className = "activity-feed-list";
+  activityFeedListContainer.innerHTML = entries
+    .map(
+      (entry) => `
+        <article class="activity-feed-card">
+          <div class="activity-feed-head">
+            <strong>${escapeHtml(entry.title || "Accion operativa")}</strong>
+            <span>${escapeHtml(getModuleLabel(entry.moduleKey))}</span>
+          </div>
+          ${entry.detail ? `<p>${escapeHtml(entry.detail)}</p>` : ""}
+          <div class="activity-feed-foot">
+            <small>${escapeHtml(formatStoredDate(entry.createdAt))}</small>
+            <button
+              class="history-action-button history-action-button-secondary"
+              type="button"
+              data-activity-open-module="${escapeHtml(entry.moduleKey || "seguimiento")}"
+            >
+              Abrir
+            </button>
+          </div>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function addActivityFeedEntry({ title = "Accion operativa", detail = "", moduleKey = "seguimiento" } = {}) {
+  const nextEntry = {
+    title: String(title || "Accion operativa"),
+    detail: String(detail || ""),
+    moduleKey: String(moduleKey || "seguimiento"),
+    createdAt: new Date().toISOString(),
+  };
+  state.activityFeed = [nextEntry, ...(state.activityFeed || [])].slice(0, 120);
+  saveActivityFeedToStorage();
+  renderActivityFeed();
+}
+
+function clearActivityFeed() {
+  state.activityFeed = [];
+  saveActivityFeedToStorage();
+  renderActivityFeed();
+}
+
+function hasDirectOrderWorkInProgress() {
+  if (!directOrderForm) {
+    return false;
+  }
+  if (state.directOrderLineItems.length || state.directOrderLastResult) {
+    return true;
+  }
+
+  const clientId = String(getDirectOrderField("client_id")?.value || "").trim();
+  const productId = String(getDirectOrderField("product_id")?.value || "").trim();
+  const notes = String(getDirectOrderField("notes")?.value || "").trim();
+  const manualItemsText = String(getDirectOrderField("client_quote_items_text")?.value || "").trim();
+  const advancePaidCop = parseCurrencyInput(getDirectOrderField("advance_paid_cop")?.value || "0");
+  const generalDiscountCop = parseCurrencyInput(getDirectOrderField("general_discount_cop")?.value || "0");
+  return Boolean(
+    clientId ||
+      productId ||
+      notes ||
+      manualItemsText ||
+      Number(advancePaidCop || 0) > 0 ||
+      Number(generalDiscountCop || 0) > 0
+  );
+}
+
+function confirmDirectOrderExit(nextModuleKey) {
+  const nextLabel = getModuleLabel(nextModuleKey);
+  return window.confirm(
+    `Tienes una compra directa en progreso. Si sales a ${nextLabel}, perderas lo que no hayas guardado. Deseas continuar?`
+  );
+}
+
+function isOrderReadyToAdvance(order) {
+  if (!order?.next_status_key) {
+    return false;
+  }
+  const balanceDue = Number(order.balance_due_cop || 0);
+  return !(order.next_status_key === "second_payment_received" && balanceDue > 0);
+}
+
+function getReadyVisibleOrders() {
+  return (state.visibleOrders || []).filter((order) => isOrderReadyToAdvance(order));
+}
+
+function getVisiblePendingCollectionItems() {
+  return (state.visibleCollectionItems || []).filter(
+    (item) => Boolean(item?.can_register_payment) && Number(item.balance_due_cop || 0) > 0
+  );
+}
+
+function getOrderStatusTone(order) {
+  if (!order) {
+    return "neutral";
+  }
+  const balanceDue = Number(order.balance_due_cop || 0);
+  const isTravelUndecided =
+    order.snapshot?.input?.purchase_type === "travel" &&
+    (order.travel_transport_type || "undecided") === "undecided";
+  if (order.status_key === "client_notified" && balanceDue > 0) {
+    return "warning";
+  }
+  if (isTravelUndecided) {
+    return "warning";
+  }
+  if (isOrderReadyToAdvance(order)) {
+    return "info";
+  }
+  if (!order.next_status_key) {
+    return "success";
+  }
+  return "neutral";
+}
+
 function setActiveMenuGroup(groupKey) {
   const nextGroup = String(groupKey || "").trim().toLowerCase();
   state.activeMenuGroup = nextGroup;
@@ -451,26 +652,45 @@ function setActiveMenuGroup(groupKey) {
   });
 }
 
-function setActiveModule(moduleKey) {
-  state.activeModule = moduleKey;
+function setActiveModule(moduleKey, { force = false } = {}) {
+  const nextModule = String(moduleKey || "dashboard").trim().toLowerCase() || "dashboard";
+  const isLeavingDirectOrder = state.activeModule === "compras" && nextModule !== "compras";
+  if (!force && isLeavingDirectOrder && hasDirectOrderWorkInProgress()) {
+    const canExit = confirmDirectOrderExit(nextModule);
+    if (!canExit) {
+      return false;
+    }
+    addActivityFeedEntry({
+      title: "Compra directa pausada",
+      detail: `Saliste de compras para ir a ${getModuleLabel(nextModule)} sin guardar la compra en armado.`,
+      moduleKey: "compras",
+    });
+  }
+
+  state.activeModule = nextModule;
   closeDirectOrderConfirmationModal();
-  setActiveMenuGroup(resolveMenuGroupFromModule(moduleKey));
+  setActiveMenuGroup(resolveMenuGroupFromModule(nextModule));
 
   modulePages.forEach((page) => {
-    page.classList.toggle("is-active", page.dataset.modulePage === moduleKey);
+    page.classList.toggle("is-active", page.dataset.modulePage === nextModule);
   });
 
   moduleLinks.forEach((link) => {
-    link.classList.toggle("is-active", link.dataset.moduleLink === moduleKey);
+    link.classList.toggle("is-active", link.dataset.moduleLink === nextModule);
   });
 
   if (state.menuOpen) {
     setMenuOpen(false);
   }
 
-  if (moduleKey === "cobros" && collectionsSummaryContainer && state.session) {
+  if (nextModule === "seguimiento") {
+    renderActivityFeed();
+  }
+
+  if (nextModule === "cobros" && collectionsSummaryContainer && state.session) {
     loadCollections();
   }
+  return true;
 }
 
 function syncModuleFromHash() {
@@ -479,7 +699,15 @@ function syncModuleFromHash() {
     .replace(/^#/, "")
     .toLowerCase();
   const moduleKey = resolveModuleFromHash(rawHash);
-  setActiveModule(moduleKey);
+  const changed = setActiveModule(moduleKey);
+  if (!changed) {
+    const fallbackModule = state.activeModule || "dashboard";
+    const fallbackHash = `#${fallbackModule}`;
+    if (window.location.hash !== fallbackHash) {
+      window.history.replaceState(null, "", fallbackHash);
+    }
+    return;
+  }
 
   if (rawHash && rawHash !== moduleKey) {
     const target = document.getElementById(rawHash);
@@ -6450,6 +6678,151 @@ function renderDashboard(summary) {
   renderDashboardProducts(productInsights);
 }
 
+function buildExecutiveBriefText(brief) {
+  if (!brief) {
+    return "Aun no hay resumen ejecutivo disponible.";
+  }
+
+  const period = brief.period || {};
+  const kpis = Array.isArray(brief.kpis) ? brief.kpis : [];
+  const priorities = Array.isArray(brief.top_priorities) ? brief.top_priorities : [];
+  const rules = Array.isArray(brief.rule_recommendations) ? brief.rule_recommendations : [];
+  const metrics = brief.metrics || {};
+
+  const lines = [
+    "BRIEF EJECUTIVO FERSHOP",
+    `Periodo: ${period.period_label || "Actual"} (${period.start_date || "-"} a ${period.end_date || "-"})`,
+    `Resumen: ${brief.summary_text || "Sin resumen disponible."}`,
+    "",
+    "KPIs CLAVE",
+  ];
+
+  kpis.forEach((item) => {
+    const value =
+      item.kind === "currency"
+        ? formatCop(item.value || 0)
+        : `${formatInteger(item.value || 0)} ${String(item.kind || "").toLowerCase() === "count" ? "" : ""}`.trim();
+    lines.push(`- ${item.label}: ${value}${item.context ? ` (${item.context})` : ""}`);
+  });
+
+  lines.push("");
+  lines.push("PRIORIDADES DEL DIA");
+  if (!priorities.length) {
+    lines.push("- No hay prioridades operativas abiertas.");
+  } else {
+    priorities.forEach((item) => {
+      lines.push(
+        `- ${item.title || "Tarea"} | ${item.summary || "Sin detalle"} | ${item.priority_label || item.status_label || "Normal"}`
+      );
+    });
+  }
+
+  lines.push("");
+  lines.push("REGLAS AUTOMATICAS RECOMENDADAS");
+  if (!rules.length) {
+    lines.push("- Sin recomendaciones en este momento.");
+  } else {
+    rules.forEach((rule) => {
+      lines.push(`- [${String(rule.severity || "low").toUpperCase()}] ${rule.title}: ${rule.detail}`);
+    });
+  }
+
+  lines.push("");
+  lines.push(
+    `Cierre rapido: Open orders ${formatInteger(metrics.open_orders_count || 0)} | Cobros ${formatCop(
+      metrics.accounts_receivable_cop || 0
+    )}`
+  );
+
+  return lines.join("\n");
+}
+
+function renderExecutiveBrief(brief) {
+  if (!executiveBriefContainer) {
+    return;
+  }
+
+  if (!brief) {
+    executiveBriefContainer.className = "catalog-empty";
+    executiveBriefContainer.innerHTML = "<p>Aun no hay resumen ejecutivo para este periodo.</p>";
+    return;
+  }
+
+  const kpis = Array.isArray(brief.kpis) ? brief.kpis : [];
+  const priorities = Array.isArray(brief.top_priorities) ? brief.top_priorities : [];
+  const rules = Array.isArray(brief.rule_recommendations) ? brief.rule_recommendations : [];
+  const period = brief.period || {};
+
+  executiveBriefContainer.className = "executive-brief-shell";
+  executiveBriefContainer.innerHTML = `
+    <div class="executive-brief-head">
+      <strong>${escapeHtml(period.period_label || "Periodo actual")}</strong>
+      <span>${escapeHtml(period.start_date || "-")} a ${escapeHtml(period.end_date || "-")}</span>
+    </div>
+    <p class="executive-brief-summary">${escapeHtml(brief.summary_text || "Sin resumen disponible.")}</p>
+    <section class="executive-brief-kpis">
+      ${kpis
+        .map((item) => {
+          const value = item.kind === "currency" ? formatCop(item.value || 0) : formatInteger(item.value || 0);
+          return `
+            <article class="executive-brief-kpi">
+              <span>${escapeHtml(item.label || "KPI")}</span>
+              <strong>${escapeHtml(value)}</strong>
+              ${item.context ? `<small>${escapeHtml(item.context)}</small>` : ""}
+            </article>
+          `;
+        })
+        .join("")}
+    </section>
+    <section class="executive-brief-grid">
+      <article class="executive-brief-block">
+        <h3>Prioridades del dia</h3>
+        ${
+          priorities.length
+            ? priorities
+                .map(
+                  (item) => `
+                    <div class="executive-brief-item">
+                      <strong>${escapeHtml(item.title || "Tarea")}</strong>
+                      <p>${escapeHtml(item.summary || "Sin detalle")}</p>
+                      <small>${escapeHtml(item.priority_label || item.status_label || "Normal")}</small>
+                    </div>
+                  `
+                )
+                .join("")
+            : "<p class='catalog-card-note'>No hay prioridades abiertas para hoy.</p>"
+        }
+      </article>
+      <article class="executive-brief-block">
+        <h3>Reglas de accion</h3>
+        ${
+          rules.length
+            ? rules
+                .map(
+                  (rule) => `
+                    <div class="executive-brief-rule executive-brief-rule-${escapeHtml(
+                      String(rule.severity || "low")
+                    )}">
+                      <strong>${escapeHtml(rule.title || "Regla operativa")}</strong>
+                      <p>${escapeHtml(rule.detail || "")}</p>
+                      <button
+                        class="history-action-button history-action-button-secondary"
+                        type="button"
+                        data-executive-open-module="${escapeHtml(rule.target_module || "seguimiento")}"
+                      >
+                        ${escapeHtml(rule.action_label || "Abrir")}
+                      </button>
+                    </div>
+                  `
+                )
+                .join("")
+            : "<p class='catalog-card-note'>No hay recomendaciones activas.</p>"
+        }
+      </article>
+    </section>
+  `;
+}
+
 function renderExpenses(items) {
   if (!items.length) {
     expensesListContainer.className = "catalog-empty";
@@ -7034,6 +7407,30 @@ function renderFollowup(summary) {
   const quoteDashboard = summary.quote_dashboard || {};
   const orderDashboard = summary.order_dashboard || {};
   const agenda = summary.agenda?.today || [];
+  const followupRules = summary.rule_recommendations || [];
+  const quickActions = [
+    {
+      title: "Abrir pendientes",
+      detail: `${metrics.active_pending_count || 0} activo(s) por atender`,
+      module: "pendientes",
+    },
+    {
+      title: "Abrir cotizaciones",
+      detail: `${metrics.open_quotes_count || 0} abiertas sin cerrar`,
+      module: "comercial",
+    },
+    {
+      title: "Abrir compras",
+      detail: `${metrics.active_orders_count || 0} compras en flujo`,
+      module: "compras",
+    },
+    {
+      title: "Abrir cobros",
+      detail: `${metrics.clients_with_balance_count || 0} cliente(s) por cobrar`,
+      module: "cobros",
+      collectionsFilter: "pending",
+    },
+  ];
 
   followupSummaryContainer.className = "results-ready";
   followupSummaryContainer.innerHTML = `
@@ -7049,6 +7446,52 @@ function renderFollowup(summary) {
       ${makeMetricCard("Clientes por cobrar", String(metrics.clients_with_balance_count || 0), "Clientes ya notificados y pendientes de segundo pago")}
       ${makeMetricCard("Cartera por cobrar", formatCop(metrics.accounts_receivable_cop), "Saldo notificado pendiente de segundo pago")}
     </div>
+    <section class="followup-quick-actions">
+      ${quickActions
+        .map(
+          (item) => `
+            <button
+              class="followup-quick-action-card"
+              type="button"
+              data-followup-quick-module="${escapeHtml(item.module)}"
+              ${
+                item.collectionsFilter
+                  ? `data-followup-quick-collections-filter="${escapeHtml(item.collectionsFilter)}"`
+                  : ""
+              }
+            >
+              <strong>${escapeHtml(item.title)}</strong>
+              <span>${escapeHtml(item.detail)}</span>
+            </button>
+          `
+        )
+        .join("")}
+    </section>
+    <section class="followup-rules-board">
+      ${
+        followupRules.length
+          ? followupRules
+              .map(
+                (rule) => `
+                  <article class="followup-rule-card followup-rule-${escapeHtml(
+                    String(rule.severity || "low")
+                  )}">
+                    <strong>${escapeHtml(rule.title || "Regla operativa")}</strong>
+                    <p>${escapeHtml(rule.detail || "")}</p>
+                    <button
+                      class="history-action-button history-action-button-secondary"
+                      type="button"
+                      data-open-followup-module="${escapeHtml(rule.target_module || "seguimiento")}"
+                    >
+                      ${escapeHtml(rule.action_label || "Abrir")}
+                    </button>
+                  </article>
+                `
+              )
+              .join("")
+          : "<p class='catalog-card-note'>No hay reglas activas para hoy.</p>"
+      }
+    </section>
   `;
 
   if (!agenda.length) {
@@ -7241,6 +7684,7 @@ function renderCollections(payload) {
   const data = payload || {};
   const summary = data.summary || {};
   const items = data.items || [];
+  state.visibleCollectionItems = items;
   const selectedClient = data.client || null;
   const filterKey = String(data.filters?.account_status || collectionsAccountFilter?.value || "pending");
   const filterLabels = {
@@ -7249,6 +7693,12 @@ function renderCollections(payload) {
     paid: "cuentas pagadas",
   };
   const activeFilterLabel = filterLabels[filterKey] || "cuentas";
+  const pendingVisibleCount = getVisiblePendingCollectionItems().length;
+  if (collectionsBatchRegisterVisibleButton) {
+    collectionsBatchRegisterVisibleButton.disabled = pendingVisibleCount === 0;
+    collectionsBatchRegisterVisibleButton.textContent =
+      pendingVisibleCount > 0 ? `Registrar visibles (${pendingVisibleCount})` : "Registrar visibles";
+  }
 
   collectionsSummaryContainer.className = "collections-summary-shell";
   collectionsSummaryContainer.innerHTML = `
@@ -7265,6 +7715,7 @@ function renderCollections(payload) {
   `;
 
   if (!items.length) {
+    state.visibleCollectionItems = [];
     collectionsListContainer.className = "catalog-empty";
     collectionsListContainer.innerHTML = `<p>No encontramos ${escapeHtml(activeFilterLabel)} en este momento.</p>`;
     return;
@@ -8636,7 +9087,9 @@ function renderOrderDetailPanel(order) {
           <h3>${escapeHtml(order.product_name)}</h3>
           <p>${escapeHtml(order.client_name || "Cliente no registrado")} · Desde cotizacion #${order.quote_id}</p>
         </div>
-        <span class="order-status-badge">${escapeHtml(order.status_label)}</span>
+        <span class="order-status-badge order-status-${escapeHtml(getOrderStatusTone(order))}">
+          ${escapeHtml(order.status_label)}
+        </span>
       </div>
 
       <div class="order-next-step-card">
@@ -8982,8 +9435,18 @@ function renderOrders(items) {
   if (ordersFilterCount) {
     ordersFilterCount.textContent = `${visibleItems.length} operacion(es) visible(s).`;
   }
+  state.visibleOrders = visibleItems;
+  const readyToAdvanceCount = visibleItems.filter((item) => isOrderReadyToAdvance(item)).length;
+  if (ordersBatchAdvanceReadyButton) {
+    ordersBatchAdvanceReadyButton.disabled = readyToAdvanceCount === 0;
+    ordersBatchAdvanceReadyButton.textContent =
+      readyToAdvanceCount > 0
+        ? `Avanzar compras listas (${readyToAdvanceCount})`
+        : "Avanzar compras listas";
+  }
 
   if (!visibleItems.length) {
+    state.visibleOrders = [];
     state.activeOrderId = null;
     ordersListContainer.className = "catalog-empty";
     ordersListContainer.innerHTML = activeDateFilter
@@ -8999,11 +9462,6 @@ function renderOrders(items) {
     (item) =>
       item.snapshot?.input?.purchase_type === "travel" &&
       (item.travel_transport_type || "undecided") === "undecided"
-  ).length;
-  const readyToAdvanceCount = visibleItems.filter(
-    (item) =>
-      item.next_status_key &&
-      !(item.next_status_key === "second_payment_received" && Number(item.balance_due_cop || 0) > 0)
   ).length;
   const activeSalesTotal = visibleItems.reduce((total, item) => total + Number(item.sale_price_cop || 0), 0);
 
@@ -9052,7 +9510,11 @@ function renderOrders(items) {
                   <td>${escapeHtml(formatStoredDate(order.created_at))}</td>
                   <td>${escapeHtml(order.product_name || "-")}</td>
                   <td>${escapeHtml(order.client_name || "-")}</td>
-                  <td>${escapeHtml(order.status_label || "-")}</td>
+                  <td>
+                    <span class="order-status-badge order-status-${escapeHtml(getOrderStatusTone(order))}">
+                      ${escapeHtml(order.status_label || "-")}
+                    </span>
+                  </td>
                   <td>${formatCop(order.sale_price_cop)}</td>
                   <td>${formatCop(order.balance_due_cop)}</td>
                   <td class="orders-primary-action-cell">
@@ -9164,7 +9626,7 @@ async function loadPendingRequests() {
   }
 }
 
-async function loadDashboard() {
+async function loadDashboard({ includeExecutiveBrief = true } = {}) {
   try {
     const params = new URLSearchParams();
     params.set("period", state.dashboardPeriod);
@@ -9174,6 +9636,9 @@ async function loadDashboard() {
     const payload = await requestJson(`/api/dashboard?${params.toString()}`);
     state.dashboard = payload.item || null;
     renderDashboard(state.dashboard);
+    if (includeExecutiveBrief) {
+      await loadExecutiveBrief();
+    }
   } catch (error) {
     dashboardSummaryContainer.className = "results-empty";
     dashboardSummaryContainer.innerHTML = `<p>${error.message}</p>`;
@@ -9187,6 +9652,28 @@ async function loadDashboard() {
       dashboardProductsContainer.className = "catalog-empty";
       dashboardProductsContainer.innerHTML = `<p>${error.message}</p>`;
     }
+    if (executiveBriefContainer) {
+      executiveBriefContainer.className = "catalog-empty";
+      executiveBriefContainer.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
+    }
+  }
+}
+
+async function loadExecutiveBrief() {
+  if (!executiveBriefContainer) {
+    return;
+  }
+
+  try {
+    const payload = await requestJson(
+      `/api/executive-brief?period=${encodeURIComponent(state.dashboardPeriod)}`
+    );
+    state.executiveBrief = payload.item || null;
+    renderExecutiveBrief(state.executiveBrief);
+  } catch (error) {
+    state.executiveBrief = null;
+    executiveBriefContainer.className = "catalog-empty";
+    executiveBriefContainer.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
   }
 }
 
@@ -9234,6 +9721,11 @@ async function loadCollections() {
     renderCollections(state.collections);
   } catch (error) {
     state.collections = null;
+    state.visibleCollectionItems = [];
+    if (collectionsBatchRegisterVisibleButton) {
+      collectionsBatchRegisterVisibleButton.disabled = true;
+      collectionsBatchRegisterVisibleButton.textContent = "Registrar visibles";
+    }
     collectionsSummaryContainer.className = "results-empty";
     collectionsSummaryContainer.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
     collectionsListContainer.className = "catalog-empty";
@@ -9308,6 +9800,11 @@ async function loadOrders() {
       ordersListContainer.innerHTML = "<p>Aun no hay compras abiertas.</p>";
     }
   } catch (error) {
+    state.visibleOrders = [];
+    if (ordersBatchAdvanceReadyButton) {
+      ordersBatchAdvanceReadyButton.disabled = true;
+      ordersBatchAdvanceReadyButton.textContent = "Avanzar compras listas";
+    }
     ordersListContainer.className = "catalog-empty";
     ordersListContainer.innerHTML = `<p>${error.message}</p>`;
     orderStatusesListContainer.className = "catalog-empty";
@@ -9639,17 +10136,23 @@ if (directOrderCreateButton) {
         method: "POST",
         body: JSON.stringify(payload),
       });
+      const createdOrder = response.item || null;
       await Promise.all([loadOrders(), loadDashboard(), loadFollowup(), loadCatalog(), loadHistory()]);
       await refreshActiveClientDetail();
       await refreshActiveProductDetail();
       closeDirectOrderConfirmationModal();
       resetDirectOrderComposerState({
-        statusText: `Compra #${response.item.id} creada desde el modulo de compras.`,
+        statusText: `Compra #${createdOrder?.id || "-"} creada desde el modulo de compras.`,
       });
       if (directOrderStatusMessage) {
         directOrderStatusMessage.textContent = "Compra creada correctamente.";
       }
-      openDirectOrderConfirmationModal(response.item);
+      addActivityFeedEntry({
+        title: `Compra ${formatOrderCode(createdOrder?.id)} creada`,
+        detail: `${createdOrder?.client_name || "Cliente"} - ${createdOrder?.product_name || "Compra directa"}`,
+        moduleKey: "compras",
+      });
+      openDirectOrderConfirmationModal(createdOrder);
       window.location.hash = "compras";
     } catch (error) {
       if (directOrderStatusMessage) {
@@ -10864,10 +11367,31 @@ if (dashboardProductsContainer) {
   });
 }
 
-[followupAgendaContainer, followupPendingContainer, followupPipelineContainer]
+[followupSummaryContainer, followupAgendaContainer, followupPendingContainer, followupPipelineContainer]
   .filter(Boolean)
   .forEach((container) => {
     container.addEventListener("click", (event) => {
+      const quickActionButton = event.target.closest("[data-followup-quick-module]");
+      if (quickActionButton) {
+        const targetModule = quickActionButton.getAttribute("data-followup-quick-module");
+        if (!targetModule) {
+          return;
+        }
+        const collectionsFilter = quickActionButton.getAttribute(
+          "data-followup-quick-collections-filter"
+        );
+        if (targetModule === "cobros" && collectionsAccountFilter && collectionsFilter) {
+          collectionsAccountFilter.value = collectionsFilter;
+        }
+        addActivityFeedEntry({
+          title: `Atajo rapido a ${getModuleLabel(targetModule)}`,
+          detail: "Acceso desde dashboard de seguimiento.",
+          moduleKey: "seguimiento",
+        });
+        window.location.hash = targetModule;
+        return;
+      }
+
       const button = event.target.closest("[data-open-followup-module]");
       if (!button) {
         return;
@@ -10881,6 +11405,242 @@ if (dashboardProductsContainer) {
       window.location.hash = targetModule;
     });
   });
+
+if (executiveBriefContainer) {
+  executiveBriefContainer.addEventListener("click", (event) => {
+    const moduleButton = event.target.closest("[data-executive-open-module]");
+    if (!moduleButton) {
+      return;
+    }
+    const targetModule = moduleButton.getAttribute("data-executive-open-module");
+    if (!targetModule) {
+      return;
+    }
+    addActivityFeedEntry({
+      title: `Accion ejecutiva: ${getModuleLabel(targetModule)}`,
+      detail: "Navegacion desde brief ejecutivo.",
+      moduleKey: "dashboard",
+    });
+    window.location.hash = targetModule;
+  });
+}
+
+if (executiveBriefRefreshButton) {
+  executiveBriefRefreshButton.addEventListener("click", async () => {
+    executiveBriefRefreshButton.disabled = true;
+    const originalText = executiveBriefRefreshButton.textContent;
+    executiveBriefRefreshButton.textContent = "Actualizando...";
+    try {
+      await loadExecutiveBrief();
+      statusMessage.textContent = "Brief ejecutivo actualizado.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    } finally {
+      executiveBriefRefreshButton.disabled = false;
+      executiveBriefRefreshButton.textContent = originalText;
+    }
+  });
+}
+
+if (executiveBriefCopyButton) {
+  executiveBriefCopyButton.addEventListener("click", async () => {
+    const text = buildExecutiveBriefText(state.executiveBrief);
+    if (!text) {
+      statusMessage.textContent = "No hay contenido para copiar en este momento.";
+      return;
+    }
+    const originalText = executiveBriefCopyButton.textContent;
+    executiveBriefCopyButton.disabled = true;
+    executiveBriefCopyButton.textContent = "Copiando...";
+    try {
+      await navigator.clipboard.writeText(text);
+      statusMessage.textContent = "Brief ejecutivo copiado.";
+    } catch (error) {
+      statusMessage.textContent = error.message || "No fue posible copiar el brief.";
+    } finally {
+      executiveBriefCopyButton.disabled = false;
+      executiveBriefCopyButton.textContent = originalText;
+    }
+  });
+}
+
+if (executiveBriefDownloadButton) {
+  executiveBriefDownloadButton.addEventListener("click", () => {
+    const text = buildExecutiveBriefText(state.executiveBrief);
+    if (!text) {
+      statusMessage.textContent = "No hay contenido para descargar en este momento.";
+      return;
+    }
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const downloadUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const now = new Date();
+    const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
+      now.getDate()
+    ).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+    anchor.href = downloadUrl;
+    anchor.download = `brief-ejecutivo-${stamp}.txt`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(downloadUrl);
+    statusMessage.textContent = "Brief ejecutivo descargado en TXT.";
+  });
+}
+
+if (activityFeedListContainer) {
+  activityFeedListContainer.addEventListener("click", (event) => {
+    const openModuleButton = event.target.closest("[data-activity-open-module]");
+    if (!openModuleButton) {
+      return;
+    }
+    const targetModule = openModuleButton.getAttribute("data-activity-open-module");
+    if (!targetModule) {
+      return;
+    }
+    window.location.hash = targetModule;
+  });
+}
+
+if (activityFeedClearButton) {
+  activityFeedClearButton.addEventListener("click", () => {
+    if (!state.activityFeed.length) {
+      statusMessage.textContent = "La bitacora ya estaba vacia.";
+      return;
+    }
+    clearActivityFeed();
+    statusMessage.textContent = "Bitacora operativa limpiada.";
+  });
+}
+
+if (ordersBatchAdvanceReadyButton) {
+  ordersBatchAdvanceReadyButton.addEventListener("click", async () => {
+    const readyOrders = getReadyVisibleOrders();
+    if (!readyOrders.length) {
+      statusMessage.textContent = "No hay compras listas para avanzar en este listado.";
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Se van a mover ${readyOrders.length} compra(s) al siguiente estado. Deseas continuar?`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const originalText = ordersBatchAdvanceReadyButton.textContent;
+    ordersBatchAdvanceReadyButton.disabled = true;
+    ordersBatchAdvanceReadyButton.textContent = "Avanzando...";
+
+    try {
+      const updateResults = await Promise.allSettled(
+        readyOrders.map((order) =>
+          requestJson(`/api/orders/${order.id}/status`, {
+            method: "POST",
+            body: JSON.stringify({ status_key: order.next_status_key }),
+          })
+        )
+      );
+      const successCount = updateResults.filter((result) => result.status === "fulfilled").length;
+      const failedCount = updateResults.length - successCount;
+
+      if (successCount > 0) {
+        await Promise.all([loadOrders(), loadHistory(), loadDashboard(), loadFollowup()]);
+        await refreshActiveClientDetail();
+        await refreshActiveProductDetail();
+        addActivityFeedEntry({
+          title: `Compras avanzadas en bloque (${successCount})`,
+          detail: "Se movieron compras listas desde seguimiento operativo.",
+          moduleKey: "compras",
+        });
+      }
+
+      if (failedCount > 0 && successCount > 0) {
+        statusMessage.textContent = `Se avanzaron ${successCount} compra(s), pero ${failedCount} no se pudieron mover.`;
+      } else if (failedCount > 0) {
+        const firstError = updateResults.find((result) => result.status === "rejected");
+        statusMessage.textContent =
+          firstError?.reason?.message || "No fue posible avanzar las compras seleccionadas.";
+      } else {
+        statusMessage.textContent = `Se avanzaron ${successCount} compra(s) al siguiente estado.`;
+      }
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    } finally {
+      ordersBatchAdvanceReadyButton.disabled = false;
+      ordersBatchAdvanceReadyButton.textContent = originalText;
+    }
+  });
+}
+
+if (collectionsBatchRegisterVisibleButton) {
+  collectionsBatchRegisterVisibleButton.addEventListener("click", async () => {
+    const pendingItems = getVisiblePendingCollectionItems();
+    if (!pendingItems.length) {
+      statusMessage.textContent = "No hay cuentas visibles pendientes para registrar pago.";
+      return;
+    }
+
+    const receivedAt = String(collectionsBatchDateInput?.value || "").trim();
+    if (!receivedAt) {
+      statusMessage.textContent = "Selecciona la fecha que usaras para el registro masivo.";
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Se registrara el saldo pendiente de ${pendingItems.length} compra(s) con fecha ${formatStoredDate(
+        receivedAt
+      )}. Deseas continuar?`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const originalText = collectionsBatchRegisterVisibleButton.textContent;
+    collectionsBatchRegisterVisibleButton.disabled = true;
+    collectionsBatchRegisterVisibleButton.textContent = "Registrando...";
+
+    try {
+      const paymentResults = await Promise.allSettled(
+        pendingItems.map((item) =>
+          requestJson(`/api/orders/${item.id}/second-payment`, {
+            method: "POST",
+            body: JSON.stringify({
+              amount_cop: Number(item.balance_due_cop || 0),
+              received_at: receivedAt,
+            }),
+          })
+        )
+      );
+      const successCount = paymentResults.filter((result) => result.status === "fulfilled").length;
+      const failedCount = paymentResults.length - successCount;
+      if (successCount > 0) {
+        await Promise.all([loadOrders(), loadDashboard(), loadFollowup(), loadCollections()]);
+        await refreshActiveClientDetail();
+        await refreshActiveProductDetail();
+        addActivityFeedEntry({
+          title: `Cobros masivos registrados (${successCount})`,
+          detail: `Fecha aplicada: ${formatStoredDate(receivedAt)}.`,
+          moduleKey: "cobros",
+        });
+      }
+      if (failedCount > 0 && successCount > 0) {
+        statusMessage.textContent = `Se registraron ${successCount} cobro(s), pero ${failedCount} fallaron.`;
+      } else if (failedCount > 0) {
+        const firstError = paymentResults.find((result) => result.status === "rejected");
+        statusMessage.textContent =
+          firstError?.reason?.message || "No fue posible registrar los cobros masivos.";
+      } else {
+        statusMessage.textContent = `Se registraron ${successCount} cobro(s) correctamente.`;
+      }
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    } finally {
+      collectionsBatchRegisterVisibleButton.disabled = false;
+      collectionsBatchRegisterVisibleButton.textContent = originalText;
+    }
+  });
+}
 
 ordersListContainer.addEventListener("click", async (event) => {
   const viewOrderButton = event.target.closest("[data-view-order]");
@@ -10986,6 +11746,11 @@ ordersListContainer.addEventListener("click", async (event) => {
       await refreshActiveClientDetail();
       await refreshActiveProductDetail();
       statusMessage.textContent = "Ruta de viaje actualizada.";
+      addActivityFeedEntry({
+        title: `Ruta actualizada ${formatOrderCode(orderId)}`,
+        detail: `Nueva ruta: ${travelTransportType || "sin definir"}.`,
+        moduleKey: "compras",
+      });
     } catch (error) {
       statusMessage.textContent = error.message;
     } finally {
@@ -11024,6 +11789,7 @@ ordersListContainer.addEventListener("click", async (event) => {
     const originalText = secondPaymentButton.textContent;
     secondPaymentButton.disabled = true;
     secondPaymentButton.textContent = "Registrando...";
+    const currentOrder = state.orders.find((item) => Number(item.id) === Number(orderId));
 
     try {
       await requestJson(`/api/orders/${orderId}/second-payment`, {
@@ -11037,6 +11803,13 @@ ordersListContainer.addEventListener("click", async (event) => {
       await refreshActiveClientDetail();
       await refreshActiveProductDetail();
       statusMessage.textContent = "Segundo pago registrado con valor y fecha.";
+      addActivityFeedEntry({
+        title: `Segundo pago registrado ${formatOrderCode(orderId)}`,
+        detail: `${currentOrder?.client_name || "Cliente"} - ${formatCop(amountCop)} el ${formatStoredDate(
+          receivedAt
+        )}`,
+        moduleKey: "cobros",
+      });
     } catch (error) {
       statusMessage.textContent = error.message;
     } finally {
@@ -11149,6 +11922,11 @@ ordersListContainer.addEventListener("click", async (event) => {
       await refreshActiveClientDetail();
       await refreshActiveProductDetail();
       statusMessage.textContent = "Compra actualizada con los datos corregidos.";
+      addActivityFeedEntry({
+        title: `Compra ${formatOrderCode(orderId)} actualizada`,
+        detail: "Se ajustaron valores de la compra confirmada.",
+        moduleKey: "compras",
+      });
     } catch (error) {
       statusMessage.textContent = error.message;
     } finally {
@@ -11189,6 +11967,11 @@ ordersListContainer.addEventListener("click", async (event) => {
       await refreshActiveClientDetail();
       await refreshActiveProductDetail();
       statusMessage.textContent = "Compra invalidada y retirada del operativo.";
+      addActivityFeedEntry({
+        title: `Compra ${formatOrderCode(orderId)} invalidada`,
+        detail: String(reason).trim(),
+        moduleKey: "compras",
+      });
     } catch (error) {
       statusMessage.textContent = error.message;
     } finally {
@@ -11235,6 +12018,11 @@ ordersListContainer.addEventListener("click", async (event) => {
       await refreshActiveClientDetail();
       await refreshActiveProductDetail();
       statusMessage.textContent = "Compra eliminada del operativo y archivada internamente.";
+      addActivityFeedEntry({
+        title: `Compra ${formatOrderCode(orderId)} eliminada`,
+        detail: String(reason).trim(),
+        moduleKey: "compras",
+      });
     } catch (error) {
       statusMessage.textContent = error.message;
     } finally {
@@ -11273,6 +12061,11 @@ ordersListContainer.addEventListener("click", async (event) => {
     await refreshActiveClientDetail();
     await refreshActiveProductDetail();
     statusMessage.textContent = "Estado de compra actualizado.";
+    addActivityFeedEntry({
+      title: `Compra ${formatOrderCode(orderId)} movida`,
+      detail: `Nuevo paso: ${originalText}`,
+      moduleKey: "compras",
+    });
   } catch (error) {
     statusMessage.textContent = error.message;
   } finally {
@@ -11324,6 +12117,9 @@ if (collectionsListContainer) {
     const originalText = paymentButton.textContent;
     paymentButton.disabled = true;
     paymentButton.textContent = "Registrando...";
+    const currentOrder = (state.visibleCollectionItems || []).find(
+      (item) => Number(item.id) === Number(orderId)
+    );
 
     try {
       await requestJson(`/api/orders/${orderId}/second-payment`, {
@@ -11337,6 +12133,13 @@ if (collectionsListContainer) {
       await refreshActiveClientDetail();
       await refreshActiveProductDetail();
       statusMessage.textContent = "Pago registrado desde el modulo de cobros.";
+      addActivityFeedEntry({
+        title: `Cobro registrado ${formatOrderCode(orderId)}`,
+        detail: `${currentOrder?.client_name || "Cliente"} - ${formatCop(amountCop)} el ${formatStoredDate(
+          receivedAt
+        )}`,
+        moduleKey: "cobros",
+      });
     } catch (error) {
       statusMessage.textContent = error.message;
     } finally {
@@ -11743,6 +12546,8 @@ async function logout() {
 
 async function initApp() {
   normalizeAdminCopy();
+  loadActivityFeedFromStorage();
+  renderActivityFeed();
   syncModuleFromHash();
   syncResponsiveShell();
   syncPurchaseTypeUi();
@@ -11768,6 +12573,9 @@ async function initApp() {
   if (inventoryPurchaseForm) {
     inventoryPurchaseForm.elements.namedItem("purchase_date").value = toDateInputValue(new Date());
     inventoryPurchaseForm.elements.namedItem("item_quantity").value = 1;
+  }
+  if (collectionsBatchDateInput && !collectionsBatchDateInput.value) {
+    collectionsBatchDateInput.value = toDateInputValue(new Date());
   }
   await Promise.all([
     loadCatalog(),
