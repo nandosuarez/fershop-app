@@ -65,6 +65,7 @@ from .database import (
     set_product_active,
     set_product_category_active,
     set_product_store_active,
+    list_direct_order_templates,
     update_client,
     update_pending_request_status,
     update_product,
@@ -77,6 +78,7 @@ from .database import (
     update_order_image,
     update_confirmed_order,
     update_whatsapp_notification_status,
+    save_direct_order_template,
 )
 from .documents import (
     build_client_statement_message,
@@ -771,6 +773,16 @@ class FerShopHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/api/direct-order-templates":
+            session = self._require_session()
+            if session is None:
+                return
+            self._send_json(
+                HTTPStatus.OK,
+                list_direct_order_templates(company_id=session["company"]["id"]),
+            )
+            return
+
         if parsed.path == "/api/whatsapp/settings":
             session = self._require_session()
             if session is None:
@@ -1175,6 +1187,15 @@ class FerShopHandler(BaseHTTPRequestHandler):
                 record = set_product_store_active(
                     store_active_route,
                     is_active=bool(payload.get("is_active")),
+                    company_id=session["company"]["id"],
+                )
+                self._send_json(HTTPStatus.OK, {"item": record})
+                return
+
+            if self.path == "/api/direct-order-templates":
+                payload = self._read_json()
+                record = save_direct_order_template(
+                    payload,
                     company_id=session["company"]["id"],
                 )
                 self._send_json(HTTPStatus.OK, {"item": record})

@@ -189,6 +189,10 @@
                 <strong>Estados</strong>
                 <span>Controla el flujo operativo de las compras.</span>
               </a>
+              <a class="module-link" data-admin-menu-target="purchase-templates" href="#administracion">
+                <strong>Plantillas compra</strong>
+                <span>Configura valores rapidos para compras directas.</span>
+              </a>
               <a class="module-link" data-admin-menu-target="registration" href="#administracion">
                 <strong>Registro publico</strong>
                 <span>Comparte el formulario externo para captar clientes.</span>
@@ -1953,6 +1957,75 @@
                       <p>Selecciona un producto desde el catalogo o el dashboard para abrir su ficha comercial.</p>
                     </div>
                   </section>
+                </div>
+              </section>
+                </div>
+
+                <div class="admin-screen" data-admin-screen="purchase-templates">
+              <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-direct-order-templates">
+                <button
+                  class="panel-header collapsible-toggle"
+                  type="button"
+                  data-collapsible-target="admin-direct-order-templates"
+                  data-default-open="false"
+                  aria-expanded="false"
+                >
+                  <div>
+                    <h2>Plantillas de compra directa</h2>
+                    <p>Edita los valores rapidos de online, viaje y mixta para acelerar cada nueva compra.</p>
+                  </div>
+                  <span class="collapsible-indicator" aria-hidden="true"></span>
+                </button>
+
+                <div class="collapsible-body" data-collapsible-body="admin-direct-order-templates">
+                <form id="direct-order-template-form" class="catalog-form">
+                  <div class="field-grid">
+                    <label>
+                      <span>Plantilla</span>
+                      <select id="direct-order-template-key" name="template_key" required>
+                        <option value="online">Compra online estandar</option>
+                        <option value="travel">Compra en viaje</option>
+                        <option value="mixed">Compra mixta</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      <span>Nombre visible</span>
+                      <input name="label" type="text" placeholder="Ej. Compra online estandar" required />
+                    </label>
+
+                    <label>
+                      <span>Tipo de compra</span>
+                      <select name="purchase_type" required>
+                        <option value="online">Online</option>
+                        <option value="travel">En viaje</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      <span>TRM por defecto</span>
+                      <input name="exchange_rate_cop" type="number" min="1" step="1" value="3790" required />
+                    </label>
+
+                    <label>
+                      <span>Anticipo por defecto COP</span>
+                      <input name="advance_paid_cop" type="number" min="0" step="1" value="0" required />
+                    </label>
+
+                    <label>
+                      <span>Descuento general por defecto COP</span>
+                      <input name="general_discount_cop" type="number" min="0" step="1" value="0" required />
+                    </label>
+                  </div>
+
+                  <div class="actions">
+                    <button type="submit" class="primary">Guardar plantilla</button>
+                  </div>
+                </form>
+
+                <div id="direct-order-templates-list" class="catalog-empty">
+                  <p>Aun no hay plantillas de compra configuradas.</p>
+                </div>
                 </div>
               </section>
                 </div>

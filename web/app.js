@@ -98,6 +98,9 @@ const whatsappSettingsForm = document.getElementById("whatsapp-settings-form");
 const whatsappTemplateForm = document.getElementById("whatsapp-template-form");
 const whatsappTriggerSelect = document.getElementById("whatsapp-trigger-select");
 const whatsappTemplatesListContainer = document.getElementById("whatsapp-templates-list");
+const directOrderTemplateAdminForm = document.getElementById("direct-order-template-form");
+const directOrderTemplateKeySelect = document.getElementById("direct-order-template-key");
+const directOrderTemplatesListContainer = document.getElementById("direct-order-templates-list");
 const productCategoryOptions = document.getElementById("product-categories-options");
 const productStoreOptions = document.getElementById("product-stores-options");
 const productCategoryInput = document.getElementById("product-category-input");
@@ -184,6 +187,7 @@ const state = {
   whatsappSettings: null,
   whatsappTemplates: [],
   whatsappTriggers: [],
+  directOrderTemplates: [],
   dashboardPeriod: "daily",
   dashboardReferenceDate: "",
   dashboardClientFilter: "",
@@ -302,6 +306,32 @@ const shortDateFormatter = new Intl.DateTimeFormat("es-CO", {
 });
 const COMPACT_NAV_BREAKPOINT = 1100;
 const ACTIVITY_FEED_KEY = "fershop_activity_feed_v1";
+const DIRECT_ORDER_TEMPLATE_FALLBACKS = [
+  {
+    template_key: "online",
+    label: "Compra online estandar",
+    purchase_type: "online",
+    exchange_rate_cop: 3790,
+    advance_paid_cop: 0,
+    general_discount_cop: 0,
+  },
+  {
+    template_key: "travel",
+    label: "Compra en viaje",
+    purchase_type: "travel",
+    exchange_rate_cop: 3790,
+    advance_paid_cop: 0,
+    general_discount_cop: 0,
+  },
+  {
+    template_key: "mixed",
+    label: "Compra mixta",
+    purchase_type: "online",
+    exchange_rate_cop: 3790,
+    advance_paid_cop: 100000,
+    general_discount_cop: 0,
+  },
+];
 
 function normalizeAdminCopy() {
   const adminSection = document.getElementById("administracion");
@@ -1638,25 +1668,61 @@ function restoreDirectOrderDraft() {
   }
 }
 
+function getDirectOrderTemplateFallback(templateKey) {
+  const key = String(templateKey || "").trim().toLowerCase();
+  return (
+    DIRECT_ORDER_TEMPLATE_FALLBACKS.find((item) => item.template_key === key) ||
+    DIRECT_ORDER_TEMPLATE_FALLBACKS[0]
+  );
+}
+
+function getDirectOrderTemplateConfig(templateKey) {
+  const fallback = getDirectOrderTemplateFallback(templateKey);
+  const key = fallback.template_key;
+  const persisted = state.directOrderTemplates.find(
+    (item) => String(item.template_key || "").trim().toLowerCase() === key
+  );
+  const purchaseType =
+    String(persisted?.purchase_type || fallback.purchase_type || "online").trim().toLowerCase() ===
+    "travel"
+      ? "travel"
+      : "online";
+  const exchangeRate = Number(persisted?.exchange_rate_cop);
+  const advancePaid = Number(persisted?.advance_paid_cop);
+  const generalDiscount = Number(persisted?.general_discount_cop);
+  return {
+    template_key: key,
+    label: String(persisted?.label || fallback.label || "").trim() || fallback.label,
+    purchase_type: purchaseType,
+    exchange_rate_cop:
+      Number.isFinite(exchangeRate) && exchangeRate > 0 ? Math.round(exchangeRate) : fallback.exchange_rate_cop,
+    advance_paid_cop:
+      Number.isFinite(advancePaid) && advancePaid >= 0 ? Math.round(advancePaid) : fallback.advance_paid_cop,
+    general_discount_cop:
+      Number.isFinite(generalDiscount) && generalDiscount >= 0
+        ? Math.round(generalDiscount)
+        : fallback.general_discount_cop,
+  };
+}
+
+function syncDirectOrderTemplateButtons() {
+  directOrderTemplateButtons.forEach((button) => {
+    const templateKey = button.getAttribute("data-direct-order-template");
+    const template = getDirectOrderTemplateConfig(templateKey);
+    button.textContent = template.label;
+  });
+}
+
 function applyDirectOrderTemplate(templateKey) {
-  const template = String(templateKey || "").trim().toLowerCase();
-  if (template === "travel") {
-    setDirectOrderField("purchase_type", "travel");
-    setDirectOrderField("advance_paid_cop", 0);
-    setDirectOrderField("general_discount_cop", 0);
-  } else if (template === "mixed") {
-    setDirectOrderField("purchase_type", "online");
-    setDirectOrderField("advance_paid_cop", 100000);
-    setDirectOrderField("general_discount_cop", 0);
-  } else {
-    setDirectOrderField("purchase_type", "online");
-    setDirectOrderField("advance_paid_cop", 0);
-    setDirectOrderField("general_discount_cop", 0);
-  }
+  const template = getDirectOrderTemplateConfig(templateKey);
+  setDirectOrderField("purchase_type", template.purchase_type);
+  setDirectOrderField("exchange_rate_cop", template.exchange_rate_cop);
+  setDirectOrderField("advance_paid_cop", template.advance_paid_cop);
+  setDirectOrderField("general_discount_cop", template.general_discount_cop);
   syncDirectOrderPurchaseTypeUi();
   saveDirectOrderDraft();
   if (directOrderStatusMessage) {
-    directOrderStatusMessage.textContent = "Plantilla aplicada. Ajusta los valores finales y agrega productos.";
+    directOrderStatusMessage.textContent = `Plantilla '${template.label}' aplicada. Ajusta los valores finales y agrega productos.`;
   }
 }
 
@@ -2723,11 +2789,13 @@ function resetDirectOrderComposerState(
   state.directOrderLastResult = null;
   state.editingDirectOrderItemIndex = null;
   directOrderForm.reset();
-  setDirectOrderField("exchange_rate_cop", 3790);
+  const defaultTemplate = getDirectOrderTemplateConfig("online");
+  setDirectOrderField("purchase_type", defaultTemplate.purchase_type);
+  setDirectOrderField("exchange_rate_cop", defaultTemplate.exchange_rate_cop);
   setDirectOrderField("purchase_date", getBrowserTodayInputValue());
   setDirectOrderField("desired_margin_percent", 30);
-  setDirectOrderField("advance_paid_cop", 0);
-  setDirectOrderField("general_discount_cop", 0);
+  setDirectOrderField("advance_paid_cop", defaultTemplate.advance_paid_cop);
+  setDirectOrderField("general_discount_cop", defaultTemplate.general_discount_cop);
   setDirectOrderField("quantity", 1);
   clearDirectOrderClientSelection();
   clearDirectOrderProductSelection();
@@ -3989,6 +4057,21 @@ function readWhatsAppTemplatePayload() {
     body_text: String(data.get("body_text") || "").trim(),
     is_active: data.get("is_active") === "on",
     auto_send_enabled: data.get("auto_send_enabled") === "on",
+  };
+}
+
+function readDirectOrderTemplatePayload() {
+  if (!directOrderTemplateAdminForm) {
+    throw new Error("No encontramos el formulario de plantillas de compra.");
+  }
+  const data = new FormData(directOrderTemplateAdminForm);
+  return {
+    template_key: String(data.get("template_key") || "").trim().toLowerCase(),
+    label: String(data.get("label") || "").trim(),
+    purchase_type: String(data.get("purchase_type") || "online").trim().toLowerCase(),
+    exchange_rate_cop: Number(data.get("exchange_rate_cop") || 0),
+    advance_paid_cop: Number(data.get("advance_paid_cop") || 0),
+    general_discount_cop: Number(data.get("general_discount_cop") || 0),
   };
 }
 
@@ -5363,6 +5446,65 @@ function renderAdminNamedCatalogList(container, items, emptyMessage, config) {
         </article>
       `
     )
+    .join("");
+}
+
+function syncDirectOrderTemplateFormFromSelection(templateKey) {
+  if (!directOrderTemplateAdminForm) {
+    return;
+  }
+  const template = getDirectOrderTemplateConfig(templateKey);
+  const form = directOrderTemplateAdminForm.elements;
+  form.namedItem("template_key").value = template.template_key;
+  form.namedItem("label").value = template.label;
+  form.namedItem("purchase_type").value = template.purchase_type;
+  form.namedItem("exchange_rate_cop").value = String(Math.round(template.exchange_rate_cop || 0));
+  form.namedItem("advance_paid_cop").value = String(Math.round(template.advance_paid_cop || 0));
+  form.namedItem("general_discount_cop").value = String(Math.round(template.general_discount_cop || 0));
+}
+
+function renderDirectOrderTemplatesAdmin(items) {
+  if (!directOrderTemplatesListContainer) {
+    return;
+  }
+  if (!items.length) {
+    directOrderTemplatesListContainer.className = "catalog-empty";
+    directOrderTemplatesListContainer.innerHTML =
+      "<p>Aun no hay plantillas de compra configuradas.</p>";
+    return;
+  }
+  directOrderTemplatesListContainer.className = "catalog-list compact-list";
+  directOrderTemplatesListContainer.innerHTML = items
+    .map((item) => {
+      const purchaseTypeLabel = item.purchase_type === "travel" ? "En viaje" : "Online";
+      return `
+        <article class="catalog-card compact-card">
+          <div class="catalog-card-top">
+            <div>
+              <h3>${escapeHtml(item.label || item.template_key || "Plantilla")}</h3>
+              <p>${escapeHtml(item.template_key || "")}</p>
+            </div>
+            <div class="catalog-card-actions">
+              <button
+                class="history-action-button history-action-button-secondary history-action-button-icon"
+                type="button"
+                data-direct-order-template-edit="${escapeHtml(item.template_key || "")}"
+                title="Editar plantilla"
+                aria-label="Editar plantilla"
+              >
+                ${renderActionIcon("edit")}
+              </button>
+            </div>
+          </div>
+          <div class="catalog-card-meta">
+            <span>Tipo: ${escapeHtml(purchaseTypeLabel)}</span>
+            <span>TRM: ${formatInteger(item.exchange_rate_cop || 0)}</span>
+            <span>Anticipo: ${formatCop(item.advance_paid_cop || 0)}</span>
+            <span>Descuento: ${formatCop(item.general_discount_cop || 0)}</span>
+          </div>
+        </article>
+      `;
+    })
     .join("");
 }
 
@@ -9812,6 +9954,45 @@ async function loadOrders() {
   }
 }
 
+async function loadDirectOrderTemplateAdmin() {
+  try {
+    const payload = await requestJson("/api/direct-order-templates");
+    const rawItems = Array.isArray(payload?.items) ? payload.items : [];
+    const byKey = new Map(
+      rawItems.map((item) => [String(item.template_key || "").trim().toLowerCase(), item])
+    );
+    const nextItems = DIRECT_ORDER_TEMPLATE_FALLBACKS.map((fallback) => {
+      const current = byKey.get(fallback.template_key) || {};
+      return {
+        template_key: fallback.template_key,
+        label: String(current.label || fallback.label).trim() || fallback.label,
+        purchase_type:
+          String(current.purchase_type || fallback.purchase_type).trim().toLowerCase() === "travel"
+            ? "travel"
+            : "online",
+        exchange_rate_cop: Number(current.exchange_rate_cop || fallback.exchange_rate_cop) || fallback.exchange_rate_cop,
+        advance_paid_cop: Number(current.advance_paid_cop || 0),
+        general_discount_cop: Number(current.general_discount_cop || 0),
+      };
+    });
+
+    state.directOrderTemplates = nextItems;
+    syncDirectOrderTemplateButtons();
+    renderDirectOrderTemplatesAdmin(state.directOrderTemplates);
+    if (directOrderTemplateAdminForm) {
+      const selectedKey = directOrderTemplateKeySelect?.value || "online";
+      syncDirectOrderTemplateFormFromSelection(selectedKey);
+    }
+  } catch (error) {
+    state.directOrderTemplates = [];
+    syncDirectOrderTemplateButtons();
+    if (directOrderTemplatesListContainer) {
+      directOrderTemplatesListContainer.className = "catalog-empty";
+      directOrderTemplatesListContainer.innerHTML = `<p>${error.message}</p>`;
+    }
+  }
+}
+
 function syncWhatsAppTemplateFormFromTrigger(triggerKey) {
   if (!whatsappTemplateForm) {
     return;
@@ -10685,6 +10866,46 @@ if (whatsappTemplateForm) {
 if (whatsappTriggerSelect) {
   whatsappTriggerSelect.addEventListener("change", () => {
     syncWhatsAppTemplateFormFromTrigger(whatsappTriggerSelect.value);
+  });
+}
+
+if (directOrderTemplateKeySelect) {
+  directOrderTemplateKeySelect.addEventListener("change", () => {
+    syncDirectOrderTemplateFormFromSelection(directOrderTemplateKeySelect.value);
+  });
+}
+
+if (directOrderTemplateAdminForm) {
+  directOrderTemplateAdminForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const payload = readDirectOrderTemplatePayload();
+      await requestJson("/api/direct-order-templates", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      await loadDirectOrderTemplateAdmin();
+      syncDirectOrderTemplateFormFromSelection(payload.template_key);
+      statusMessage.textContent = "Plantilla de compra guardada.";
+      window.location.hash = "administracion";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+  });
+}
+
+if (directOrderTemplatesListContainer) {
+  directOrderTemplatesListContainer.addEventListener("click", (event) => {
+    const editButton = event.target.closest("[data-direct-order-template-edit]");
+    if (!editButton) {
+      return;
+    }
+    const templateKey = editButton.getAttribute("data-direct-order-template-edit") || "online";
+    if (directOrderTemplateKeySelect) {
+      directOrderTemplateKeySelect.value = templateKey;
+    }
+    syncDirectOrderTemplateFormFromSelection(templateKey);
+    statusMessage.textContent = "Plantilla cargada en el formulario para editar.";
   });
 }
 
@@ -12551,6 +12772,7 @@ async function initApp() {
   syncModuleFromHash();
   syncResponsiveShell();
   syncPurchaseTypeUi();
+  syncDirectOrderTemplateButtons();
   resetDirectOrderComposerState();
   restoreDirectOrderDraft();
   resetQuoteEditingState();
@@ -12584,6 +12806,7 @@ async function initApp() {
     loadInventoryPurchases(),
     loadOrders(),
     loadCollections(),
+    loadDirectOrderTemplateAdmin(),
     loadWhatsAppAdmin(),
     loadDashboard(),
     loadFollowup(),

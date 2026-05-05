@@ -85,6 +85,36 @@ INVENTORY_MOVEMENT_LABELS = {
     INVENTORY_MOVEMENT_SET_STOCK: "Ajuste de stock",
 }
 INVENTORY_COST_EPSILON = 0.005
+DIRECT_ORDER_TEMPLATE_DEFAULTS: tuple[dict[str, Any], ...] = (
+    {
+        "template_key": "online",
+        "label": "Compra online estandar",
+        "purchase_type": "online",
+        "advance_paid_cop": 0.0,
+        "general_discount_cop": 0.0,
+        "exchange_rate_cop": 3790.0,
+    },
+    {
+        "template_key": "travel",
+        "label": "Compra en viaje",
+        "purchase_type": "travel",
+        "advance_paid_cop": 0.0,
+        "general_discount_cop": 0.0,
+        "exchange_rate_cop": 3790.0,
+    },
+    {
+        "template_key": "mixed",
+        "label": "Compra mixta",
+        "purchase_type": "online",
+        "advance_paid_cop": 100000.0,
+        "general_discount_cop": 0.0,
+        "exchange_rate_cop": 3790.0,
+    },
+)
+DIRECT_ORDER_TEMPLATE_KEY_SET = {
+    str(item["template_key"]).strip().lower() for item in DIRECT_ORDER_TEMPLATE_DEFAULTS
+}
+DIRECT_ORDER_PURCHASE_TYPES = {"online", "travel"}
 
 
 def _cleanup_stale_files() -> None:
@@ -887,6 +917,79 @@ def _ensure_default_company_and_admin(
         "logo_path": row["logo_path"],
         "is_active": bool(row["is_active"]),
     }
+
+
+def _get_default_direct_order_template(template_key: Any) -> dict[str, Any]:
+    normalized_key = str(template_key or "").strip().lower()
+    for item in DIRECT_ORDER_TEMPLATE_DEFAULTS:
+        if item["template_key"] == normalized_key:
+            return dict(item)
+    return dict(DIRECT_ORDER_TEMPLATE_DEFAULTS[0])
+
+
+def _serialize_direct_order_template_row(row: sqlite3.Row) -> dict[str, Any]:
+    purchase_type = str(row["purchase_type"] or "").strip().lower()
+    if purchase_type not in DIRECT_ORDER_PURCHASE_TYPES:
+        purchase_type = "online"
+    return {
+        "id": row["id"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "company_id": row["company_id"],
+        "template_key": row["template_key"],
+        "label": row["label"],
+        "purchase_type": purchase_type,
+        "advance_paid_cop": float(row["advance_paid_cop"] or 0),
+        "general_discount_cop": float(row["general_discount_cop"] or 0),
+        "exchange_rate_cop": float(row["exchange_rate_cop"] or 0),
+    }
+
+
+def _seed_default_direct_order_templates(
+    connection: sqlite3.Connection | CompatConnection,
+    company_id: int,
+) -> None:
+    connection.row_factory = sqlite3.Row
+    rows = connection.execute(
+        """
+        SELECT template_key
+        FROM direct_order_templates
+        WHERE company_id = ?
+        """,
+        (company_id,),
+    ).fetchall()
+    existing_keys = {str(row["template_key"] or "").strip().lower() for row in rows}
+    now = datetime.now(timezone.utc).isoformat()
+    for template in DIRECT_ORDER_TEMPLATE_DEFAULTS:
+        if template["template_key"] in existing_keys:
+            continue
+        connection.execute(
+            """
+            INSERT INTO direct_order_templates (
+                created_at,
+                updated_at,
+                company_id,
+                template_key,
+                label,
+                purchase_type,
+                advance_paid_cop,
+                general_discount_cop,
+                exchange_rate_cop
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                now,
+                now,
+                company_id,
+                template["template_key"],
+                template["label"],
+                template["purchase_type"],
+                float(template["advance_paid_cop"] or 0),
+                float(template["general_discount_cop"] or 0),
+                float(template["exchange_rate_cop"] or 0),
+            ),
+        )
 
 
 def _serialize_whatsapp_settings_row(row: sqlite3.Row | None) -> dict[str, Any]:
@@ -1848,6 +1951,23 @@ def init_db(skip_defaults: bool = False) -> None:
             )
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS direct_order_templates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    company_id INTEGER NOT NULL DEFAULT 1,
+                    template_key TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    purchase_type TEXT NOT NULL DEFAULT 'online',
+                    advance_paid_cop REAL NOT NULL DEFAULT 0,
+                    general_discount_cop REAL NOT NULL DEFAULT 0,
+                    exchange_rate_cop REAL NOT NULL DEFAULT 3790,
+                    UNIQUE(company_id, template_key)
+                )
+                """
+            )
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS products (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     created_at TEXT NOT NULL,
@@ -2171,6 +2291,9 @@ def init_db(skip_defaults: bool = False) -> None:
                 "CREATE INDEX IF NOT EXISTS idx_whatsapp_notifications_sid ON whatsapp_notifications (external_message_id)"
             )
             connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_direct_order_templates_company_key ON direct_order_templates (company_id, template_key)"
+            )
+            connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_products_company_created ON products (company_id, id DESC)"
             )
             connection.execute(
@@ -2227,6 +2350,7 @@ def init_db(skip_defaults: bool = False) -> None:
             _ensure_company_id_column(connection, "clients", default_company_id)
             _ensure_company_id_column(connection, "whatsapp_templates", default_company_id)
             _ensure_company_id_column(connection, "whatsapp_notifications", default_company_id)
+            _ensure_company_id_column(connection, "direct_order_templates", default_company_id)
             _ensure_company_id_column(connection, "products", default_company_id)
             _ensure_company_id_column(connection, "product_categories", default_company_id)
             _ensure_company_id_column(connection, "product_stores", default_company_id)
@@ -2243,6 +2367,7 @@ def init_db(skip_defaults: bool = False) -> None:
             if not skip_defaults:
                 _ensure_company_whatsapp_settings(connection, default_company_id)
                 _seed_default_whatsapp_templates(connection, default_company_id)
+                _seed_default_direct_order_templates(connection, default_company_id)
                 _seed_default_order_statuses(connection, default_company_id=default_company_id)
                 _migrate_legacy_order_states(connection)
                 _backfill_payment_events(connection)
@@ -2444,6 +2569,7 @@ def create_company_with_admin(
         _seed_default_order_statuses(connection, default_company_id=company_id)
         _ensure_company_whatsapp_settings(connection, company_id)
         _seed_default_whatsapp_templates(connection, company_id)
+        _seed_default_direct_order_templates(connection, company_id)
         user_id = _insert_and_get_id(
             connection,
             """
@@ -5383,6 +5509,213 @@ def create_order_status(
             (status_id,),
         ).fetchone()
         return _serialize_status_row(row)
+
+
+def list_direct_order_templates(company_id: int | None = None) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        _seed_default_direct_order_templates(connection, company_id)
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                created_at,
+                updated_at,
+                company_id,
+                template_key,
+                label,
+                purchase_type,
+                advance_paid_cop,
+                general_discount_cop,
+                exchange_rate_cop
+            FROM direct_order_templates
+            WHERE company_id = ?
+            ORDER BY
+                CASE template_key
+                    WHEN 'online' THEN 1
+                    WHEN 'travel' THEN 2
+                    WHEN 'mixed' THEN 3
+                    ELSE 99
+                END ASC,
+                template_key ASC
+            """,
+            (company_id,),
+        ).fetchall()
+        connection.commit()
+
+    by_key = {
+        str(item.get("template_key") or "").strip().lower(): item
+        for item in (_serialize_direct_order_template_row(row) for row in rows)
+    }
+    items: list[dict[str, Any]] = []
+    for default_item in DIRECT_ORDER_TEMPLATE_DEFAULTS:
+        key = default_item["template_key"]
+        if key in by_key:
+            item = dict(by_key[key])
+        else:
+            item = {
+                "id": None,
+                "created_at": "",
+                "updated_at": "",
+                "company_id": company_id,
+                "template_key": key,
+                "label": default_item["label"],
+                "purchase_type": default_item["purchase_type"],
+                "advance_paid_cop": float(default_item["advance_paid_cop"] or 0),
+                "general_discount_cop": float(default_item["general_discount_cop"] or 0),
+                "exchange_rate_cop": float(default_item["exchange_rate_cop"] or 0),
+            }
+        if not str(item.get("label") or "").strip():
+            item["label"] = default_item["label"]
+        items.append(item)
+
+    for row in rows:
+        serialized = _serialize_direct_order_template_row(row)
+        key = str(serialized.get("template_key") or "").strip().lower()
+        if key not in DIRECT_ORDER_TEMPLATE_KEY_SET:
+            items.append(serialized)
+
+    return {"items": items}
+
+
+def save_direct_order_template(
+    template_data: dict[str, Any], company_id: int | None = None
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+
+    template_key = str(template_data.get("template_key") or "").strip().lower()
+    if template_key not in DIRECT_ORDER_TEMPLATE_KEY_SET:
+        raise ValueError("La plantilla de compra no es valida.")
+    default_template = _get_default_direct_order_template(template_key)
+
+    label = str(template_data.get("label") or default_template["label"]).strip()
+    if not label:
+        raise ValueError("El nombre visible de la plantilla es obligatorio.")
+
+    purchase_type = str(
+        template_data.get("purchase_type") or default_template["purchase_type"]
+    ).strip().lower()
+    if purchase_type not in DIRECT_ORDER_PURCHASE_TYPES:
+        raise ValueError("El tipo de compra de la plantilla no es valido.")
+
+    try:
+        advance_paid_cop = float(
+            template_data.get("advance_paid_cop", default_template["advance_paid_cop"]) or 0
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("El anticipo por defecto debe ser numerico.") from exc
+    if advance_paid_cop < 0:
+        raise ValueError("El anticipo por defecto no puede ser negativo.")
+
+    try:
+        general_discount_cop = float(
+            template_data.get(
+                "general_discount_cop", default_template["general_discount_cop"]
+            )
+            or 0
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("El descuento general por defecto debe ser numerico.") from exc
+    if general_discount_cop < 0:
+        raise ValueError("El descuento general por defecto no puede ser negativo.")
+
+    try:
+        exchange_rate_cop = float(
+            template_data.get("exchange_rate_cop", default_template["exchange_rate_cop"]) or 0
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("La TRM por defecto debe ser numerica.") from exc
+    if exchange_rate_cop <= 0:
+        raise ValueError("La TRM por defecto debe ser mayor a cero.")
+
+    now = datetime.now(timezone.utc).isoformat()
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        _seed_default_direct_order_templates(connection, company_id)
+        existing = connection.execute(
+            """
+            SELECT id
+            FROM direct_order_templates
+            WHERE company_id = ? AND template_key = ?
+            """,
+            (company_id, template_key),
+        ).fetchone()
+        if existing is None:
+            template_id = _insert_and_get_id(
+                connection,
+                """
+                INSERT INTO direct_order_templates (
+                    created_at,
+                    updated_at,
+                    company_id,
+                    template_key,
+                    label,
+                    purchase_type,
+                    advance_paid_cop,
+                    general_discount_cop,
+                    exchange_rate_cop
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    now,
+                    now,
+                    company_id,
+                    template_key,
+                    label,
+                    purchase_type,
+                    advance_paid_cop,
+                    general_discount_cop,
+                    exchange_rate_cop,
+                ),
+            )
+        else:
+            template_id = int(existing["id"])
+            connection.execute(
+                """
+                UPDATE direct_order_templates
+                SET updated_at = ?,
+                    label = ?,
+                    purchase_type = ?,
+                    advance_paid_cop = ?,
+                    general_discount_cop = ?,
+                    exchange_rate_cop = ?
+                WHERE id = ? AND company_id = ?
+                """,
+                (
+                    now,
+                    label,
+                    purchase_type,
+                    advance_paid_cop,
+                    general_discount_cop,
+                    exchange_rate_cop,
+                    template_id,
+                    company_id,
+                ),
+            )
+        connection.commit()
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                created_at,
+                updated_at,
+                company_id,
+                template_key,
+                label,
+                purchase_type,
+                advance_paid_cop,
+                general_discount_cop,
+                exchange_rate_cop
+            FROM direct_order_templates
+            WHERE id = ? AND company_id = ?
+            """,
+            (template_id, company_id),
+        ).fetchone()
+    return _serialize_direct_order_template_row(row)
 
 
 def list_whatsapp_templates(company_id: int | None = None) -> dict[str, Any]:

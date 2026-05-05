@@ -10,9 +10,11 @@ from fershop_calculadora.database import (
     get_quote,
     invalidate_order,
     list_collection_accounts,
+    list_direct_order_templates,
     list_orders,
     list_order_statuses,
     register_second_payment,
+    save_direct_order_template,
     save_client,
     save_product,
     update_confirmed_order,
@@ -179,6 +181,38 @@ class OrderPersistenceTests(unittest.TestCase):
     def tearDown(self) -> None:
         database._connect = self.original_connect
         self.keepalive.close()
+
+    def test_list_direct_order_templates_seeds_defaults(self) -> None:
+        payload = list_direct_order_templates()
+        items = payload["items"]
+        self.assertEqual([item["template_key"] for item in items[:3]], ["online", "travel", "mixed"])
+        self.assertEqual(items[0]["label"], "Compra online estandar")
+        self.assertEqual(items[1]["purchase_type"], "travel")
+
+    def test_save_direct_order_template_updates_values(self) -> None:
+        updated = save_direct_order_template(
+            {
+                "template_key": "mixed",
+                "label": "Compra mixta personalizada",
+                "purchase_type": "travel",
+                "exchange_rate_cop": 4025,
+                "advance_paid_cop": 250000,
+                "general_discount_cop": 30000,
+            }
+        )
+
+        self.assertEqual(updated["template_key"], "mixed")
+        self.assertEqual(updated["label"], "Compra mixta personalizada")
+        self.assertEqual(updated["purchase_type"], "travel")
+        self.assertEqual(updated["exchange_rate_cop"], 4025)
+        self.assertEqual(updated["advance_paid_cop"], 250000)
+        self.assertEqual(updated["general_discount_cop"], 30000)
+
+        payload = list_direct_order_templates()
+        reloaded = next(item for item in payload["items"] if item["template_key"] == "mixed")
+        self.assertEqual(reloaded["label"], "Compra mixta personalizada")
+        self.assertEqual(reloaded["purchase_type"], "travel")
+        self.assertEqual(reloaded["exchange_rate_cop"], 4025)
 
     def test_register_second_payment_persists_amount_date_and_event(self) -> None:
         quote = QuoteInput.from_dict(
