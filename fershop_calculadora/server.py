@@ -8,6 +8,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from datetime import datetime, timedelta
 
 from .auth import SESSION_COOKIE_NAME, SESSION_DURATION_DAYS
 from .catalog import ClientInput, PendingRequestInput, ProductInput
@@ -474,9 +475,178 @@ class FerShopHandler(BaseHTTPRequestHandler):
             session = self._require_session()
             if session is None:
                 return
+            params = parse_qs(parsed.query)
+            filter_date = str(params.get("date", [""])[0] or "").strip()
+            recent_hours_raw = str(params.get("recent_hours", [""])[0] or "").strip()
+            recent_hours = 0
+            query_text = str(params.get("q", [""])[0] or "").strip().casefold()
+            limit_raw = str(params.get("limit", ["100"])[0] or "100").strip()
+            try:
+                limit = min(max(int(limit_raw), 1), 500)
+            except ValueError:
+                limit = 100
+            if recent_hours_raw:
+                try:
+                    recent_hours = max(int(recent_hours_raw), 0)
+                except ValueError:
+                    recent_hours = 0
+
+            def _safe_parse_iso(raw_value: object) -> datetime | None:
+                text = str(raw_value or "").strip()
+                if not text:
+                    return None
+                try:
+                    return datetime.fromisoformat(text.replace("Z", "+00:00"))
+                except ValueError:
+                    return None
+
+            orders = list_orders(company_id=session["company"]["id"])
+            if filter_date:
+                orders = [
+                    item
+                    for item in orders
+                    if str(item.get("last_status_changed_at") or item.get("created_at") or "")[:10] == filter_date
+                ]
+            elif recent_hours > 0:
+                cutoff = datetime.now().astimezone() - timedelta(hours=recent_hours)
+                filtered_items = []
+                for item in orders:
+                    parsed_date = _safe_parse_iso(item.get("last_status_changed_at") or item.get("created_at"))
+                    if parsed_date is None:
+                        continue
+                    comparable_date = (
+                        parsed_date
+                        if parsed_date.tzinfo
+                        else parsed_date.replace(tzinfo=cutoff.tzinfo)
+                    )
+                    if comparable_date >= cutoff:
+                        filtered_items.append(item)
+                orders = filtered_items
+
+            if query_text:
+                orders = [
+                    item
+                    for item in orders
+                    if query_text in str(item.get("id") or "").casefold()
+                    or query_text in str(item.get("client_name") or "").casefold()
+                    or query_text in str(item.get("product_name") or "").casefold()
+                    or query_text in str(item.get("status_label") or "").casefold()
+                ]
+
+            orders = orders[:limit]
+
             self._send_json(
                 HTTPStatus.OK,
-                {"items": list_orders(company_id=session["company"]["id"])},
+                {"items": orders},
+            )
+            return
+
+        if parsed.path == "/api/collections-report":
+            session = self._require_session()
+            if session is None:
+                return
+            params = parse_qs(parsed.query)
+            client_id_raw = str(params.get("client_id", [""])[0] or "").strip()
+            selected_client_id = None
+            if client_id_raw:
+                try:
+                    selected_client_id = int(client_id_raw)
+                except ValueError:
+                    selected_client_id = None
+            min_balance_raw = str(params.get("min_balance_cop", ["0"])[0] or "0").strip()
+            stale_days_raw = str(params.get("stale_days", ["0"])[0] or "0").strip()
+            try:
+                min_balance_cop = max(float(min_balance_raw), 0.0)
+            except ValueError:
+                min_balance_cop = 0.0
+            try:
+                stale_days = max(int(stale_days_raw), 0)
+            except ValueError:
+                stale_days = 0
+
+            orders = list_orders(company_id=session["company"]["id"])
+            now = datetime.now().astimezone()
+            def _safe_parse_iso(raw_value: object) -> datetime | None:
+                text = str(raw_value or "").strip()
+                if not text:
+                    return None
+                try:
+                    return datetime.fromisoformat(text.replace("Z", "+00:00"))
+                except ValueError:
+                    return None
+
+            def _stale_ok(item: dict) -> bool:
+                if stale_days <= 0:
+                    return True
+                parsed_date = _safe_parse_iso(item.get("last_status_changed_at") or item.get("created_at"))
+                if parsed_date is None:
+                    return False
+                comparable_date = parsed_date if parsed_date.tzinfo else parsed_date.replace(tzinfo=now.tzinfo)
+                age_days = (now - comparable_date).days
+                return age_days >= stale_days
+
+            pending_orders = [
+                item
+                for item in orders
+                if float(item.get("balance_due_cop") or 0) > 0
+                and float(item.get("balance_due_cop") or 0) >= min_balance_cop
+                and str(item.get("status_key") or "") != "cycle_closed"
+                and _stale_ok(item)
+            ]
+            if selected_client_id is not None:
+                pending_orders = [
+                    item for item in pending_orders if int(item.get("client_id") or 0) == selected_client_id
+                ]
+
+            high_priority_balance_due_cop = 0.0
+            for item in pending_orders:
+                balance = float(item.get("balance_due_cop") or 0)
+                parsed_date = _safe_parse_iso(item.get("last_status_changed_at") or item.get("created_at"))
+                age_days = 0
+                if parsed_date is not None:
+                    comparable_date = parsed_date if parsed_date.tzinfo else parsed_date.replace(tzinfo=now.tzinfo)
+                    age_days = max((now - comparable_date).days, 0)
+                if balance >= 1000000 or age_days >= 14:
+                    high_priority_balance_due_cop += balance
+
+            client_totals: dict[int, dict[str, object]] = {}
+            for item in orders:
+                client_id = int(item.get("client_id") or 0)
+                if client_id <= 0:
+                    continue
+                balance = float(item.get("balance_due_cop") or 0)
+                if balance <= 0:
+                    continue
+                bucket = client_totals.setdefault(
+                    client_id,
+                    {
+                        "client_id": client_id,
+                        "client_name": str(item.get("client_name") or "Cliente sin nombre"),
+                        "balance_due_cop": 0.0,
+                    },
+                )
+                bucket["balance_due_cop"] = float(bucket["balance_due_cop"]) + balance
+
+            clients = sorted(client_totals.values(), key=lambda row: (-float(row["balance_due_cop"]), str(row["client_name"]).casefold()))
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "selected_client_id": selected_client_id,
+                    "clients": clients,
+                    "orders": pending_orders[:300],
+                    "metrics": {
+                        "clients_with_balance_count": len(clients),
+                        "pending_orders_count": len(pending_orders),
+                        "total_balance_due_cop": sum(float(item.get("balance_due_cop") or 0) for item in pending_orders),
+                        "average_balance_due_cop": (
+                            sum(float(item.get("balance_due_cop") or 0) for item in pending_orders)
+                            / len(pending_orders)
+                            if pending_orders
+                            else 0.0
+                        ),
+                        "high_priority_balance_due_cop": high_priority_balance_due_cop,
+                    },
+                },
             )
             return
 

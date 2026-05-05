@@ -68,6 +68,25 @@ Opcionalmente puedes indicar otra base origen:
 py -3 scripts/migrate_sqlite_to_postgres.py --sqlite-path C:\ruta\mi_base.sqlite3
 ```
 
+## Seguridad de datos antes de cambios
+
+Para evitar perdida de informacion cuando hagas mejoras o despliegues:
+
+1. Realiza backup de SQLite si trabajas en local:
+
+```powershell
+copy data\fershop_app.sqlite3 data\fershop_app.backup.sqlite3
+```
+
+2. Si ya usas PostgreSQL, realiza dump antes de cambios:
+
+```bash
+pg_dump "$DATABASE_URL" > fershop_backup.sql
+```
+
+3. Valida migraciones o refactors en un entorno de prueba primero.
+4. No borres ni recrees tablas en produccion sin snapshot previo.
+
 ## Publicacion en Render con PostgreSQL
 
 Este proyecto ya incluye:
