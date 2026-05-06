@@ -17,11 +17,15 @@ from .database import (
     authenticate_user,
     build_followup_summary,
     build_dashboard_summary,
+    build_platform_overview,
     build_executive_brief,
+    create_company_billing_event,
     list_collection_accounts,
     create_product_category,
     create_product_store,
     create_direct_order,
+    create_company_with_admin,
+    create_company_user,
     create_order_status,
     create_order_from_quote,
     create_session_for_user,
@@ -36,6 +40,10 @@ from .database import (
     get_session_by_token,
     init_db,
     list_clients,
+    list_companies,
+    list_company_users,
+    list_company_billing_events,
+    list_platform_company_users,
     list_expense_categories,
     list_expenses,
     list_inventory_purchases,
@@ -52,6 +60,7 @@ from .database import (
     record_product_inventory_movement,
     register_second_payment,
     save_company_whatsapp_settings,
+    save_company_plan,
     save_expense,
     save_inventory_purchase,
     save_client,
@@ -61,6 +70,8 @@ from .database import (
     save_whatsapp_template,
     send_order_whatsapp_notification,
     set_client_active,
+    set_company_user_active,
+    set_company_active,
     invalidate_order,
     set_product_active,
     set_product_category_active,
@@ -73,6 +84,9 @@ from .database import (
     update_product_category,
     update_product_store,
     update_quote,
+    update_company_user_role,
+    update_company_branding,
+    reset_company_user_password,
     update_order_status,
     update_order_travel_transport,
     update_order_image,
@@ -96,7 +110,7 @@ WEB_ROOT = WEB_DIR.resolve()
 
 
 class FerShopHandler(BaseHTTPRequestHandler):
-    server_version = "FerShopCalculadora/0.1"
+    server_version = "ShopperCalculator/0.2"
 
     @staticmethod
     def _build_quote_record(payload: dict) -> tuple[dict, dict]:
@@ -180,17 +194,67 @@ class FerShopHandler(BaseHTTPRequestHandler):
         )
         return normalized
 
+    @staticmethod
+    def _parse_bool_flag(value: object) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "si", "on"}
+        return bool(value)
+
+    @staticmethod
+    def _can_manage_company_users(session: dict) -> bool:
+        if bool(session.get("user", {}).get("is_platform_admin")):
+            return True
+        role = str(session.get("user", {}).get("role") or "").strip().lower()
+        return role in {"owner", "admin"}
+
+    def _require_company_user_permission(self, session: dict) -> bool:
+        if self._can_manage_company_users(session):
+            return True
+        self._send_json(
+            HTTPStatus.FORBIDDEN,
+            {"error": "No tienes permiso para administrar usuarios de la empresa."},
+        )
+        return False
+
+    @staticmethod
+    def _is_platform_admin(session: dict) -> bool:
+        return bool(session.get("user", {}).get("is_platform_admin"))
+
+    def _require_platform_admin(self, session: dict) -> bool:
+        if self._is_platform_admin(session):
+            return True
+        self._send_json(
+            HTTPStatus.FORBIDDEN,
+            {"error": "No tienes permisos de soporte de plataforma."},
+        )
+        return False
+
     def _current_session(self) -> dict | None:
         raw_cookie = self.headers.get("Cookie", "")
-        if not raw_cookie:
-            return None
+        if raw_cookie:
+            cookie = SimpleCookie()
+            cookie.load(raw_cookie)
+            morsel = cookie.get(SESSION_COOKIE_NAME)
+            if morsel is not None:
+                session = get_session_by_token(morsel.value)
+                if session is not None:
+                    return session
 
-        cookie = SimpleCookie()
-        cookie.load(raw_cookie)
-        morsel = cookie.get(SESSION_COOKIE_NAME)
-        if morsel is None:
+        header_token = self._extract_session_token_from_headers()
+        if not header_token:
             return None
-        return get_session_by_token(morsel.value)
+        return get_session_by_token(header_token)
+
+    def _extract_session_token_from_headers(self) -> str | None:
+        auth_header = str(self.headers.get("Authorization", "") or "").strip()
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header[7:].strip()
+            if token:
+                return token
+        direct_token = str(self.headers.get("X-Session-Token", "") or "").strip()
+        if direct_token:
+            return direct_token
+        return None
 
     def _require_session(self) -> dict | None:
         session = self._current_session()
@@ -289,6 +353,64 @@ class FerShopHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.OK, session)
             return
 
+        if parsed.path == "/api/platform/overview":
+            session = self._require_session()
+            if session is None:
+                return
+            if not self._require_platform_admin(session):
+                return
+            self._send_json(HTTPStatus.OK, {"item": build_platform_overview()})
+            return
+
+        if parsed.path == "/api/platform/companies":
+            session = self._require_session()
+            if session is None:
+                return
+            if not self._require_platform_admin(session):
+                return
+            self._send_json(HTTPStatus.OK, {"items": list_companies(include_inactive=True)})
+            return
+
+        if parsed.path == "/api/platform/users":
+            session = self._require_session()
+            if session is None:
+                return
+            if not self._require_platform_admin(session):
+                return
+            self._send_json(HTTPStatus.OK, {"items": list_platform_company_users()})
+            return
+
+        if parsed.path == "/api/platform/billing-events":
+            session = self._require_session()
+            if session is None:
+                return
+            if not self._require_platform_admin(session):
+                return
+            params = parse_qs(parsed.query)
+            raw_limit = params.get("limit", ["120"])[0]
+            try:
+                limit = max(1, min(int(raw_limit), 500))
+            except ValueError:
+                limit = 120
+            self._send_json(
+                HTTPStatus.OK,
+                {"items": list_company_billing_events(limit=limit)},
+            )
+            return
+
+        platform_company_users_route = self._parse_platform_company_users_route(parsed.path)
+        if platform_company_users_route is not None:
+            session = self._require_session()
+            if session is None:
+                return
+            if not self._require_platform_admin(session):
+                return
+            self._send_json(
+                HTTPStatus.OK,
+                {"items": list_platform_company_users(company_id=platform_company_users_route)},
+            )
+            return
+
         if parsed.path == "/api/quotes":
             session = self._require_session()
             if session is None:
@@ -348,6 +470,18 @@ class FerShopHandler(BaseHTTPRequestHandler):
             self._send_json(
                 HTTPStatus.OK,
                 {"items": list_clients(company_id=session["company"]["id"])},
+            )
+            return
+
+        if parsed.path == "/api/company-users":
+            session = self._require_session()
+            if session is None:
+                return
+            if not self._require_company_user_permission(session):
+                return
+            self._send_json(
+                HTTPStatus.OK,
+                {"items": list_company_users(company_id=session["company"]["id"])},
             )
             return
 
@@ -941,11 +1075,6 @@ class FerShopHandler(BaseHTTPRequestHandler):
                         {"error": "Usuario o contrasena invalidos."},
                     )
                     return
-                    self._send_json(
-                        HTTPStatus.UNAUTHORIZED,
-                        {"error": "Usuario o contraseÃ±a invÃ¡lidos."},
-                    )
-                    return
                 session_token = create_session_for_user(user_data)
                 self.send_response(HTTPStatus.OK)
                 self._set_session_cookie(session_token)
@@ -955,6 +1084,8 @@ class FerShopHandler(BaseHTTPRequestHandler):
                             "id": user_data["user_id"],
                             "username": user_data["username"],
                             "display_name": user_data["display_name"],
+                            "role": user_data.get("role", "operator"),
+                            "is_platform_admin": bool(user_data.get("is_platform_admin")),
                         },
                         "company": user_data["company"],
                     },
@@ -964,6 +1095,36 @@ class FerShopHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+                return
+
+            if self.path == "/api/mobile/login":
+                payload = self._read_json()
+                username = str(payload.get("username", "")).strip()
+                password = str(payload.get("password", ""))
+                user_data = authenticate_user(username, password)
+                if user_data is None:
+                    self._send_json(
+                        HTTPStatus.UNAUTHORIZED,
+                        {"error": "Usuario o contrasena invalidos."},
+                    )
+                    return
+                session_token = create_session_for_user(user_data)
+                session_data = get_session_by_token(session_token)
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "session_token": session_token,
+                        "user": {
+                            "id": user_data["user_id"],
+                            "username": user_data["username"],
+                            "display_name": user_data["display_name"],
+                            "role": user_data.get("role", "operator"),
+                            "is_platform_admin": bool(user_data.get("is_platform_admin")),
+                        },
+                        "company": user_data["company"],
+                        "session": session_data,
+                    },
+                )
                 return
 
             if self.path == "/api/logout":
@@ -981,6 +1142,121 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
             session = self._require_session()
             if session is None:
+                return
+
+            if self.path == "/api/company/branding":
+                if not self._require_company_user_permission(session):
+                    return
+                payload = self._read_json()
+                item = update_company_branding(
+                    session["company"]["id"],
+                    name=str(payload.get("name", "")).strip() if "name" in payload else None,
+                    brand_name=str(payload.get("brand_name", "")).strip()
+                    if "brand_name" in payload
+                    else None,
+                    tagline=str(payload.get("tagline", "")).strip() if "tagline" in payload else None,
+                    logo_path=str(payload.get("logo_path", "")).strip()
+                    if "logo_path" in payload
+                    else None,
+                )
+                self._send_json(HTTPStatus.OK, {"item": item})
+                return
+
+            if self.path == "/api/platform/companies":
+                if not self._require_platform_admin(session):
+                    return
+                payload = self._read_json()
+                created = create_company_with_admin(
+                    slug=str(payload.get("slug", "")).strip(),
+                    name=str(payload.get("name", "")).strip(),
+                    brand_name=str(payload.get("brand_name", "")).strip()
+                    or str(payload.get("name", "")).strip(),
+                    tagline=str(payload.get("tagline", "")).strip(),
+                    logo_path=str(payload.get("logo_path", "")).strip(),
+                    username=str(payload.get("admin_username", "")).strip().lower(),
+                    password=str(payload.get("admin_password", "")),
+                    display_name=str(payload.get("admin_display_name", "")).strip(),
+                )
+                plan_payload = payload.get("plan")
+                if isinstance(plan_payload, dict):
+                    save_company_plan(
+                        plan_payload,
+                        company_id=created["company"]["id"],
+                    )
+                self._send_json(HTTPStatus.CREATED, created)
+                return
+
+            platform_company_route = self._parse_platform_company_action_route(self.path)
+            if platform_company_route is not None:
+                if not self._require_platform_admin(session):
+                    return
+                company_id, action = platform_company_route
+                payload = self._read_json()
+                if action == "active":
+                    item = set_company_active(
+                        company_id,
+                        is_active=self._parse_bool_flag(payload.get("is_active")),
+                    )
+                    self._send_json(HTTPStatus.OK, {"item": item})
+                    return
+                if action == "branding":
+                    item = update_company_branding(
+                        company_id,
+                        name=str(payload.get("name", "")).strip() if "name" in payload else None,
+                        brand_name=str(payload.get("brand_name", "")).strip()
+                        if "brand_name" in payload
+                        else None,
+                        tagline=str(payload.get("tagline", "")).strip()
+                        if "tagline" in payload
+                        else None,
+                        logo_path=str(payload.get("logo_path", "")).strip()
+                        if "logo_path" in payload
+                        else None,
+                    )
+                    self._send_json(HTTPStatus.OK, {"item": item})
+                    return
+                if action == "plan":
+                    item = save_company_plan(payload, company_id=company_id)
+                    self._send_json(HTTPStatus.OK, {"item": item})
+                    return
+
+            platform_user_route = self._parse_platform_user_action_route(self.path)
+            if platform_user_route is not None:
+                if not self._require_platform_admin(session):
+                    return
+                user_id, action = platform_user_route
+                payload = self._read_json()
+                if action == "reset-password":
+                    item = reset_company_user_password(
+                        user_id,
+                        new_password=str(payload.get("new_password", "")),
+                    )
+                    self._send_json(HTTPStatus.OK, {"item": item})
+                    return
+                if action == "active":
+                    item = set_company_user_active(
+                        user_id,
+                        is_active=self._parse_bool_flag(payload.get("is_active")),
+                    )
+                    self._send_json(HTTPStatus.OK, {"item": item})
+                    return
+                if action == "role":
+                    item = update_company_user_role(
+                        user_id,
+                        role=str(payload.get("role", "")).strip(),
+                    )
+                    self._send_json(HTTPStatus.OK, {"item": item})
+                    return
+
+            if self.path == "/api/platform/billing-events":
+                if not self._require_platform_admin(session):
+                    return
+                payload = self._read_json()
+                item = create_company_billing_event(
+                    payload,
+                    company_id=int(payload.get("company_id")) if payload.get("company_id") not in (None, "") else None,
+                )
+                self._send_json(HTTPStatus.CREATED, {"item": item})
                 return
 
             if self.path == "/api/calculate":
@@ -1034,6 +1310,43 @@ class FerShopHandler(BaseHTTPRequestHandler):
                 record = save_client(client.to_dict(), company_id=session["company"]["id"])
                 self._send_json(HTTPStatus.CREATED, {"item": record})
                 return
+
+            if self.path == "/api/company-users":
+                if not self._require_company_user_permission(session):
+                    return
+                payload = self._read_json()
+                item = create_company_user(
+                    username=str(payload.get("username", "")).strip(),
+                    password=str(payload.get("password", "")),
+                    display_name=str(payload.get("display_name", "")).strip(),
+                    role=str(payload.get("role", "")).strip() or "operator",
+                    company_id=session["company"]["id"],
+                )
+                self._send_json(HTTPStatus.CREATED, {"item": item})
+                return
+
+            company_user_route = self._parse_company_user_route(self.path)
+            if company_user_route is not None:
+                if not self._require_company_user_permission(session):
+                    return
+                user_id, action = company_user_route
+                payload = self._read_json()
+                if action == "active":
+                    item = set_company_user_active(
+                        user_id,
+                        is_active=self._parse_bool_flag(payload.get("is_active")),
+                        company_id=session["company"]["id"],
+                    )
+                    self._send_json(HTTPStatus.OK, {"item": item})
+                    return
+                if action == "role":
+                    item = update_company_user_role(
+                        user_id,
+                        role=str(payload.get("role", "")).strip(),
+                        company_id=session["company"]["id"],
+                    )
+                    self._send_json(HTTPStatus.OK, {"item": item})
+                    return
 
             client_update_route = self._parse_client_update_route(self.path)
             if client_update_route is not None:
@@ -1683,6 +1996,51 @@ class FerShopHandler(BaseHTTPRequestHandler):
         except ValueError:
             return None
 
+    def _parse_company_user_route(self, path: str) -> tuple[int, str] | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) != 4 or parts[0] != "api" or parts[1] != "company-users":
+            return None
+        action = parts[3]
+        if action not in {"active", "role"}:
+            return None
+        try:
+            return int(parts[2]), action
+        except ValueError:
+            return None
+
+    def _parse_platform_company_users_route(self, path: str) -> int | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) != 5 or parts[0] != "api" or parts[1] != "platform" or parts[2] != "companies" or parts[4] != "users":
+            return None
+        try:
+            return int(parts[3])
+        except ValueError:
+            return None
+
+    def _parse_platform_company_action_route(self, path: str) -> tuple[int, str] | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) != 5 or parts[0] != "api" or parts[1] != "platform" or parts[2] != "companies":
+            return None
+        action = parts[4]
+        if action not in {"active", "branding", "plan"}:
+            return None
+        try:
+            return int(parts[3]), action
+        except ValueError:
+            return None
+
+    def _parse_platform_user_action_route(self, path: str) -> tuple[int, str] | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) != 5 or parts[0] != "api" or parts[1] != "platform" or parts[2] != "users":
+            return None
+        action = parts[4]
+        if action not in {"reset-password", "active", "role"}:
+            return None
+        try:
+            return int(parts[3]), action
+        except ValueError:
+            return None
+
     def _parse_product_pricing_route(self, path: str) -> int | None:
         parts = [part for part in path.split("/") if part]
         if len(parts) != 4 or parts[0] != "api" or parts[1] != "products" or parts[3] != "pricing":
@@ -1790,7 +2148,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
 def run_server(host: str = "127.0.0.1", port: int = 8000) -> None:
     init_db()
     server = ThreadingHTTPServer((host, port), FerShopHandler)
-    print(f"FerShop Calculadora corriendo en http://{host}:{port}")
+    print(f"Shopper Calculator corriendo en http://{host}:{port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

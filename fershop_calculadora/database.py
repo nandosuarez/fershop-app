@@ -6,7 +6,7 @@ import sqlite3
 import threading
 import unicodedata
 from contextlib import closing, nullcontext
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -71,6 +71,14 @@ LEGACY_COMPANY_TAGLINE = "Cotizaciones elegantes para importacion y cierre comer
 DEFAULT_COMPANY_LOGO_PATH = "/static/assets/fershop-logo-crop.jpg"
 DEFAULT_ADMIN_USERNAME = os.environ.get("FERSHOP_DEFAULT_ADMIN_USERNAME", "fershop_admin")
 DEFAULT_ADMIN_PASSWORD = os.environ.get("FERSHOP_DEFAULT_ADMIN_PASSWORD", "FerShop2026!")
+
+USER_ROLE_OWNER = "owner"
+USER_ROLE_ADMIN = "admin"
+USER_ROLE_OPERATOR = "operator"
+USER_ROLE_VIEWER = "viewer"
+USER_ROLES = {USER_ROLE_OWNER, USER_ROLE_ADMIN, USER_ROLE_OPERATOR, USER_ROLE_VIEWER}
+ELEVATED_USER_ROLES = {USER_ROLE_OWNER, USER_ROLE_ADMIN}
+DEFAULT_USER_ROLE = USER_ROLE_OPERATOR
 CLOSED_ORDER_STATUS_KEY = "cycle_closed"
 _INIT_LOCK = threading.Lock()
 _INITIALIZED_TARGETS: dict[tuple[Any, ...], bool] = {}
@@ -179,6 +187,19 @@ def _sanitize_image_data_url(value: Any) -> str:
     return image_data_url
 
 
+def _sanitize_company_logo_path(value: Any) -> str:
+    logo_path = str(value or "").strip()
+    if not logo_path:
+        return DEFAULT_COMPANY_LOGO_PATH
+    if logo_path.startswith("data:image/"):
+        return logo_path
+    if logo_path.startswith("/"):
+        return logo_path
+    if logo_path.startswith("https://") or logo_path.startswith("http://"):
+        return logo_path
+    raise ValueError("El logo debe ser ruta interna, URL publica o imagen data URL valida.")
+
+
 def _row_value(row: Any, key: str, default: Any = None) -> Any:
     try:
         return row[key]
@@ -201,6 +222,29 @@ def _to_bool_flag(value: Any) -> int:
     if isinstance(value, str):
         return 1 if value.strip().lower() in {"1", "true", "yes", "si", "on"} else 0
     return 1 if bool(value) else 0
+
+
+def _normalize_user_role(value: Any, *, default_role: str = DEFAULT_USER_ROLE) -> str:
+    normalized_role = str(value or "").strip().lower()
+    if not normalized_role:
+        normalized_role = default_role
+    if normalized_role not in USER_ROLES:
+        raise ValueError("El rol del usuario no es valido.")
+    return normalized_role
+
+
+def _serialize_user_row(row: Any) -> dict[str, Any]:
+    role_value = _normalize_user_role(_row_value(row, "role"), default_role=DEFAULT_USER_ROLE)
+    return {
+        "id": int(_row_value(row, "id", 0) or 0),
+        "created_at": str(_row_value(row, "created_at", "") or ""),
+        "company_id": int(_row_value(row, "company_id", 0) or 0),
+        "username": str(_row_value(row, "username", "") or ""),
+        "display_name": str(_row_value(row, "display_name", "") or ""),
+        "role": role_value,
+        "is_platform_admin": bool(_row_value(row, "is_platform_admin", 0)),
+        "is_active": bool(_row_value(row, "is_active", 0)),
+    }
 
 
 def get_inventory_movement_label(movement_type: Any) -> str:
@@ -880,9 +924,11 @@ def _ensure_default_company_and_admin(
                 display_name,
                 password_salt,
                 password_hash,
+                role,
+                is_platform_admin,
                 is_active
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 datetime.now(timezone.utc).isoformat(),
@@ -891,6 +937,8 @@ def _ensure_default_company_and_admin(
                 "Administrador FerShop",
                 salt_hex,
                 hash_hex,
+                USER_ROLE_OWNER,
+                1,
                 1,
             ),
         )
@@ -898,6 +946,32 @@ def _ensure_default_company_and_admin(
     connection.execute(
         "UPDATE companies SET tagline = ? WHERE tagline = ?",
         (DEFAULT_COMPANY_TAGLINE, LEGACY_COMPANY_TAGLINE),
+    )
+    connection.execute(
+        """
+        UPDATE companies
+        SET name = ?, brand_name = ?
+        WHERE id = ?
+          AND slug = ?
+          AND (
+                (name = 'Shopper Calculator' AND brand_name = 'Shopper Calculator')
+                OR (name = '' OR brand_name = '')
+              )
+        """,
+        (
+            DEFAULT_COMPANY_NAME,
+            DEFAULT_COMPANY_BRAND_NAME,
+            company_id,
+            DEFAULT_COMPANY_SLUG,
+        ),
+    )
+    connection.execute(
+        """
+        UPDATE users
+        SET role = ?, is_platform_admin = 1
+        WHERE username = ? AND company_id = ?
+        """,
+        (USER_ROLE_OWNER, DEFAULT_ADMIN_USERNAME, company_id),
     )
 
     row = connection.execute(
@@ -1822,6 +1896,68 @@ def init_db(skip_defaults: bool = False) -> None:
             )
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS company_plans (
+                    company_id INTEGER PRIMARY KEY,
+                    updated_at TEXT NOT NULL,
+                    plan_code TEXT NOT NULL DEFAULT 'core',
+                    plan_name TEXT NOT NULL DEFAULT 'Core',
+                    billing_status TEXT NOT NULL DEFAULT 'trial',
+                    monthly_price_usd REAL NOT NULL DEFAULT 3,
+                    trial_days INTEGER NOT NULL DEFAULT 3,
+                    seats_included INTEGER NOT NULL DEFAULT 1,
+                    additional_user_price_usd REAL NOT NULL DEFAULT 1,
+                    next_billing_date TEXT NOT NULL DEFAULT '',
+                    notes TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            _ensure_table_columns(
+                connection,
+                "company_plans",
+                {
+                    "updated_at": "TEXT NOT NULL DEFAULT ''",
+                    "plan_code": "TEXT NOT NULL DEFAULT 'core'",
+                    "plan_name": "TEXT NOT NULL DEFAULT 'Core'",
+                    "billing_status": "TEXT NOT NULL DEFAULT 'trial'",
+                    "monthly_price_usd": "REAL NOT NULL DEFAULT 3",
+                    "trial_days": "INTEGER NOT NULL DEFAULT 3",
+                    "seats_included": "INTEGER NOT NULL DEFAULT 1",
+                    "additional_user_price_usd": "REAL NOT NULL DEFAULT 1",
+                    "next_billing_date": "TEXT NOT NULL DEFAULT ''",
+                    "notes": "TEXT NOT NULL DEFAULT ''",
+                },
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS company_billing_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    company_id INTEGER NOT NULL,
+                    event_type TEXT NOT NULL DEFAULT 'charge',
+                    amount_usd REAL NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'paid',
+                    currency TEXT NOT NULL DEFAULT 'USD',
+                    period_label TEXT NOT NULL DEFAULT '',
+                    notes TEXT NOT NULL DEFAULT '',
+                    external_ref TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            _ensure_table_columns(
+                connection,
+                "company_billing_events",
+                {
+                    "event_type": "TEXT NOT NULL DEFAULT 'charge'",
+                    "amount_usd": "REAL NOT NULL DEFAULT 0",
+                    "status": "TEXT NOT NULL DEFAULT 'paid'",
+                    "currency": "TEXT NOT NULL DEFAULT 'USD'",
+                    "period_label": "TEXT NOT NULL DEFAULT ''",
+                    "notes": "TEXT NOT NULL DEFAULT ''",
+                    "external_ref": "TEXT NOT NULL DEFAULT ''",
+                },
+            )
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     created_at TEXT NOT NULL,
@@ -1830,8 +1966,39 @@ def init_db(skip_defaults: bool = False) -> None:
                     display_name TEXT NOT NULL,
                     password_salt TEXT NOT NULL,
                     password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'admin',
+                    is_platform_admin INTEGER NOT NULL DEFAULT 0,
                     is_active INTEGER NOT NULL DEFAULT 1
                 )
+                """
+            )
+            _ensure_table_columns(
+                connection,
+                "users",
+                {
+                    "role": "TEXT NOT NULL DEFAULT 'admin'",
+                    "is_platform_admin": "INTEGER NOT NULL DEFAULT 0",
+                },
+            )
+            connection.execute(
+                """
+                UPDATE users
+                SET role = 'admin'
+                WHERE role IS NULL OR TRIM(role) = ''
+                """
+            )
+            connection.execute(
+                """
+                UPDATE users
+                SET role = 'admin'
+                WHERE role NOT IN ('owner', 'admin', 'operator', 'viewer')
+                """
+            )
+            connection.execute(
+                """
+                UPDATE users
+                SET is_platform_admin = 0
+                WHERE is_platform_admin IS NULL
                 """
             )
             connection.execute(
@@ -2364,6 +2531,7 @@ def init_db(skip_defaults: bool = False) -> None:
             _ensure_company_id_column(connection, "inventory_purchases", default_company_id)
             _ensure_company_id_column(connection, "inventory_purchase_items", default_company_id)
             _seed_product_dimension_catalogs(connection)
+            _ensure_company_plans_for_all_companies(connection)
             if not skip_defaults:
                 _ensure_company_whatsapp_settings(connection, default_company_id)
                 _seed_default_whatsapp_templates(connection, default_company_id)
@@ -2400,6 +2568,115 @@ def _serialize_company_row(row: sqlite3.Row) -> dict[str, Any]:
         "logo_path": row["logo_path"],
         "is_active": bool(row["is_active"]),
     }
+
+
+def _serialize_company_plan_row(row: Any) -> dict[str, Any]:
+    return {
+        "company_id": int(_row_value(row, "company_id", 0) or 0),
+        "updated_at": str(_row_value(row, "updated_at", "") or ""),
+        "plan_code": str(_row_value(row, "plan_code", "core") or "core"),
+        "plan_name": str(_row_value(row, "plan_name", "Core") or "Core"),
+        "billing_status": str(_row_value(row, "billing_status", "trial") or "trial"),
+        "monthly_price_usd": float(_row_value(row, "monthly_price_usd", 3) or 0),
+        "trial_days": int(_row_value(row, "trial_days", 3) or 0),
+        "seats_included": int(_row_value(row, "seats_included", 1) or 1),
+        "additional_user_price_usd": float(_row_value(row, "additional_user_price_usd", 1) or 0),
+        "next_billing_date": str(_row_value(row, "next_billing_date", "") or ""),
+        "notes": str(_row_value(row, "notes", "") or ""),
+    }
+
+
+def _default_company_plan(company_id: int) -> dict[str, Any]:
+    return {
+        "company_id": int(company_id),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "plan_code": "core",
+        "plan_name": "Core",
+        "billing_status": "trial",
+        "monthly_price_usd": 3.0,
+        "trial_days": 3,
+        "seats_included": 1,
+        "additional_user_price_usd": 1.0,
+        "next_billing_date": "",
+        "notes": "",
+    }
+
+
+def _ensure_company_plan(
+    connection: sqlite3.Connection | CompatConnection,
+    company_id: int,
+) -> dict[str, Any]:
+    connection.row_factory = sqlite3.Row
+    row = connection.execute(
+        """
+        SELECT
+            company_id,
+            updated_at,
+            plan_code,
+            plan_name,
+            billing_status,
+            monthly_price_usd,
+            trial_days,
+            seats_included,
+            additional_user_price_usd,
+            next_billing_date,
+            notes
+        FROM company_plans
+        WHERE company_id = ?
+        """,
+        (company_id,),
+    ).fetchone()
+    if row is not None:
+        return _serialize_company_plan_row(row)
+
+    default_plan = _default_company_plan(company_id)
+    connection.execute(
+        """
+        INSERT INTO company_plans (
+            company_id,
+            updated_at,
+            plan_code,
+            plan_name,
+            billing_status,
+            monthly_price_usd,
+            trial_days,
+            seats_included,
+            additional_user_price_usd,
+            next_billing_date,
+            notes
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            default_plan["company_id"],
+            default_plan["updated_at"],
+            default_plan["plan_code"],
+            default_plan["plan_name"],
+            default_plan["billing_status"],
+            default_plan["monthly_price_usd"],
+            default_plan["trial_days"],
+            default_plan["seats_included"],
+            default_plan["additional_user_price_usd"],
+            default_plan["next_billing_date"],
+            default_plan["notes"],
+        ),
+    )
+    return default_plan
+
+
+def _ensure_company_plans_for_all_companies(
+    connection: sqlite3.Connection | CompatConnection,
+) -> None:
+    connection.row_factory = sqlite3.Row
+    rows = connection.execute("SELECT id FROM companies").fetchall()
+    for row in rows:
+        try:
+            company_id = int(_row_value(row, "id", 0))
+        except (TypeError, ValueError):
+            continue
+        if company_id <= 0:
+            continue
+        _ensure_company_plan(connection, company_id)
 
 
 def get_company(company_id: int) -> dict[str, Any] | None:
@@ -2440,6 +2717,554 @@ def get_company_by_slug(slug: str) -> dict[str, Any] | None:
         return None
     return _serialize_company_row(row)
 
+
+def list_companies(include_inactive: bool = True) -> list[dict[str, Any]]:
+    init_db()
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        where_clause = "" if include_inactive else "WHERE companies.is_active = 1"
+        rows = connection.execute(
+            f"""
+            SELECT
+                companies.id,
+                companies.created_at,
+                companies.slug,
+                companies.name,
+                companies.brand_name,
+                companies.tagline,
+                companies.logo_path,
+                companies.is_active,
+                company_plans.plan_code,
+                company_plans.plan_name,
+                company_plans.billing_status,
+                company_plans.monthly_price_usd,
+                company_plans.trial_days,
+                company_plans.seats_included,
+                company_plans.additional_user_price_usd,
+                company_plans.next_billing_date,
+                company_plans.notes,
+                (
+                    SELECT COUNT(*)
+                    FROM users
+                    WHERE users.company_id = companies.id AND users.is_active = 1
+                ) AS active_users_count
+            FROM companies
+            LEFT JOIN company_plans ON company_plans.company_id = companies.id
+            {where_clause}
+            ORDER BY companies.is_active DESC, companies.created_at DESC, companies.id DESC
+            """
+        ).fetchall()
+
+        items: list[dict[str, Any]] = []
+        has_new_plan = False
+        for row in rows:
+            company = _serialize_company_row(row)
+            plan = _serialize_company_plan_row(row) if _row_value(row, "plan_code", None) else _default_company_plan(company["id"])
+            if _row_value(row, "plan_code", None) is None:
+                _ensure_company_plan(connection, company["id"])
+                has_new_plan = True
+            company["plan"] = plan
+            company["active_users_count"] = int(_row_value(row, "active_users_count", 0) or 0)
+            items.append(company)
+        if has_new_plan:
+            connection.commit()
+    return items
+
+
+def get_company_plan(company_id: int | None = None) -> dict[str, Any]:
+    init_db()
+    normalized_company_id = _normalize_company_id(company_id)
+    with closing(_connect()) as connection:
+        plan = _ensure_company_plan(connection, normalized_company_id)
+        connection.commit()
+    return plan
+
+
+def save_company_plan(
+    plan_data: dict[str, Any],
+    *,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    normalized_company_id = _normalize_company_id(company_id)
+    updated_at = datetime.now(timezone.utc).isoformat()
+    clean_plan_code = build_status_key(str(plan_data.get("plan_code") or "core").strip())
+    clean_plan_name = str(plan_data.get("plan_name") or "").strip() or clean_plan_code.replace("_", " ").title()
+    clean_billing_status = str(plan_data.get("billing_status") or "trial").strip().lower()
+    if clean_billing_status not in {"trial", "active", "past_due", "paused", "canceled"}:
+        raise ValueError("El estado de facturacion no es valido.")
+    try:
+        monthly_price_usd = float(plan_data.get("monthly_price_usd") or 0)
+        trial_days = int(plan_data.get("trial_days") or 0)
+        seats_included = int(plan_data.get("seats_included") or 1)
+        additional_user_price_usd = float(plan_data.get("additional_user_price_usd") or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Los valores del plan deben ser numericos validos.") from exc
+
+    if monthly_price_usd < 0 or additional_user_price_usd < 0:
+        raise ValueError("Los valores del plan no pueden ser negativos.")
+    if trial_days < 0:
+        raise ValueError("Los dias de prueba no pueden ser negativos.")
+    if seats_included < 1:
+        raise ValueError("El plan debe incluir al menos 1 usuario.")
+
+    clean_next_billing_date = str(plan_data.get("next_billing_date") or "").strip()
+    clean_notes = str(plan_data.get("notes") or "").strip()
+
+    with closing(_connect()) as connection:
+        _ensure_company_plan(connection, normalized_company_id)
+        connection.execute(
+            """
+            UPDATE company_plans
+            SET updated_at = ?,
+                plan_code = ?,
+                plan_name = ?,
+                billing_status = ?,
+                monthly_price_usd = ?,
+                trial_days = ?,
+                seats_included = ?,
+                additional_user_price_usd = ?,
+                next_billing_date = ?,
+                notes = ?
+            WHERE company_id = ?
+            """,
+            (
+                updated_at,
+                clean_plan_code,
+                clean_plan_name,
+                clean_billing_status,
+                monthly_price_usd,
+                trial_days,
+                seats_included,
+                additional_user_price_usd,
+                clean_next_billing_date,
+                clean_notes,
+                normalized_company_id,
+            ),
+        )
+        connection.commit()
+    return get_company_plan(company_id=normalized_company_id)
+
+
+def update_company_branding(
+    company_id: int,
+    *,
+    name: str | None = None,
+    brand_name: str | None = None,
+    tagline: str | None = None,
+    logo_path: str | None = None,
+) -> dict[str, Any]:
+    init_db()
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT id, slug, name, brand_name, tagline, logo_path, is_active
+            FROM companies
+            WHERE id = ?
+            """,
+            (company_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("No encontramos la empresa solicitada.")
+
+        next_name = str(name if name is not None else row["name"]).strip()
+        next_brand_name = str(brand_name if brand_name is not None else row["brand_name"]).strip()
+        next_tagline = str(tagline if tagline is not None else row["tagline"]).strip()
+        next_logo_path = _sanitize_company_logo_path(logo_path if logo_path is not None else row["logo_path"])
+
+        if not next_name:
+            raise ValueError("El nombre de la empresa es obligatorio.")
+        if not next_brand_name:
+            next_brand_name = next_name
+
+        connection.execute(
+            """
+            UPDATE companies
+            SET name = ?, brand_name = ?, tagline = ?, logo_path = ?
+            WHERE id = ?
+            """,
+            (next_name, next_brand_name, next_tagline, next_logo_path, company_id),
+        )
+        updated_row = connection.execute(
+            """
+            SELECT id, slug, name, brand_name, tagline, logo_path, is_active
+            FROM companies
+            WHERE id = ?
+            """,
+            (company_id,),
+        ).fetchone()
+        connection.commit()
+    return _serialize_company_row(updated_row)
+
+
+def set_company_active(company_id: int, is_active: bool) -> dict[str, Any]:
+    init_db()
+    normalized_active = bool(is_active)
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT id, slug, name, brand_name, tagline, logo_path, is_active
+            FROM companies
+            WHERE id = ?
+            """,
+            (company_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("No encontramos la empresa solicitada.")
+        if row["slug"] == DEFAULT_COMPANY_SLUG and not normalized_active:
+            raise ValueError("No puedes inactivar la empresa base de la plataforma.")
+
+        connection.execute(
+            "UPDATE companies SET is_active = ? WHERE id = ?",
+            (1 if normalized_active else 0, company_id),
+        )
+        if not normalized_active:
+            connection.execute(
+                """
+                DELETE FROM sessions
+                WHERE company_id = ?
+                """,
+                (company_id,),
+            )
+        updated_row = connection.execute(
+            """
+            SELECT id, slug, name, brand_name, tagline, logo_path, is_active
+            FROM companies
+            WHERE id = ?
+            """,
+            (company_id,),
+        ).fetchone()
+        connection.commit()
+    return _serialize_company_row(updated_row)
+
+
+def list_platform_company_users(company_id: int | None = None) -> list[dict[str, Any]]:
+    init_db()
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        if company_id is None:
+            rows = connection.execute(
+                """
+                SELECT
+                    users.id,
+                    users.created_at,
+                    users.company_id,
+                    users.username,
+                    users.display_name,
+                    users.role,
+                    users.is_platform_admin,
+                    users.is_active,
+                    companies.name AS company_name,
+                    companies.slug AS company_slug
+                FROM users
+                JOIN companies ON companies.id = users.company_id
+                ORDER BY users.is_active DESC, users.created_at DESC, users.id DESC
+                """
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """
+                SELECT
+                    users.id,
+                    users.created_at,
+                    users.company_id,
+                    users.username,
+                    users.display_name,
+                    users.role,
+                    users.is_platform_admin,
+                    users.is_active,
+                    companies.name AS company_name,
+                    companies.slug AS company_slug
+                FROM users
+                JOIN companies ON companies.id = users.company_id
+                WHERE users.company_id = ?
+                ORDER BY users.is_active DESC, users.created_at DESC, users.id DESC
+                """,
+                (int(company_id),),
+            ).fetchall()
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        item = _serialize_user_row(row)
+        item["company_name"] = str(_row_value(row, "company_name", "") or "")
+        item["company_slug"] = str(_row_value(row, "company_slug", "") or "")
+        items.append(item)
+    return items
+
+
+def reset_company_user_password(
+    user_id: int,
+    new_password: str,
+    *,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    clean_password = str(new_password or "")
+    if len(clean_password) < 8:
+        raise ValueError("La contraseña debe tener minimo 8 caracteres.")
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        params: tuple[Any, ...]
+        where_sql: str
+        if company_id is None:
+            where_sql = "WHERE id = ?"
+            params = (user_id,)
+        else:
+            where_sql = "WHERE id = ? AND company_id = ?"
+            params = (user_id, int(company_id))
+        row = connection.execute(
+            f"""
+            SELECT id, created_at, company_id, username, display_name, role, is_platform_admin, is_active
+            FROM users
+            {where_sql}
+            """,
+            params,
+        ).fetchone()
+        if row is None:
+            raise ValueError("No encontramos el usuario solicitado.")
+
+        salt_hex, hash_hex = hash_password(clean_password)
+        connection.execute(
+            """
+            UPDATE users
+            SET password_salt = ?, password_hash = ?
+            WHERE id = ?
+            """,
+            (salt_hex, hash_hex, int(row["id"])),
+        )
+        connection.execute(
+            "DELETE FROM sessions WHERE user_id = ?",
+            (int(row["id"]),),
+        )
+        updated_row = connection.execute(
+            """
+            SELECT id, created_at, company_id, username, display_name, role, is_platform_admin, is_active
+            FROM users
+            WHERE id = ?
+            """,
+            (int(row["id"]),),
+        ).fetchone()
+        connection.commit()
+    return _serialize_user_row(updated_row)
+
+
+def create_company_billing_event(
+    event_data: dict[str, Any],
+    *,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    normalized_company_id = _normalize_company_id(company_id)
+    created_at = datetime.now(timezone.utc).isoformat()
+    event_type = str(event_data.get("event_type") or "charge").strip().lower() or "charge"
+    status = str(event_data.get("status") or "paid").strip().lower() or "paid"
+    currency = str(event_data.get("currency") or "USD").strip().upper() or "USD"
+    period_label = str(event_data.get("period_label") or "").strip()
+    notes = str(event_data.get("notes") or "").strip()
+    external_ref = str(event_data.get("external_ref") or "").strip()
+    try:
+        amount_usd = float(event_data.get("amount_usd") or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("El monto de facturacion debe ser numerico.") from exc
+
+    with closing(_connect()) as connection:
+        company = connection.execute("SELECT id FROM companies WHERE id = ?", (normalized_company_id,)).fetchone()
+        if company is None:
+            raise ValueError("No encontramos la empresa para registrar la facturacion.")
+        event_id = _insert_and_get_id(
+            connection,
+            """
+            INSERT INTO company_billing_events (
+                created_at,
+                company_id,
+                event_type,
+                amount_usd,
+                status,
+                currency,
+                period_label,
+                notes,
+                external_ref
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                created_at,
+                normalized_company_id,
+                event_type,
+                amount_usd,
+                status,
+                currency,
+                period_label,
+                notes,
+                external_ref,
+            ),
+        )
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT
+                company_billing_events.id,
+                company_billing_events.created_at,
+                company_billing_events.company_id,
+                companies.name AS company_name,
+                companies.slug AS company_slug,
+                company_billing_events.event_type,
+                company_billing_events.amount_usd,
+                company_billing_events.status,
+                company_billing_events.currency,
+                company_billing_events.period_label,
+                company_billing_events.notes,
+                company_billing_events.external_ref
+            FROM company_billing_events
+            JOIN companies ON companies.id = company_billing_events.company_id
+            WHERE company_billing_events.id = ?
+            """,
+            (event_id,),
+        ).fetchone()
+        connection.commit()
+
+    return {
+        "id": int(_row_value(row, "id", 0) or 0),
+        "created_at": str(_row_value(row, "created_at", "") or ""),
+        "company_id": int(_row_value(row, "company_id", 0) or 0),
+        "company_name": str(_row_value(row, "company_name", "") or ""),
+        "company_slug": str(_row_value(row, "company_slug", "") or ""),
+        "event_type": str(_row_value(row, "event_type", "") or ""),
+        "amount_usd": float(_row_value(row, "amount_usd", 0) or 0),
+        "status": str(_row_value(row, "status", "") or ""),
+        "currency": str(_row_value(row, "currency", "") or ""),
+        "period_label": str(_row_value(row, "period_label", "") or ""),
+        "notes": str(_row_value(row, "notes", "") or ""),
+        "external_ref": str(_row_value(row, "external_ref", "") or ""),
+    }
+
+
+def list_company_billing_events(
+    *,
+    company_id: int | None = None,
+    limit: int = 120,
+) -> list[dict[str, Any]]:
+    init_db()
+    normalized_limit = max(1, min(int(limit or 120), 500))
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        if company_id is None:
+            rows = connection.execute(
+                """
+                SELECT
+                    company_billing_events.id,
+                    company_billing_events.created_at,
+                    company_billing_events.company_id,
+                    companies.name AS company_name,
+                    companies.slug AS company_slug,
+                    company_billing_events.event_type,
+                    company_billing_events.amount_usd,
+                    company_billing_events.status,
+                    company_billing_events.currency,
+                    company_billing_events.period_label,
+                    company_billing_events.notes,
+                    company_billing_events.external_ref
+                FROM company_billing_events
+                JOIN companies ON companies.id = company_billing_events.company_id
+                ORDER BY company_billing_events.created_at DESC, company_billing_events.id DESC
+                LIMIT ?
+                """,
+                (normalized_limit,),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """
+                SELECT
+                    company_billing_events.id,
+                    company_billing_events.created_at,
+                    company_billing_events.company_id,
+                    companies.name AS company_name,
+                    companies.slug AS company_slug,
+                    company_billing_events.event_type,
+                    company_billing_events.amount_usd,
+                    company_billing_events.status,
+                    company_billing_events.currency,
+                    company_billing_events.period_label,
+                    company_billing_events.notes,
+                    company_billing_events.external_ref
+                FROM company_billing_events
+                JOIN companies ON companies.id = company_billing_events.company_id
+                WHERE company_billing_events.company_id = ?
+                ORDER BY company_billing_events.created_at DESC, company_billing_events.id DESC
+                LIMIT ?
+                """,
+                (int(company_id), normalized_limit),
+            ).fetchall()
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        items.append(
+            {
+                "id": int(_row_value(row, "id", 0) or 0),
+                "created_at": str(_row_value(row, "created_at", "") or ""),
+                "company_id": int(_row_value(row, "company_id", 0) or 0),
+                "company_name": str(_row_value(row, "company_name", "") or ""),
+                "company_slug": str(_row_value(row, "company_slug", "") or ""),
+                "event_type": str(_row_value(row, "event_type", "") or ""),
+                "amount_usd": float(_row_value(row, "amount_usd", 0) or 0),
+                "status": str(_row_value(row, "status", "") or ""),
+                "currency": str(_row_value(row, "currency", "") or ""),
+                "period_label": str(_row_value(row, "period_label", "") or ""),
+                "notes": str(_row_value(row, "notes", "") or ""),
+                "external_ref": str(_row_value(row, "external_ref", "") or ""),
+            }
+        )
+    return items
+
+
+def build_platform_overview() -> dict[str, Any]:
+    init_db()
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        company_rows = connection.execute(
+            """
+            SELECT
+                companies.id,
+                companies.is_active,
+                COALESCE(company_plans.billing_status, 'trial') AS billing_status,
+                COALESCE(company_plans.monthly_price_usd, 0) AS monthly_price_usd
+            FROM companies
+            LEFT JOIN company_plans ON company_plans.company_id = companies.id
+            """
+        ).fetchall()
+        billing_rows = connection.execute(
+            """
+            SELECT
+                COALESCE(SUM(amount_usd), 0) AS collected_usd,
+                COUNT(*) AS paid_events
+            FROM company_billing_events
+            WHERE status = 'paid'
+              AND created_at >= ?
+            """,
+            ((datetime.now(timezone.utc) - timedelta(days=30)).isoformat(),),
+        ).fetchone()
+
+    total_companies = len(company_rows)
+    active_companies = sum(1 for row in company_rows if bool(_row_value(row, "is_active", 0)))
+    billing_status_totals: dict[str, int] = {}
+    mrr_usd = 0.0
+    for row in company_rows:
+        status_key = str(_row_value(row, "billing_status", "trial") or "trial")
+        billing_status_totals[status_key] = billing_status_totals.get(status_key, 0) + 1
+        if bool(_row_value(row, "is_active", 0)) and status_key in {"trial", "active", "past_due"}:
+            mrr_usd += float(_row_value(row, "monthly_price_usd", 0) or 0)
+
+    return {
+        "companies_total": total_companies,
+        "companies_active": active_companies,
+        "companies_inactive": max(total_companies - active_companies, 0),
+        "mrr_usd": round(mrr_usd, 2),
+        "billing_status_totals": billing_status_totals,
+        "paid_amount_last_30d_usd": float(_row_value(billing_rows, "collected_usd", 0) or 0),
+        "paid_events_last_30d": int(_row_value(billing_rows, "paid_events", 0) or 0),
+    }
 
 def get_company_whatsapp_settings(company_id: int | None = None) -> dict[str, Any]:
     init_db()
@@ -2513,7 +3338,7 @@ def create_company_with_admin(
     clean_slug_source = str(slug or "").strip() or clean_name
     clean_slug = build_status_key(clean_slug_source).replace("_", "-")
     clean_tagline = str(tagline or "").strip()
-    clean_logo_path = str(logo_path or "").strip() or DEFAULT_COMPANY_LOGO_PATH
+    clean_logo_path = _sanitize_company_logo_path(logo_path)
     clean_username = str(username or "").strip().lower()
     clean_password = str(password or "")
     clean_display_name = str(display_name or "").strip() or clean_brand_name
@@ -2570,6 +3395,7 @@ def create_company_with_admin(
         _ensure_company_whatsapp_settings(connection, company_id)
         _seed_default_whatsapp_templates(connection, company_id)
         _seed_default_direct_order_templates(connection, company_id)
+        _ensure_company_plan(connection, company_id)
         user_id = _insert_and_get_id(
             connection,
             """
@@ -2580,9 +3406,11 @@ def create_company_with_admin(
                 display_name,
                 password_salt,
                 password_hash,
+                role,
+                is_platform_admin,
                 is_active
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 created_at,
@@ -2591,6 +3419,8 @@ def create_company_with_admin(
                 clean_display_name,
                 salt_hex,
                 hash_hex,
+                USER_ROLE_OWNER,
+                0,
                 1,
             ),
         )
@@ -2611,13 +3441,15 @@ def create_company_with_admin(
             "id": user_id,
             "username": clean_username,
             "display_name": clean_display_name,
+            "role": USER_ROLE_OWNER,
+            "is_platform_admin": False,
         },
     }
 
 
 def authenticate_user(username: str, password: str) -> dict[str, Any] | None:
     init_db()
-    clean_username = str(username or "").strip()
+    clean_username = str(username or "").strip().lower()
     clean_password = str(password or "")
     if not clean_username or not clean_password:
         return None
@@ -2633,6 +3465,8 @@ def authenticate_user(username: str, password: str) -> dict[str, Any] | None:
                 users.display_name,
                 users.password_salt,
                 users.password_hash,
+                users.role,
+                users.is_platform_admin,
                 users.is_active,
                 companies.slug,
                 companies.name,
@@ -2658,6 +3492,8 @@ def authenticate_user(username: str, password: str) -> dict[str, Any] | None:
         "company_id": row["company_id"],
         "username": row["username"],
         "display_name": row["display_name"],
+        "role": _normalize_user_role(row["role"], default_role=USER_ROLE_ADMIN),
+        "is_platform_admin": bool(row["is_platform_admin"]),
         "company": {
             "id": row["company_id"],
             "slug": row["slug"],
@@ -2715,6 +3551,8 @@ def get_session_by_token(session_token: str) -> dict[str, Any] | None:
                 users.id AS user_id,
                 users.username,
                 users.display_name,
+                users.role,
+                users.is_platform_admin,
                 users.is_active,
                 companies.id AS company_id,
                 companies.slug,
@@ -2751,6 +3589,8 @@ def get_session_by_token(session_token: str) -> dict[str, Any] | None:
             "id": row["user_id"],
             "username": row["username"],
             "display_name": row["display_name"],
+            "role": _normalize_user_role(row["role"], default_role=USER_ROLE_ADMIN),
+            "is_platform_admin": bool(row["is_platform_admin"]),
         },
         "company": {
             "id": row["company_id"],
@@ -2761,6 +3601,255 @@ def get_session_by_token(session_token: str) -> dict[str, Any] | None:
             "logo_path": row["logo_path"],
         },
     }
+
+
+def list_company_users(company_id: int | None = None) -> list[dict[str, Any]]:
+    init_db()
+    normalized_company_id = _normalize_company_id(company_id)
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            """
+            SELECT id, created_at, company_id, username, display_name, role, is_platform_admin, is_active
+            FROM users
+            WHERE company_id = ?
+            ORDER BY is_active DESC, created_at DESC, id DESC
+            """,
+            (normalized_company_id,),
+        ).fetchall()
+    return [_serialize_user_row(row) for row in rows]
+
+
+def _count_active_elevated_users(
+    connection: sqlite3.Connection | CompatConnection,
+    *,
+    company_id: int,
+) -> int:
+    row = connection.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM users
+        WHERE company_id = ?
+          AND is_active = 1
+          AND role IN ('owner', 'admin')
+        """,
+        (company_id,),
+    ).fetchone()
+    if row is None:
+        return 0
+    try:
+        return int(_row_value(row, "total", row[0]))
+    except (TypeError, ValueError):
+        return 0
+
+
+def create_company_user(
+    *,
+    username: str,
+    password: str,
+    display_name: str = "",
+    role: str = DEFAULT_USER_ROLE,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    normalized_company_id = _normalize_company_id(company_id)
+    clean_username = str(username or "").strip().lower()
+    clean_password = str(password or "")
+    clean_display_name = str(display_name or "").strip()
+    clean_role = _normalize_user_role(role)
+
+    if not clean_username:
+        raise ValueError("El usuario es obligatorio.")
+    if len(clean_password) < 8:
+        raise ValueError("La contraseña debe tener minimo 8 caracteres.")
+    if not clean_display_name:
+        clean_display_name = clean_username
+
+    salt_hex, hash_hex = hash_password(clean_password)
+    created_at = datetime.now(timezone.utc).isoformat()
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        existing = connection.execute(
+            "SELECT id FROM users WHERE username = ?",
+            (clean_username,),
+        ).fetchone()
+        if existing is not None:
+            raise ValueError("Ese usuario ya existe.")
+
+        user_id = _insert_and_get_id(
+            connection,
+            """
+            INSERT INTO users (
+                created_at,
+                company_id,
+                username,
+                display_name,
+                password_salt,
+                password_hash,
+                role,
+                is_platform_admin,
+                is_active
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                created_at,
+                normalized_company_id,
+                clean_username,
+                clean_display_name,
+                salt_hex,
+                hash_hex,
+                clean_role,
+                0,
+                1,
+            ),
+        )
+
+        row = connection.execute(
+            """
+            SELECT id, created_at, company_id, username, display_name, role, is_platform_admin, is_active
+            FROM users
+            WHERE id = ? AND company_id = ?
+            """,
+            (user_id, normalized_company_id),
+        ).fetchone()
+        connection.commit()
+
+    return _serialize_user_row(row)
+
+
+def set_company_user_active(
+    user_id: int,
+    is_active: bool,
+    *,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    normalized_active = bool(is_active)
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        if company_id is None:
+            row = connection.execute(
+                """
+                SELECT id, created_at, company_id, username, display_name, role, is_platform_admin, is_active
+                FROM users
+                WHERE id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            normalized_company_id = int(_row_value(row, "company_id", 0) or 0) if row else 0
+        else:
+            normalized_company_id = _normalize_company_id(company_id)
+            row = connection.execute(
+                """
+                SELECT id, created_at, company_id, username, display_name, role, is_platform_admin, is_active
+                FROM users
+                WHERE id = ? AND company_id = ?
+                """,
+                (user_id, normalized_company_id),
+            ).fetchone()
+        if row is None:
+            raise ValueError("No encontramos el usuario solicitado.")
+
+        current_role = _normalize_user_role(row["role"], default_role=USER_ROLE_ADMIN)
+        current_active = bool(row["is_active"])
+        if current_active and not normalized_active and current_role in ELEVATED_USER_ROLES:
+            active_elevated = _count_active_elevated_users(
+                connection,
+                company_id=normalized_company_id,
+            )
+            if active_elevated <= 1:
+                raise ValueError(
+                    "Debe existir al menos un usuario activo con rol owner o admin."
+                )
+
+        connection.execute(
+            """
+            UPDATE users
+            SET is_active = ?
+            WHERE id = ? AND company_id = ?
+            """,
+            (1 if normalized_active else 0, user_id, normalized_company_id),
+        )
+        updated_row = connection.execute(
+            """
+            SELECT id, created_at, company_id, username, display_name, role, is_platform_admin, is_active
+            FROM users
+            WHERE id = ? AND company_id = ?
+            """,
+            (user_id, normalized_company_id),
+        ).fetchone()
+        connection.commit()
+
+    return _serialize_user_row(updated_row)
+
+
+def update_company_user_role(
+    user_id: int,
+    role: str,
+    *,
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    normalized_role = _normalize_user_role(role)
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        if company_id is None:
+            row = connection.execute(
+                """
+                SELECT id, created_at, company_id, username, display_name, role, is_platform_admin, is_active
+                FROM users
+                WHERE id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            normalized_company_id = int(_row_value(row, "company_id", 0) or 0) if row else 0
+        else:
+            normalized_company_id = _normalize_company_id(company_id)
+            row = connection.execute(
+                """
+                SELECT id, created_at, company_id, username, display_name, role, is_platform_admin, is_active
+                FROM users
+                WHERE id = ? AND company_id = ?
+                """,
+                (user_id, normalized_company_id),
+            ).fetchone()
+        if row is None:
+            raise ValueError("No encontramos el usuario solicitado.")
+
+        current_role = _normalize_user_role(row["role"], default_role=USER_ROLE_ADMIN)
+        if bool(row["is_active"]) and current_role in ELEVATED_USER_ROLES and normalized_role not in ELEVATED_USER_ROLES:
+            active_elevated = _count_active_elevated_users(
+                connection,
+                company_id=normalized_company_id,
+            )
+            if active_elevated <= 1:
+                raise ValueError(
+                    "Debe existir al menos un usuario activo con rol owner o admin."
+                )
+
+        connection.execute(
+            """
+            UPDATE users
+            SET role = ?
+            WHERE id = ? AND company_id = ?
+            """,
+            (normalized_role, user_id, normalized_company_id),
+        )
+        updated_row = connection.execute(
+            """
+            SELECT id, created_at, company_id, username, display_name, role, is_platform_admin, is_active
+            FROM users
+            WHERE id = ? AND company_id = ?
+            """,
+            (user_id, normalized_company_id),
+        ).fetchone()
+        connection.commit()
+
+    return _serialize_user_row(updated_row)
 
 
 def delete_session(session_token: str) -> None:
