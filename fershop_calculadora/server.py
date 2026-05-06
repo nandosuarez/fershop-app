@@ -59,6 +59,7 @@ from .database import (
     maybe_auto_send_order_whatsapp_notification,
     record_product_inventory_movement,
     register_second_payment,
+    reverse_second_payment,
     save_company_whatsapp_settings,
     save_company_plan,
     save_expense,
@@ -1005,7 +1006,13 @@ class FerShopHandler(BaseHTTPRequestHandler):
 
         if order_route is not None:
             order_id, action = order_route
-            if action in {"status", "second-payment", "travel-transport", "whatsapp"}:
+            if action in {
+                "status",
+                "second-payment",
+                "second-payment-reverse",
+                "travel-transport",
+                "whatsapp",
+            }:
                 self._send_json(
                     HTTPStatus.METHOD_NOT_ALLOWED,
                     {"error": "Usa POST para actualizar la compra."},
@@ -1704,6 +1711,27 @@ class FerShopHandler(BaseHTTPRequestHandler):
                         {"item": item, "notification": notification},
                     )
                     return
+                if action == "second-payment-reverse":
+                    payload = self._read_json()
+                    raw_amount_cop = payload.get("amount_cop")
+                    amount_cop = None
+                    if raw_amount_cop not in (None, ""):
+                        try:
+                            amount_cop = float(raw_amount_cop)
+                        except (TypeError, ValueError) as exc:
+                            raise ValueError("El valor a reversar debe ser numérico.") from exc
+
+                    reversed_at = str(payload.get("reversed_at", "")).strip()
+                    reason = str(payload.get("reason", "")).strip()
+                    item = reverse_second_payment(
+                        order_id,
+                        amount_cop=amount_cop,
+                        reversed_at=reversed_at,
+                        reason=reason,
+                        company_id=session["company"]["id"],
+                    )
+                    self._send_json(HTTPStatus.OK, {"item": item})
+                    return
                 if action == "travel-transport":
                     payload = self._read_json()
                     travel_transport_type = str(payload.get("travel_transport_type", "")).strip()
@@ -1931,6 +1959,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
         if action not in {
             "status",
             "second-payment",
+            "second-payment-reverse",
             "travel-transport",
             "whatsapp",
             "image",

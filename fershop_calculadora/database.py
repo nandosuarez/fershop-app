@@ -33,6 +33,7 @@ from .orders import (
     is_order_pending_collection,
     is_valid_order_status,
     list_default_order_statuses,
+    normalize_second_payment_date,
     normalize_travel_transport_type,
 )
 from .pending import (
@@ -8747,6 +8748,138 @@ def register_second_payment(
             amount_cop=float(payment_update["payment_amount_cop"] or 0),
             payment_date=payment_update["payment_date"],
             note="Pago adicional registrado desde la compra.",
+        )
+        connection.commit()
+        updated = connection.execute(
+            "SELECT * FROM orders WHERE id = ? AND company_id = ?",
+            (order_id, company_id),
+        ).fetchone()
+        events = _list_order_events(connection, [order_id], all_statuses, company_id).get(
+            order_id, []
+        )
+        return _serialize_order(updated, events, all_statuses, active_statuses)
+
+
+def reverse_second_payment(
+    order_id: int,
+    *,
+    amount_cop: float | None = None,
+    reversed_at: str | None = None,
+    reason: str = "",
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    now = datetime.now(timezone.utc).isoformat()
+    clean_reason = str(reason or "").strip()
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        _ensure_orders_runtime_columns(connection)
+        all_statuses = _list_status_rows(
+            connection,
+            company_id=company_id,
+            include_inactive=True,
+        )
+        active_statuses = [status for status in all_statuses if status["is_active"]]
+        existing = connection.execute(
+            "SELECT * FROM orders WHERE id = ? AND company_id = ?",
+            (order_id, company_id),
+        ).fetchone()
+        if existing is None:
+            raise ValueError("La compra no existe.")
+
+        current_second_payment = float(_row_value(existing, "second_payment_amount_cop", 0) or 0)
+        if current_second_payment <= 0:
+            raise ValueError("La compra no tiene segundo pago registrado para reversar.")
+
+        reverse_amount: float
+        if amount_cop in (None, ""):
+            reverse_amount = current_second_payment
+        else:
+            reverse_amount = float(amount_cop)
+
+        if reverse_amount <= 0:
+            raise ValueError("El valor a reversar debe ser mayor a cero.")
+        if reverse_amount > current_second_payment:
+            raise ValueError("No puedes reversar más de lo cobrado como segundo pago.")
+
+        new_second_payment_amount = max(current_second_payment - reverse_amount, 0.0)
+        sale_price_cop = float(_row_value(existing, "sale_price_cop", 0) or 0)
+        advance_paid_cop = float(_row_value(existing, "advance_paid_cop", 0) or 0)
+        new_balance_due = max(sale_price_cop - advance_paid_cop - new_second_payment_amount, 0.0)
+        status_key = str(_row_value(existing, "status_key", "") or "").strip()
+        locked_statuses = {
+            "second_payment_received",
+            "shipped_to_client",
+            "delivered_to_client",
+            "cycle_closed",
+        }
+        if new_balance_due > 0 and status_key in locked_statuses:
+            raise ValueError(
+                "No puedes dejar saldo pendiente porque la compra ya avanzó más allá del segundo pago recibido."
+            )
+
+        reversal_date = normalize_second_payment_date(reversed_at)
+        previous_second_payment_date = str(
+            _row_value(existing, "second_payment_received_at", "") or ""
+        ).strip()
+        next_second_payment_date = (
+            previous_second_payment_date
+            if new_second_payment_amount > 0 and previous_second_payment_date
+            else (reversal_date if new_second_payment_amount > 0 else "")
+        )
+
+        connection.execute(
+            """
+            UPDATE orders
+            SET second_payment_amount_cop = ?,
+                second_payment_received_at = ?,
+                balance_due_cop = ?
+            WHERE id = ? AND company_id = ?
+            """,
+            (
+                new_second_payment_amount,
+                next_second_payment_date,
+                new_balance_due,
+                order_id,
+                company_id,
+            ),
+        )
+        note = (
+            f"Reversión de segundo pago: {_format_cop_plain(reverse_amount)}. "
+            f"Fecha reportada: {reversal_date}. "
+            f"Saldo pendiente: {_format_cop_plain(new_balance_due)}."
+        )
+        if clean_reason:
+            note = f"{note} Motivo: {clean_reason}."
+        connection.execute(
+            """
+            INSERT INTO order_events (
+                created_at,
+                company_id,
+                order_id,
+                status_key,
+                note
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                now,
+                company_id,
+                order_id,
+                status_key,
+                note,
+            ),
+        )
+        _record_payment_event(
+            connection,
+            company_id=company_id,
+            order_id=order_id,
+            payment_kind="balance_reversal",
+            amount_cop=-abs(reverse_amount),
+            payment_date=reversal_date,
+            note="Reversión de cobro registrada desde cartera.",
         )
         connection.commit()
         updated = connection.execute(
