@@ -165,6 +165,22 @@ const adminSectionButtons = Array.from(document.querySelectorAll("[data-admin-se
 const adminScreens = Array.from(document.querySelectorAll("[data-admin-screen]"));
 const adminResetButtons = Array.from(document.querySelectorAll("[data-admin-reset]"));
 const adminEditorCloseButtons = Array.from(document.querySelectorAll("[data-admin-editor-close]"));
+const platformPanelLocked = document.getElementById("platform-panel-locked");
+const platformPanelContent = document.getElementById("platform-panel-content");
+const platformOverviewContainer = document.getElementById("platform-overview");
+const platformCompanyForm = document.getElementById("platform-company-form");
+const platformCompaniesList = document.getElementById("platform-companies-list");
+const platformCompanySelect = document.getElementById("platform-company-select");
+const platformBrandingForm = document.getElementById("platform-branding-form");
+const platformPlanForm = document.getElementById("platform-plan-form");
+const platformCompanyActiveToggleButton = document.getElementById("platform-company-active-toggle");
+const platformCompanyUsersList = document.getElementById("platform-company-users-list");
+const platformBillingForm = document.getElementById("platform-billing-form");
+const platformBillingEventsList = document.getElementById("platform-billing-events-list");
+const companyUsersPanelLocked = document.getElementById("company-users-panel-locked");
+const companyUsersPanelContent = document.getElementById("company-users-panel-content");
+const companyUserForm = document.getElementById("company-user-form");
+const companyUsersList = document.getElementById("company-users-list");
 
 const state = {
   session: null,
@@ -231,6 +247,14 @@ const state = {
   editingProductStoreId: null,
   clientCatalogView: "list",
   activeAdminSection: "clients",
+  companyUsers: [],
+  platform: {
+    overview: null,
+    companies: [],
+    selectedCompanyId: null,
+    billingEvents: [],
+    usersByCompany: {},
+  },
   adminFilters: {
     clients: "",
     products: "",
@@ -750,7 +774,10 @@ function syncModuleFromHash() {
 }
 
 function setActiveAdminSection(sectionKey) {
-  const nextSection = String(sectionKey || "").trim().toLowerCase() || "clients";
+  const requestedSection = String(sectionKey || "").trim().toLowerCase() || "clients";
+  const blockedPlatform = requestedSection === "platform" && !isPlatformAdminSession();
+  const blockedTeamUsers = requestedSection === "team-users" && !canManageCompanyUsersSession();
+  const nextSection = blockedPlatform || blockedTeamUsers ? "clients" : requestedSection;
   state.activeAdminSection = nextSection;
 
   adminSectionButtons.forEach((button) => {
@@ -770,12 +797,23 @@ function setActiveAdminSection(sectionKey) {
 }
 
 function openAdminSection(sectionKey) {
-  setActiveAdminSection(sectionKey);
+  const requestedSection = String(sectionKey || "").trim().toLowerCase() || "clients";
+  setActiveAdminSection(requestedSection);
   setActiveMenuGroup("admin");
   if (window.location.hash !== "#administracion") {
     window.location.hash = "administracion";
   } else {
     setActiveModule("administracion");
+  }
+  if (requestedSection === "platform" && isPlatformAdminSession()) {
+    void loadPlatformAdmin().catch((error) => {
+      statusMessage.textContent = error.message;
+    });
+  }
+  if (requestedSection === "team-users" && canManageCompanyUsersSession()) {
+    void loadCompanyUsers().catch((error) => {
+      statusMessage.textContent = error.message;
+    });
   }
 }
 
@@ -1665,6 +1703,52 @@ function restoreDirectOrderDraft() {
     renderDirectOrderLiveSummary();
   } catch (_error) {
     // no-op
+  }
+}
+
+function isPlatformAdminSession() {
+  return Boolean(state.session?.user?.is_platform_admin);
+}
+
+function canManageCompanyUsersSession() {
+  if (isPlatformAdminSession()) {
+    return true;
+  }
+  const role = String(state.session?.user?.role || "")
+    .trim()
+    .toLowerCase();
+  return role === "owner" || role === "admin";
+}
+
+function syncPlatformAdminVisibility() {
+  const canAccessPlatform = isPlatformAdminSession();
+  document.querySelectorAll('[data-admin-menu-target="platform"]').forEach((link) => {
+    link.hidden = !canAccessPlatform;
+  });
+  if (platformPanelLocked) {
+    platformPanelLocked.hidden = canAccessPlatform;
+  }
+  if (platformPanelContent) {
+    platformPanelContent.hidden = !canAccessPlatform;
+  }
+  if (!canAccessPlatform && state.activeAdminSection === "platform") {
+    setActiveAdminSection("clients");
+  }
+}
+
+function syncCompanyUsersAdminVisibility() {
+  const canManageUsers = canManageCompanyUsersSession();
+  document.querySelectorAll('[data-admin-menu-target="team-users"]').forEach((link) => {
+    link.hidden = !canManageUsers;
+  });
+  if (companyUsersPanelLocked) {
+    companyUsersPanelLocked.hidden = canManageUsers;
+  }
+  if (companyUsersPanelContent) {
+    companyUsersPanelContent.hidden = !canManageUsers;
+  }
+  if (!canManageUsers && state.activeAdminSection === "team-users") {
+    setActiveAdminSection("clients");
   }
 }
 
@@ -3399,12 +3483,12 @@ function scheduleQuoteCalculation({ immediate = false } = {}) {
 function applyCompanyBranding(session) {
   const company = session?.company || {};
   const user = session?.user || {};
-  const brandName = company.brand_name || company.name || "Portal comercial";
+  const brandName = company.brand_name || company.name || "FerShop";
   const companyName = company.name || brandName;
-  const tagline = company.tagline || "Tu operacion comercial queda separada por empresa.";
+  const tagline = company.tagline || "Plataforma comercial modular para operar rapido y sin friccion.";
   const logoPath = company.logo_path || "/static/assets/fershop-logo-crop.jpg";
 
-  document.title = `${brandName} | Calculadora`;
+  document.title = `${brandName} | Plataforma`;
   if (brandLogo) {
     brandLogo.src = logoPath;
     brandLogo.alt = `Logo ${brandName}`;
@@ -6832,7 +6916,7 @@ function buildExecutiveBriefText(brief) {
   const metrics = brief.metrics || {};
 
   const lines = [
-    "BRIEF EJECUTIVO FERSHOP",
+    "BRIEF EJECUTIVO",
     `Periodo: ${period.period_label || "Actual"} (${period.start_date || "-"} a ${period.end_date || "-"})`,
     `Resumen: ${brief.summary_text || "Sin resumen disponible."}`,
     "",
@@ -10046,6 +10130,465 @@ async function loadWhatsAppAdmin() {
   }
 }
 
+function formatCompanyUserRoleLabel(role) {
+  const normalized = String(role || "").trim().toLowerCase();
+  if (normalized === "owner") {
+    return "Owner";
+  }
+  if (normalized === "admin") {
+    return "Admin";
+  }
+  if (normalized === "viewer") {
+    return "Viewer";
+  }
+  return "Operator";
+}
+
+function renderCompanyUsers() {
+  if (!companyUsersList) {
+    return;
+  }
+  if (!canManageCompanyUsersSession()) {
+    companyUsersList.className = "catalog-empty";
+    companyUsersList.innerHTML =
+      "<p>Tu rol actual no tiene permisos para crear o editar usuarios de la empresa.</p>";
+    return;
+  }
+
+  const users = Array.isArray(state.companyUsers) ? state.companyUsers : [];
+  if (!users.length) {
+    companyUsersList.className = "catalog-empty";
+    companyUsersList.innerHTML = "<p>Aun no hay usuarios cargados para esta empresa.</p>";
+    return;
+  }
+
+  companyUsersList.className = "catalog-list compact-list";
+  companyUsersList.innerHTML = users
+    .map(
+      (user) => `
+        <article class="catalog-card compact-card ${user.is_active ? "" : "is-inactive"}">
+          <div class="catalog-card-top">
+            <div>
+              <h3>${escapeHtml(user.display_name || user.username || "Usuario")}</h3>
+              <p>${escapeHtml(user.username || "")}</p>
+            </div>
+            <div class="catalog-card-actions">
+              <span class="catalog-chip ${user.is_active ? "catalog-chip-success" : "catalog-chip-muted"}">
+                ${user.is_active ? "Activo" : "Inactivo"}
+              </span>
+              <span class="catalog-chip">${escapeHtml(formatCompanyUserRoleLabel(user.role))}</span>
+            </div>
+          </div>
+          <div class="catalog-card-meta">
+            <span>Rol: ${escapeHtml(String(user.role || "operator"))}</span>
+            <span>Creado: ${escapeHtml(formatStoredDate(user.created_at))}</span>
+          </div>
+          <div class="field-grid">
+            <label>
+              <span>Rol operativo</span>
+              <select data-company-user-role="${user.id}">
+                <option value="owner" ${user.role === "owner" ? "selected" : ""}>owner</option>
+                <option value="admin" ${user.role === "admin" ? "selected" : ""}>admin</option>
+                <option value="operator" ${user.role === "operator" ? "selected" : ""}>operator</option>
+                <option value="viewer" ${user.role === "viewer" ? "selected" : ""}>viewer</option>
+              </select>
+            </label>
+          </div>
+          <div class="actions">
+            <button type="button" class="secondary" data-company-save-role="${user.id}">Guardar rol</button>
+            <button
+              type="button"
+              class="secondary"
+              data-company-toggle-user="${user.id}"
+              data-next-active="${user.is_active ? "0" : "1"}"
+            >
+              ${user.is_active ? "Inactivar" : "Activar"}
+            </button>
+            <button type="button" class="primary" data-company-reset-password="${user.id}">
+              Reset password
+            </button>
+          </div>
+        </article>
+      `
+    )
+    .join("");
+}
+
+async function loadCompanyUsers() {
+  if (!canManageCompanyUsersSession()) {
+    state.companyUsers = [];
+    renderCompanyUsers();
+    return;
+  }
+  const payload = await requestJson("/api/company-users");
+  state.companyUsers = Array.isArray(payload.items) ? payload.items : [];
+  renderCompanyUsers();
+}
+
+function getSelectedPlatformCompany() {
+  const selectedId = Number(state.platform.selectedCompanyId || 0);
+  if (!selectedId) {
+    return null;
+  }
+  return state.platform.companies.find((item) => Number(item.id) === selectedId) || null;
+}
+
+function renderPlatformOverview() {
+  if (!platformOverviewContainer) {
+    return;
+  }
+  const overview = state.platform.overview;
+  if (!overview) {
+    platformOverviewContainer.className = "catalog-empty";
+    platformOverviewContainer.innerHTML = "<p>No hay resumen de plataforma disponible.</p>";
+    return;
+  }
+  const statusBadges = Object.entries(overview.billing_status_totals || {})
+    .map(([status, total]) => `<span>${escapeHtml(status)}: ${formatInteger(total || 0)}</span>`)
+    .join("");
+  platformOverviewContainer.className = "platform-overview-shell";
+  platformOverviewContainer.innerHTML = `
+    <section class="metrics-grid">
+      ${makeMetricCard("Empresas activas", String(overview.companies_active || 0), "Empresas hoy operativas")}
+      ${makeMetricCard("Empresas inactivas", String(overview.companies_inactive || 0), "Empresas pausadas o cerradas")}
+      ${makeMetricCard("MRR estimado", formatUsd(overview.mrr_usd || 0), "Ingreso mensual recurrente base")}
+      ${makeMetricCard("Pagos 30 dias", formatUsd(overview.paid_amount_last_30d_usd || 0), "Recaudo registrado en eventos")}
+    </section>
+    <div class="catalog-card">
+      <p class="catalog-card-note"><strong>Estados de facturacion:</strong></p>
+      <div class="catalog-card-meta">${statusBadges || "<span>Sin datos</span>"}</div>
+    </div>
+  `;
+}
+
+function renderPlatformCompaniesList() {
+  if (!platformCompaniesList) {
+    return;
+  }
+  const items = state.platform.companies || [];
+  if (!items.length) {
+    platformCompaniesList.className = "catalog-empty";
+    platformCompaniesList.innerHTML = "<p>Aun no hay empresas registradas.</p>";
+    return;
+  }
+
+  platformCompaniesList.className = "catalog-list compact-list";
+  platformCompaniesList.innerHTML = items
+    .map((company) => {
+      const plan = company.plan || {};
+      const isSelected = Number(company.id) === Number(state.platform.selectedCompanyId);
+      return `
+        <article class="catalog-card compact-card ${company.is_active ? "" : "is-inactive"}">
+          <div class="catalog-card-top">
+            <div>
+              <h3>${escapeHtml(company.name || "Empresa")}</h3>
+              <p>${escapeHtml(company.slug || "")}</p>
+            </div>
+            <div class="catalog-card-actions">
+              <span class="catalog-chip ${company.is_active ? "catalog-chip-success" : "catalog-chip-muted"}">
+                ${company.is_active ? "Activa" : "Inactiva"}
+              </span>
+              <button
+                type="button"
+                class="history-action-button history-action-button-secondary"
+                data-platform-manage-company="${company.id}"
+              >
+                ${isSelected ? "Gestionando" : "Gestionar"}
+              </button>
+              <button
+                type="button"
+                class="history-action-button ${company.is_active ? "history-action-button-secondary" : ""}"
+                data-platform-toggle-company="${company.id}"
+                data-next-active="${company.is_active ? "0" : "1"}"
+              >
+                ${company.is_active ? "Inactivar" : "Activar"}
+              </button>
+            </div>
+          </div>
+          <div class="catalog-card-meta">
+            <span>Plan: ${escapeHtml(plan.plan_name || "Core")}</span>
+            <span>Estado: ${escapeHtml(plan.billing_status || "trial")}</span>
+            <span>Mensual: ${formatUsd(plan.monthly_price_usd || 0)}</span>
+            <span>Usuarios activos: ${formatInteger(company.active_users_count || 0)}</span>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function renderPlatformCompanySelect() {
+  if (!platformCompanySelect) {
+    return;
+  }
+  const items = state.platform.companies || [];
+  const selectedId = Number(state.platform.selectedCompanyId || 0);
+  platformCompanySelect.innerHTML = items
+    .map((item) => {
+      const selectedAttr = Number(item.id) === selectedId ? "selected" : "";
+      return `<option value="${item.id}" ${selectedAttr}>${escapeHtml(item.name)} (${escapeHtml(item.slug)})</option>`;
+    })
+    .join("");
+  if (!items.length) {
+    platformCompanySelect.innerHTML = '<option value="">Sin empresas</option>';
+  }
+}
+
+function syncPlatformCompanyForms() {
+  const company = getSelectedPlatformCompany();
+  if (!company) {
+    if (platformBrandingForm) {
+      platformBrandingForm.reset();
+    }
+    if (platformPlanForm) {
+      platformPlanForm.reset();
+    }
+    if (platformCompanyUsersList) {
+      platformCompanyUsersList.className = "catalog-empty";
+      platformCompanyUsersList.innerHTML =
+        "<p>Selecciona una empresa para ver sus usuarios y permisos.</p>";
+    }
+    return;
+  }
+
+  if (platformBrandingForm) {
+    const form = platformBrandingForm.elements;
+    form.namedItem("name").value = company.name || "";
+    form.namedItem("brand_name").value = company.brand_name || "";
+    form.namedItem("tagline").value = company.tagline || "";
+    form.namedItem("logo_path").value = company.logo_path || "";
+  }
+
+  const plan = company.plan || {};
+  if (platformPlanForm) {
+    const form = platformPlanForm.elements;
+    form.namedItem("plan_code").value = plan.plan_code || "core";
+    form.namedItem("plan_name").value = plan.plan_name || "Core";
+    form.namedItem("billing_status").value = plan.billing_status || "trial";
+    form.namedItem("monthly_price_usd").value = String(plan.monthly_price_usd ?? 3);
+    form.namedItem("seats_included").value = String(plan.seats_included ?? 1);
+    form.namedItem("additional_user_price_usd").value = String(
+      plan.additional_user_price_usd ?? 1
+    );
+    form.namedItem("trial_days").value = String(plan.trial_days ?? 3);
+    form.namedItem("next_billing_date").value = plan.next_billing_date || "";
+    form.namedItem("notes").value = plan.notes || "";
+  }
+
+  if (platformCompanyActiveToggleButton) {
+    platformCompanyActiveToggleButton.textContent = company.is_active
+      ? "Inactivar empresa"
+      : "Activar empresa";
+    platformCompanyActiveToggleButton.dataset.nextActive = company.is_active ? "0" : "1";
+  }
+}
+
+function renderPlatformCompanyUsers(companyId) {
+  if (!platformCompanyUsersList) {
+    return;
+  }
+  const users = state.platform.usersByCompany[String(companyId)] || [];
+  if (!users.length) {
+    platformCompanyUsersList.className = "catalog-empty";
+    platformCompanyUsersList.innerHTML = "<p>Esta empresa aun no tiene usuarios cargados.</p>";
+    return;
+  }
+
+  platformCompanyUsersList.className = "catalog-list compact-list";
+  platformCompanyUsersList.innerHTML = users
+    .map(
+      (user) => `
+        <article class="catalog-card compact-card ${user.is_active ? "" : "is-inactive"}">
+          <div class="catalog-card-top">
+            <div>
+              <h3>${escapeHtml(user.display_name || user.username)}</h3>
+              <p>${escapeHtml(user.username || "")}</p>
+            </div>
+            <div class="catalog-card-actions">
+              <span class="catalog-chip ${user.is_active ? "catalog-chip-success" : "catalog-chip-muted"}">
+                ${user.is_active ? "Activo" : "Inactivo"}
+              </span>
+              ${
+                user.is_platform_admin
+                  ? '<span class="catalog-chip catalog-chip-success">Soporte</span>'
+                  : ""
+              }
+            </div>
+          </div>
+          <div class="field-grid">
+            <label>
+              <span>Rol</span>
+              <select data-platform-user-role="${user.id}">
+                <option value="owner" ${user.role === "owner" ? "selected" : ""}>owner</option>
+                <option value="admin" ${user.role === "admin" ? "selected" : ""}>admin</option>
+                <option value="operator" ${user.role === "operator" ? "selected" : ""}>operator</option>
+                <option value="viewer" ${user.role === "viewer" ? "selected" : ""}>viewer</option>
+              </select>
+            </label>
+          </div>
+          <div class="actions">
+            <button type="button" class="secondary" data-platform-save-role="${user.id}">Guardar rol</button>
+            <button
+              type="button"
+              class="secondary"
+              data-platform-toggle-user="${user.id}"
+              data-next-active="${user.is_active ? "0" : "1"}"
+            >
+              ${user.is_active ? "Inactivar" : "Activar"}
+            </button>
+            <button type="button" class="primary" data-platform-reset-password="${user.id}">
+              Reset password
+            </button>
+          </div>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function renderPlatformBillingEvents() {
+  if (!platformBillingEventsList) {
+    return;
+  }
+  const items = state.platform.billingEvents || [];
+  if (!items.length) {
+    platformBillingEventsList.className = "catalog-empty";
+    platformBillingEventsList.innerHTML = "<p>Aun no hay eventos de facturacion registrados.</p>";
+    return;
+  }
+  platformBillingEventsList.className = "catalog-list compact-list";
+  platformBillingEventsList.innerHTML = items
+    .map(
+      (item) => `
+        <article class="catalog-card compact-card">
+          <div class="catalog-card-top">
+            <div>
+              <h3>${escapeHtml(item.company_name || "Empresa")}</h3>
+              <p>${escapeHtml(item.period_label || item.event_type || "Evento")}</p>
+            </div>
+            <div class="catalog-card-actions">
+              <span class="catalog-chip">${escapeHtml(item.status || "paid")}</span>
+              <span class="catalog-chip">${formatUsd(item.amount_usd || 0)}</span>
+            </div>
+          </div>
+          <div class="catalog-card-meta">
+            <span>${escapeHtml(formatStoredDate(item.created_at))}</span>
+            ${item.external_ref ? `<span>${escapeHtml(item.external_ref)}</span>` : ""}
+          </div>
+          ${item.notes ? `<p class="catalog-card-note">${escapeHtml(item.notes)}</p>` : ""}
+        </article>
+      `
+    )
+    .join("");
+}
+
+async function loadPlatformCompanyUsers(companyId) {
+  if (!companyId || !isPlatformAdminSession()) {
+    return;
+  }
+  const payload = await requestJson(`/api/platform/companies/${encodeURIComponent(companyId)}/users`);
+  state.platform.usersByCompany[String(companyId)] = payload.items || [];
+  renderPlatformCompanyUsers(companyId);
+}
+
+async function loadPlatformAdmin() {
+  if (!isPlatformAdminSession()) {
+    state.platform.overview = null;
+    state.platform.companies = [];
+    state.platform.selectedCompanyId = null;
+    state.platform.billingEvents = [];
+    state.platform.usersByCompany = {};
+    renderPlatformOverview();
+    renderPlatformCompaniesList();
+    renderPlatformCompanySelect();
+    syncPlatformCompanyForms();
+    renderPlatformBillingEvents();
+    return;
+  }
+
+  try {
+    const [overviewPayload, companiesPayload, billingPayload] = await Promise.all([
+      requestJson("/api/platform/overview"),
+      requestJson("/api/platform/companies"),
+      requestJson("/api/platform/billing-events?limit=120"),
+    ]);
+
+    state.platform.overview = overviewPayload.item || null;
+    state.platform.companies = companiesPayload.items || [];
+    state.platform.billingEvents = billingPayload.items || [];
+
+    const currentSelected = Number(state.platform.selectedCompanyId || 0);
+    const hasCurrent = state.platform.companies.some((item) => Number(item.id) === currentSelected);
+    if (!hasCurrent) {
+      const ferShopCompany = state.platform.companies.find(
+        (item) => String(item.slug || "").toLowerCase() === "fershop"
+      );
+      state.platform.selectedCompanyId =
+        Number(ferShopCompany?.id || state.platform.companies[0]?.id || 0) || null;
+    }
+
+    renderPlatformOverview();
+    renderPlatformCompaniesList();
+    renderPlatformCompanySelect();
+    syncPlatformCompanyForms();
+    renderPlatformBillingEvents();
+
+    if (state.platform.selectedCompanyId) {
+      await loadPlatformCompanyUsers(state.platform.selectedCompanyId);
+    }
+  } catch (error) {
+    state.platform.overview = null;
+    state.platform.companies = [];
+    state.platform.billingEvents = [];
+    renderPlatformOverview();
+    renderPlatformCompaniesList();
+    renderPlatformCompanySelect();
+    syncPlatformCompanyForms();
+    renderPlatformBillingEvents();
+    throw error;
+  }
+}
+
+function getPlatformSelectedCompanyIdFromUi() {
+  const selectedRaw = platformCompanySelect?.value || state.platform.selectedCompanyId;
+  const companyId = Number(selectedRaw || 0);
+  return Number.isFinite(companyId) && companyId > 0 ? companyId : null;
+}
+
+function setPlatformSelectedCompany(companyId) {
+  const normalizedCompanyId = Number(companyId || 0) || null;
+  state.platform.selectedCompanyId = normalizedCompanyId;
+  renderPlatformCompaniesList();
+  renderPlatformCompanySelect();
+  syncPlatformCompanyForms();
+  if (normalizedCompanyId) {
+    renderPlatformCompanyUsers(normalizedCompanyId);
+    void loadPlatformCompanyUsers(normalizedCompanyId).catch((error) => {
+      statusMessage.textContent = error.message;
+    });
+  } else if (platformCompanyUsersList) {
+    platformCompanyUsersList.className = "catalog-empty";
+    platformCompanyUsersList.innerHTML =
+      "<p>Selecciona una empresa para ver sus usuarios y permisos.</p>";
+  }
+}
+
+function parsePlatformFormNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return parsed;
+}
+
+function parsePlatformFormInteger(value, fallback = 0) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(0, Math.round(parsed));
+}
+
 quoteForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await calculateQuoteFromForm({ manual: true });
@@ -10110,6 +10653,213 @@ adminMenuSectionLinks.forEach((link) => {
     openAdminSection(link.getAttribute("data-admin-menu-target") || "clients");
   });
 });
+
+if (companyUserForm) {
+  companyUserForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!canManageCompanyUsersSession()) {
+      statusMessage.textContent = "No tienes permisos para crear usuarios en esta empresa.";
+      return;
+    }
+    const formData = new FormData(companyUserForm);
+    try {
+      await requestJson("/api/company-users", {
+        method: "POST",
+        body: JSON.stringify({
+          username: String(formData.get("username") || "").trim(),
+          display_name: String(formData.get("display_name") || "").trim(),
+          role: String(formData.get("role") || "operator").trim().toLowerCase(),
+          password: String(formData.get("password") || ""),
+        }),
+      });
+      companyUserForm.reset();
+      companyUserForm.elements.namedItem("role").value = "operator";
+      await loadCompanyUsers();
+      statusMessage.textContent = "Usuario creado y habilitado en la empresa.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+  });
+}
+
+if (platformCompanySelect) {
+  platformCompanySelect.addEventListener("change", () => {
+    setPlatformSelectedCompany(platformCompanySelect.value);
+  });
+}
+
+if (platformCompanyForm) {
+  platformCompanyForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!isPlatformAdminSession()) {
+      statusMessage.textContent = "No tienes permisos para crear empresas.";
+      return;
+    }
+    const formData = new FormData(platformCompanyForm);
+    try {
+      const payload = {
+        name: String(formData.get("name") || "").trim(),
+        slug: String(formData.get("slug") || "").trim(),
+        brand_name: String(formData.get("brand_name") || "").trim(),
+        tagline: String(formData.get("tagline") || "").trim(),
+        logo_path: String(formData.get("logo_path") || "").trim(),
+        admin_username: String(formData.get("admin_username") || "").trim(),
+        admin_password: String(formData.get("admin_password") || ""),
+        admin_display_name: String(formData.get("admin_display_name") || "").trim(),
+        plan: {
+          plan_code: String(formData.get("plan_code") || "core").trim().toLowerCase(),
+          plan_name: String(formData.get("plan_name") || "Core").trim(),
+          monthly_price_usd: parsePlatformFormNumber(formData.get("monthly_price_usd"), 3),
+          seats_included: Math.max(1, parsePlatformFormInteger(formData.get("seats_included"), 1)),
+          additional_user_price_usd: parsePlatformFormNumber(
+            formData.get("additional_user_price_usd"),
+            1
+          ),
+          trial_days: parsePlatformFormInteger(formData.get("trial_days"), 3),
+        },
+      };
+      const created = await requestJson("/api/platform/companies", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      platformCompanyForm.reset();
+      platformCompanyForm.elements.namedItem("plan_code").value = "core";
+      platformCompanyForm.elements.namedItem("plan_name").value = "Core";
+      platformCompanyForm.elements.namedItem("monthly_price_usd").value = "3";
+      platformCompanyForm.elements.namedItem("seats_included").value = "1";
+      platformCompanyForm.elements.namedItem("additional_user_price_usd").value = "1";
+      platformCompanyForm.elements.namedItem("trial_days").value = "3";
+      await loadPlatformAdmin();
+      setPlatformSelectedCompany(created?.company?.id || null);
+      statusMessage.textContent = `Empresa creada: ${created?.company?.name || "Nueva empresa"}.`;
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+  });
+}
+
+if (platformBrandingForm) {
+  platformBrandingForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const companyId = getPlatformSelectedCompanyIdFromUi();
+    if (!companyId) {
+      statusMessage.textContent = "Selecciona una empresa para guardar branding.";
+      return;
+    }
+    const formData = new FormData(platformBrandingForm);
+    try {
+      await requestJson(`/api/platform/companies/${encodeURIComponent(companyId)}/branding`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: String(formData.get("name") || "").trim(),
+          brand_name: String(formData.get("brand_name") || "").trim(),
+          tagline: String(formData.get("tagline") || "").trim(),
+          logo_path: String(formData.get("logo_path") || "").trim(),
+        }),
+      });
+      await loadPlatformAdmin();
+      setPlatformSelectedCompany(companyId);
+      statusMessage.textContent = "Branding de empresa actualizado.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+  });
+}
+
+if (platformPlanForm) {
+  platformPlanForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const companyId = getPlatformSelectedCompanyIdFromUi();
+    if (!companyId) {
+      statusMessage.textContent = "Selecciona una empresa para guardar el plan.";
+      return;
+    }
+    const formData = new FormData(platformPlanForm);
+    try {
+      await requestJson(`/api/platform/companies/${encodeURIComponent(companyId)}/plan`, {
+        method: "POST",
+        body: JSON.stringify({
+          plan_code: String(formData.get("plan_code") || "core").trim().toLowerCase(),
+          plan_name: String(formData.get("plan_name") || "Core").trim(),
+          billing_status: String(formData.get("billing_status") || "trial").trim().toLowerCase(),
+          monthly_price_usd: parsePlatformFormNumber(formData.get("monthly_price_usd"), 0),
+          seats_included: Math.max(1, parsePlatformFormInteger(formData.get("seats_included"), 1)),
+          additional_user_price_usd: parsePlatformFormNumber(
+            formData.get("additional_user_price_usd"),
+            0
+          ),
+          trial_days: parsePlatformFormInteger(formData.get("trial_days"), 0),
+          next_billing_date: String(formData.get("next_billing_date") || "").trim(),
+          notes: String(formData.get("notes") || "").trim(),
+        }),
+      });
+      await loadPlatformAdmin();
+      setPlatformSelectedCompany(companyId);
+      statusMessage.textContent = "Plan de la empresa actualizado.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+  });
+}
+
+if (platformCompanyActiveToggleButton) {
+  platformCompanyActiveToggleButton.addEventListener("click", async () => {
+    const companyId = getPlatformSelectedCompanyIdFromUi();
+    if (!companyId) {
+      statusMessage.textContent = "Selecciona una empresa para activar o inactivar.";
+      return;
+    }
+    const company = getSelectedPlatformCompany();
+    const nextActive = company ? !Boolean(company.is_active) : true;
+    try {
+      await requestJson(`/api/platform/companies/${encodeURIComponent(companyId)}/active`, {
+        method: "POST",
+        body: JSON.stringify({ is_active: nextActive }),
+      });
+      await loadPlatformAdmin();
+      setPlatformSelectedCompany(companyId);
+      statusMessage.textContent = nextActive
+        ? "Empresa activada correctamente."
+        : "Empresa inactivada correctamente.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+  });
+}
+
+if (platformBillingForm) {
+  platformBillingForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const companyId = getPlatformSelectedCompanyIdFromUi();
+    if (!companyId) {
+      statusMessage.textContent = "Selecciona una empresa para registrar el evento de facturacion.";
+      return;
+    }
+    const formData = new FormData(platformBillingForm);
+    try {
+      await requestJson("/api/platform/billing-events", {
+        method: "POST",
+        body: JSON.stringify({
+          company_id: companyId,
+          event_type: String(formData.get("event_type") || "charge").trim().toLowerCase(),
+          amount_usd: parsePlatformFormNumber(formData.get("amount_usd"), 0),
+          status: String(formData.get("status") || "paid").trim().toLowerCase(),
+          period_label: String(formData.get("period_label") || "").trim(),
+          external_ref: String(formData.get("external_ref") || "").trim(),
+          notes: String(formData.get("notes") || "").trim(),
+        }),
+      });
+      platformBillingForm.reset();
+      platformBillingForm.elements.namedItem("event_type").value = "charge";
+      platformBillingForm.elements.namedItem("status").value = "paid";
+      await loadPlatformAdmin();
+      setPlatformSelectedCompany(companyId);
+      statusMessage.textContent = "Evento de facturacion registrado.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+  });
+}
 
 if (addQuoteItemButton) {
   addQuoteItemButton.addEventListener("click", async () => {
@@ -10868,6 +11618,206 @@ if (whatsappTriggerSelect) {
     syncWhatsAppTemplateFormFromTrigger(whatsappTriggerSelect.value);
   });
 }
+
+document.addEventListener("click", async (event) => {
+  const saveCompanyUserRoleButton = event.target.closest("[data-company-save-role]");
+  if (saveCompanyUserRoleButton) {
+    const userId = Number(saveCompanyUserRoleButton.getAttribute("data-company-save-role") || 0);
+    if (!userId) {
+      return;
+    }
+    const roleSelect = document.querySelector(`[data-company-user-role="${userId}"]`);
+    const nextRole = String(roleSelect?.value || "").trim().toLowerCase();
+    if (!nextRole) {
+      statusMessage.textContent = "Selecciona un rol antes de guardar.";
+      return;
+    }
+    try {
+      await requestJson(`/api/company-users/${encodeURIComponent(userId)}/role`, {
+        method: "POST",
+        body: JSON.stringify({ role: nextRole }),
+      });
+      await loadCompanyUsers();
+      statusMessage.textContent = "Rol de usuario actualizado.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+    return;
+  }
+
+  const toggleCompanyUserButton = event.target.closest("[data-company-toggle-user]");
+  if (toggleCompanyUserButton) {
+    const userId = Number(toggleCompanyUserButton.getAttribute("data-company-toggle-user") || 0);
+    if (!userId) {
+      return;
+    }
+    const nextActive = String(toggleCompanyUserButton.getAttribute("data-next-active") || "1") === "1";
+    try {
+      await requestJson(`/api/company-users/${encodeURIComponent(userId)}/active`, {
+        method: "POST",
+        body: JSON.stringify({ is_active: nextActive }),
+      });
+      await loadCompanyUsers();
+      statusMessage.textContent = nextActive
+        ? "Usuario activado correctamente."
+        : "Usuario inactivado correctamente.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+    return;
+  }
+
+  const resetCompanyUserPasswordButton = event.target.closest("[data-company-reset-password]");
+  if (resetCompanyUserPasswordButton) {
+    const userId = Number(
+      resetCompanyUserPasswordButton.getAttribute("data-company-reset-password") || 0
+    );
+    if (!userId) {
+      return;
+    }
+    const newPassword = window.prompt(
+      "Escribe la nueva contraseña para este usuario (mínimo 8 caracteres):",
+      ""
+    );
+    if (newPassword === null) {
+      return;
+    }
+    const cleanPassword = String(newPassword || "");
+    if (cleanPassword.length < 8) {
+      statusMessage.textContent = "La contraseña debe tener minimo 8 caracteres.";
+      return;
+    }
+    try {
+      await requestJson(`/api/company-users/${encodeURIComponent(userId)}/reset-password`, {
+        method: "POST",
+        body: JSON.stringify({ new_password: cleanPassword }),
+      });
+      statusMessage.textContent = "Password restablecido y sesiones cerradas para ese usuario.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+    return;
+  }
+
+  const manageCompanyButton = event.target.closest("[data-platform-manage-company]");
+  if (manageCompanyButton) {
+    const companyId = Number(manageCompanyButton.getAttribute("data-platform-manage-company") || 0);
+    if (!companyId) {
+      return;
+    }
+    setPlatformSelectedCompany(companyId);
+    statusMessage.textContent = "Empresa seleccionada para gestion.";
+    return;
+  }
+
+  const toggleCompanyButton = event.target.closest("[data-platform-toggle-company]");
+  if (toggleCompanyButton) {
+    const companyId = Number(toggleCompanyButton.getAttribute("data-platform-toggle-company") || 0);
+    if (!companyId) {
+      return;
+    }
+    const nextActive = String(toggleCompanyButton.getAttribute("data-next-active") || "1") === "1";
+    try {
+      await requestJson(`/api/platform/companies/${encodeURIComponent(companyId)}/active`, {
+        method: "POST",
+        body: JSON.stringify({ is_active: nextActive }),
+      });
+      await loadPlatformAdmin();
+      setPlatformSelectedCompany(companyId);
+      statusMessage.textContent = nextActive
+        ? "Empresa activada correctamente."
+        : "Empresa inactivada correctamente.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+    return;
+  }
+
+  const saveUserRoleButton = event.target.closest("[data-platform-save-role]");
+  if (saveUserRoleButton) {
+    const userId = Number(saveUserRoleButton.getAttribute("data-platform-save-role") || 0);
+    if (!userId) {
+      return;
+    }
+    const roleSelect = document.querySelector(`[data-platform-user-role="${userId}"]`);
+    const nextRole = String(roleSelect?.value || "").trim().toLowerCase();
+    if (!nextRole) {
+      statusMessage.textContent = "Selecciona un rol antes de guardar.";
+      return;
+    }
+    try {
+      await requestJson(`/api/platform/users/${encodeURIComponent(userId)}/role`, {
+        method: "POST",
+        body: JSON.stringify({ role: nextRole }),
+      });
+      const companyId = getPlatformSelectedCompanyIdFromUi();
+      if (companyId) {
+        await loadPlatformCompanyUsers(companyId);
+      }
+      await loadPlatformAdmin();
+      statusMessage.textContent = "Rol de usuario actualizado.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+    return;
+  }
+
+  const toggleUserButton = event.target.closest("[data-platform-toggle-user]");
+  if (toggleUserButton) {
+    const userId = Number(toggleUserButton.getAttribute("data-platform-toggle-user") || 0);
+    if (!userId) {
+      return;
+    }
+    const nextActive = String(toggleUserButton.getAttribute("data-next-active") || "1") === "1";
+    try {
+      await requestJson(`/api/platform/users/${encodeURIComponent(userId)}/active`, {
+        method: "POST",
+        body: JSON.stringify({ is_active: nextActive }),
+      });
+      const companyId = getPlatformSelectedCompanyIdFromUi();
+      await loadPlatformAdmin();
+      if (companyId) {
+        setPlatformSelectedCompany(companyId);
+      }
+      statusMessage.textContent = nextActive
+        ? "Usuario activado correctamente."
+        : "Usuario inactivado correctamente.";
+    } catch (error) {
+      statusMessage.textContent = error.message;
+    }
+    return;
+  }
+
+  const resetPasswordButton = event.target.closest("[data-platform-reset-password]");
+  if (!resetPasswordButton) {
+    return;
+  }
+  const userId = Number(resetPasswordButton.getAttribute("data-platform-reset-password") || 0);
+  if (!userId) {
+    return;
+  }
+  const newPassword = window.prompt(
+    "Escribe la nueva contraseña para este usuario (mínimo 8 caracteres):",
+    ""
+  );
+  if (newPassword === null) {
+    return;
+  }
+  const cleanPassword = String(newPassword || "");
+  if (cleanPassword.length < 8) {
+    statusMessage.textContent = "La contraseña debe tener minimo 8 caracteres.";
+    return;
+  }
+  try {
+    await requestJson(`/api/platform/users/${encodeURIComponent(userId)}/reset-password`, {
+      method: "POST",
+      body: JSON.stringify({ new_password: cleanPassword }),
+    });
+    statusMessage.textContent = "Password restablecido y sesiones cerradas para ese usuario.";
+  } catch (error) {
+    statusMessage.textContent = error.message;
+  }
+});
 
 if (directOrderTemplateKeySelect) {
   directOrderTemplateKeySelect.addEventListener("change", () => {
@@ -12755,6 +13705,8 @@ async function loadSession() {
   state.session = session;
   loadRecentAccesses();
   applyCompanyBranding(session);
+  syncPlatformAdminVisibility();
+  syncCompanyUsersAdminVisibility();
   return session;
 }
 
@@ -12808,6 +13760,8 @@ async function initApp() {
     loadCollections(),
     loadDirectOrderTemplateAdmin(),
     loadWhatsAppAdmin(),
+    loadCompanyUsers(),
+    loadPlatformAdmin(),
     loadDashboard(),
     loadFollowup(),
     loadExpenses(),

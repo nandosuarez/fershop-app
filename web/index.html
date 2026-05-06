@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Portal comercial</title>
+    <title>FerShop | Plataforma</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
@@ -17,7 +17,7 @@
             alt="Logo de la empresa"
           />
           <div class="brand-copy">
-            <p class="brand-kicker" data-company-brand>Portal comercial</p>
+            <p class="brand-kicker" data-company-brand>FerShop</p>
             <p class="brand-subtitle"></p>
           </div>
         </div>
@@ -177,6 +177,10 @@
                 <strong>Productos</strong>
                 <span>Catalogo, imagenes e inventario base.</span>
               </a>
+              <a class="module-link" data-admin-menu-target="team-users" href="#administracion">
+                <strong>Usuarios</strong>
+                <span>Crea usuarios internos y define permisos por rol.</span>
+              </a>
               <a class="module-link" data-admin-menu-target="categories" href="#administracion">
                 <strong>Categorias</strong>
                 <span>Organiza el catalogo con nombres consistentes.</span>
@@ -200,6 +204,10 @@
               <a class="module-link" data-admin-menu-target="whatsapp" href="#administracion">
                 <strong>WhatsApp</strong>
                 <span>Conexion, disparadores y plantillas.</span>
+              </a>
+              <a class="module-link" data-admin-menu-target="platform" href="#administracion">
+                <strong>Plataforma</strong>
+                <span>Soporte multiempresa, planes, usuarios y facturacion.</span>
               </a>
             </div>
           </div>
@@ -1961,6 +1969,86 @@
               </section>
                 </div>
 
+                <div class="admin-screen" data-admin-screen="team-users">
+              <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-company-users">
+                <button
+                  class="panel-header collapsible-toggle"
+                  type="button"
+                  data-collapsible-target="admin-company-users"
+                  data-default-open="true"
+                  aria-expanded="true"
+                >
+                  <div>
+                    <h2>Usuarios de la empresa</h2>
+                    <p>Gestiona accesos internos por rol sin tocar datos operativos.</p>
+                  </div>
+                  <span class="collapsible-indicator" aria-hidden="true"></span>
+                </button>
+
+                <div class="collapsible-body" data-collapsible-body="admin-company-users">
+                  <div id="company-users-panel-locked" class="catalog-empty" hidden>
+                    <p>Solo usuarios con rol owner o admin pueden gestionar usuarios de la empresa.</p>
+                  </div>
+
+                  <div id="company-users-panel-content" class="catalog-stack">
+                    <form id="company-user-form" class="catalog-form">
+                      <div class="field-grid">
+                        <label>
+                          <span>Usuario</span>
+                          <input
+                            name="username"
+                            type="text"
+                            autocomplete="off"
+                            placeholder="ej. operador_1"
+                            required
+                          />
+                        </label>
+
+                        <label>
+                          <span>Nombre visible</span>
+                          <input
+                            name="display_name"
+                            type="text"
+                            autocomplete="off"
+                            placeholder="Ej. Laura Operaciones"
+                            required
+                          />
+                        </label>
+
+                        <label>
+                          <span>Rol</span>
+                          <select name="role" required>
+                            <option value="operator">operator</option>
+                            <option value="viewer">viewer</option>
+                            <option value="admin">admin</option>
+                          </select>
+                        </label>
+
+                        <label>
+                          <span>Contrasena inicial</span>
+                          <input
+                            name="password"
+                            type="password"
+                            minlength="8"
+                            placeholder="Minimo 8 caracteres"
+                            required
+                          />
+                        </label>
+                      </div>
+
+                      <div class="actions">
+                        <button type="submit" class="primary">Crear usuario</button>
+                      </div>
+                    </form>
+
+                    <div id="company-users-list" class="catalog-empty">
+                      <p>Aun no hay usuarios cargados para esta empresa.</p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+                </div>
+
                 <div class="admin-screen" data-admin-screen="purchase-templates">
               <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-direct-order-templates">
                 <button
@@ -2216,6 +2304,255 @@
                 <div id="whatsapp-templates-list" class="catalog-empty">
                   <p>Aun no hay plantillas de WhatsApp cargadas.</p>
                 </div>
+                </div>
+              </section>
+                </div>
+
+                <div class="admin-screen" data-admin-screen="platform">
+              <section class="panel catalog-panel admin-collapsible" data-collapsible-panel="admin-platform-panel">
+                <button
+                  class="panel-header collapsible-toggle"
+                  type="button"
+                  data-collapsible-target="admin-platform-panel"
+                  data-default-open="false"
+                  aria-expanded="false"
+                >
+                  <div>
+                    <h2>Control de plataforma</h2>
+                    <p>Soporte central para empresas, usuarios, branding, planes y facturacion.</p>
+                  </div>
+                  <span class="collapsible-indicator" aria-hidden="true"></span>
+                </button>
+
+                <div class="collapsible-body" data-collapsible-body="admin-platform-panel">
+                  <div id="platform-panel-locked" class="catalog-empty" hidden>
+                    <p>Solo usuarios de soporte de plataforma pueden ver este panel.</p>
+                  </div>
+
+                  <div id="platform-panel-content" class="catalog-stack">
+                    <div id="platform-overview" class="catalog-empty">
+                      <p>Cargando resumen de plataforma...</p>
+                    </div>
+
+                    <form id="platform-company-form" class="catalog-form">
+                      <div class="panel-header panel-header-inline admin-subsection-header">
+                        <div>
+                          <h3>Nueva empresa</h3>
+                          <p>Crea empresa, usuario administrador inicial y plan base.</p>
+                        </div>
+                      </div>
+                      <div class="field-grid">
+                        <label>
+                          <span>Nombre empresa</span>
+                          <input name="name" type="text" placeholder="Ej. FerShop Barranquilla" required />
+                        </label>
+                        <label>
+                          <span>Slug empresa</span>
+                          <input name="slug" type="text" placeholder="Ej. fershop-baq" required />
+                        </label>
+                        <label>
+                          <span>Marca visible</span>
+                          <input name="brand_name" type="text" placeholder="Ej. FerShop BAQ" />
+                        </label>
+                        <label>
+                          <span>Tagline</span>
+                          <input name="tagline" type="text" placeholder="Opcional" />
+                        </label>
+                        <label>
+                          <span>Logo (URL o /static/...)</span>
+                          <input name="logo_path" type="text" placeholder="/static/assets/fershop-logo-crop.jpg" />
+                        </label>
+                        <label>
+                          <span>Usuario admin</span>
+                          <input name="admin_username" type="text" placeholder="admin_empresa" required />
+                        </label>
+                        <label>
+                          <span>Clave admin</span>
+                          <input name="admin_password" type="password" placeholder="Minimo 8 caracteres" required />
+                        </label>
+                        <label>
+                          <span>Nombre admin</span>
+                          <input name="admin_display_name" type="text" placeholder="Administrador empresa" />
+                        </label>
+                        <label>
+                          <span>Plan codigo</span>
+                          <input name="plan_code" type="text" value="core" />
+                        </label>
+                        <label>
+                          <span>Plan nombre</span>
+                          <input name="plan_name" type="text" value="Core" />
+                        </label>
+                        <label>
+                          <span>Precio mensual USD</span>
+                          <input name="monthly_price_usd" type="number" min="0" step="0.01" value="3" />
+                        </label>
+                        <label>
+                          <span>Usuarios incluidos</span>
+                          <input name="seats_included" type="number" min="1" step="1" value="1" />
+                        </label>
+                        <label>
+                          <span>Usuario adicional USD</span>
+                          <input name="additional_user_price_usd" type="number" min="0" step="0.01" value="1" />
+                        </label>
+                        <label>
+                          <span>Dias trial</span>
+                          <input name="trial_days" type="number" min="0" step="1" value="3" />
+                        </label>
+                      </div>
+                      <div class="actions">
+                        <button type="submit" class="primary">Crear empresa</button>
+                      </div>
+                    </form>
+
+                    <div id="platform-companies-list" class="catalog-empty">
+                      <p>Cargando empresas...</p>
+                    </div>
+
+                    <div class="field-grid">
+                      <label>
+                        <span>Empresa en gestion</span>
+                        <select id="platform-company-select"></select>
+                      </label>
+                    </div>
+
+                    <form id="platform-branding-form" class="catalog-form">
+                      <div class="panel-header panel-header-inline admin-subsection-header">
+                        <div>
+                          <h3>Branding de empresa</h3>
+                          <p>Actualiza nombre visible, slogan y logo.</p>
+                        </div>
+                      </div>
+                      <div class="field-grid">
+                        <label>
+                          <span>Nombre empresa</span>
+                          <input name="name" type="text" required />
+                        </label>
+                        <label>
+                          <span>Marca visible</span>
+                          <input name="brand_name" type="text" required />
+                        </label>
+                        <label>
+                          <span>Tagline</span>
+                          <input name="tagline" type="text" />
+                        </label>
+                        <label>
+                          <span>Logo (URL o /static/...)</span>
+                          <input name="logo_path" type="text" />
+                        </label>
+                      </div>
+                      <div class="actions">
+                        <button type="submit" class="primary">Guardar branding</button>
+                        <button id="platform-company-active-toggle" type="button" class="secondary">Inactivar empresa</button>
+                      </div>
+                    </form>
+
+                    <form id="platform-plan-form" class="catalog-form">
+                      <div class="panel-header panel-header-inline admin-subsection-header">
+                        <div>
+                          <h3>Plan y facturacion</h3>
+                          <p>Controla plan, estado y montos comerciales por empresa.</p>
+                        </div>
+                      </div>
+                      <div class="field-grid">
+                        <label>
+                          <span>Plan codigo</span>
+                          <input name="plan_code" type="text" required />
+                        </label>
+                        <label>
+                          <span>Plan nombre</span>
+                          <input name="plan_name" type="text" required />
+                        </label>
+                        <label>
+                          <span>Estado facturacion</span>
+                          <select name="billing_status" required>
+                            <option value="trial">Trial</option>
+                            <option value="active">Activo</option>
+                            <option value="past_due">Mora</option>
+                            <option value="paused">Pausado</option>
+                            <option value="canceled">Cancelado</option>
+                          </select>
+                        </label>
+                        <label>
+                          <span>Mensual USD</span>
+                          <input name="monthly_price_usd" type="number" min="0" step="0.01" required />
+                        </label>
+                        <label>
+                          <span>Usuarios incluidos</span>
+                          <input name="seats_included" type="number" min="1" step="1" required />
+                        </label>
+                        <label>
+                          <span>Adicional por usuario USD</span>
+                          <input name="additional_user_price_usd" type="number" min="0" step="0.01" required />
+                        </label>
+                        <label>
+                          <span>Dias trial</span>
+                          <input name="trial_days" type="number" min="0" step="1" required />
+                        </label>
+                        <label>
+                          <span>Siguiente cobro</span>
+                          <input name="next_billing_date" type="date" />
+                        </label>
+                      </div>
+                      <label class="full-width">
+                        <span>Notas plan</span>
+                        <textarea name="notes" rows="3" placeholder="Notas comerciales del plan"></textarea>
+                      </label>
+                      <div class="actions">
+                        <button type="submit" class="primary">Guardar plan</button>
+                      </div>
+                    </form>
+
+                    <div id="platform-company-users-list" class="catalog-empty">
+                      <p>Selecciona una empresa para ver sus usuarios.</p>
+                    </div>
+
+                    <form id="platform-billing-form" class="catalog-form">
+                      <div class="panel-header panel-header-inline admin-subsection-header">
+                        <div>
+                          <h3>Registrar pago o evento</h3>
+                          <p>Guarda eventos manuales para trazabilidad de cobros.</p>
+                        </div>
+                      </div>
+                      <div class="field-grid">
+                        <label>
+                          <span>Tipo</span>
+                          <input name="event_type" type="text" value="charge" />
+                        </label>
+                        <label>
+                          <span>Monto USD</span>
+                          <input name="amount_usd" type="number" step="0.01" required />
+                        </label>
+                        <label>
+                          <span>Estado</span>
+                          <select name="status">
+                            <option value="paid">Pagado</option>
+                            <option value="pending">Pendiente</option>
+                            <option value="failed">Fallido</option>
+                            <option value="refunded">Reversado</option>
+                          </select>
+                        </label>
+                        <label>
+                          <span>Periodo</span>
+                          <input name="period_label" type="text" placeholder="Ej. Mayo 2026" />
+                        </label>
+                        <label>
+                          <span>Referencia externa</span>
+                          <input name="external_ref" type="text" placeholder="Id transaccion" />
+                        </label>
+                      </div>
+                      <label class="full-width">
+                        <span>Notas</span>
+                        <textarea name="notes" rows="3"></textarea>
+                      </label>
+                      <div class="actions">
+                        <button type="submit" class="primary">Registrar evento</button>
+                      </div>
+                    </form>
+
+                    <div id="platform-billing-events-list" class="catalog-empty">
+                      <p>Aun no hay eventos de facturacion registrados.</p>
+                    </div>
+                  </div>
                 </div>
               </section>
                 </div>

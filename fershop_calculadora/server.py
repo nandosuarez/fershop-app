@@ -1347,6 +1347,14 @@ class FerShopHandler(BaseHTTPRequestHandler):
                     )
                     self._send_json(HTTPStatus.OK, {"item": item})
                     return
+                if action == "reset-password":
+                    item = reset_company_user_password(
+                        user_id,
+                        new_password=str(payload.get("new_password", "")),
+                        company_id=session["company"]["id"],
+                    )
+                    self._send_json(HTTPStatus.OK, {"item": item})
+                    return
 
             client_update_route = self._parse_client_update_route(self.path)
             if client_update_route is not None:
@@ -2001,7 +2009,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
         if len(parts) != 4 or parts[0] != "api" or parts[1] != "company-users":
             return None
         action = parts[3]
-        if action not in {"active", "role"}:
+        if action not in {"active", "role", "reset-password"}:
             return None
         try:
             return int(parts[2]), action
