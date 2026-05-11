@@ -1,6 +1,6 @@
-﻿# FerShop App
+# Shopper Calculator Platform
 
-App web para cotizaciones, compras, seguimiento comercial y control gerencial.
+Plataforma web para cotizaciones, compras, seguimiento comercial y control gerencial por empresa.
 
 ## Modulos actuales
 
@@ -33,26 +33,20 @@ http://127.0.0.1:8000
 - Usuario: `fershop_admin`
 - Contrasena: `FerShop2026!`
 
-Puedes cambiar esa clave para despliegue usando la variable de entorno `FERSHOP_DEFAULT_ADMIN_PASSWORD`.
+Puedes cambiar esa clave con la variable `FERSHOP_DEFAULT_ADMIN_PASSWORD`.
 
 ## Variables de entorno
 
-- `PORT`: puerto HTTP del servidor. En Render lo pone la plataforma.
-- `FERSHOP_HOST`: host a escuchar. En local puede quedar vacio; en Render usa `0.0.0.0`.
-- `DATABASE_URL`: cadena de conexion a PostgreSQL. Render la inyecta desde la base.
+- `PORT`: puerto HTTP del servidor.
+- `FERSHOP_HOST`: host a escuchar.
+- `DATABASE_URL`: conexion a PostgreSQL.
 - `FERSHOP_DATABASE_URL`: alternativa explicita para PostgreSQL.
-- `FERSHOP_DB_PATH`: ruta absoluta del archivo SQLite cuando trabajas en local.
+- `FERSHOP_DB_PATH`: ruta del archivo SQLite en local.
 - `FERSHOP_DEFAULT_ADMIN_USERNAME`: usuario admin inicial.
 - `FERSHOP_DEFAULT_ADMIN_PASSWORD`: clave admin inicial.
+- `FERSHOP_TIMEZONE`: zona horaria de la app (ejemplo `America/Bogota`).
 
 ## Migracion de SQLite a PostgreSQL
-
-La app ahora soporta:
-
-- SQLite para desarrollo local rapido
-- PostgreSQL para Render y ambientes productivos
-
-Si quieres migrar tus datos actuales de SQLite a PostgreSQL:
 
 1. Crea la base PostgreSQL.
 2. Define `FERSHOP_DATABASE_URL` o `DATABASE_URL`.
@@ -62,70 +56,34 @@ Si quieres migrar tus datos actuales de SQLite a PostgreSQL:
 py -3 scripts/migrate_sqlite_to_postgres.py
 ```
 
-Opcionalmente puedes indicar otra base origen:
+Opcional:
 
 ```powershell
 py -3 scripts/migrate_sqlite_to_postgres.py --sqlite-path C:\ruta\mi_base.sqlite3
 ```
 
-## Seguridad de datos antes de cambios
+## Seguridad antes de cambios
 
-Para evitar perdida de informacion cuando hagas mejoras o despliegues:
-
-1. Realiza backup de SQLite si trabajas en local:
+1. Backup SQLite local:
 
 ```powershell
 copy data\fershop_app.sqlite3 data\fershop_app.backup.sqlite3
 ```
 
-2. Si ya usas PostgreSQL, realiza dump antes de cambios:
+2. Backup PostgreSQL:
 
 ```bash
-pg_dump "$DATABASE_URL" > fershop_backup.sql
+pg_dump "$DATABASE_URL" > shopper_calculator_backup.sql
 ```
 
-3. Valida migraciones o refactors en un entorno de prueba primero.
-4. No borres ni recrees tablas en produccion sin snapshot previo.
+## Deploy en Render
 
-## Publicacion en Render con PostgreSQL
-
-Este proyecto ya incluye:
-
-- `render.yaml`
-- `requirements.txt`
-- endpoint de salud en `/healthz`
-- soporte de `PORT`
-- soporte de `DATABASE_URL`
-- script de migracion desde SQLite
-
-Pasos:
-
-1. Sube este proyecto a GitHub.
-2. En Render crea un nuevo `Blueprint` desde el repo.
-3. Render levantara:
-   - un `Web Service`
-   - una base `PostgreSQL`
-4. Define la variable `FERSHOP_DEFAULT_ADMIN_PASSWORD`.
-5. Espera el deploy.
-6. Entra a la URL de Render.
-7. Si ya tenias datos en SQLite, ejecuta la migracion apuntando a la URL de PostgreSQL.
+1. Sube el repo a GitHub.
+2. Crea un `Blueprint` en Render desde el repo.
+3. Define `FERSHOP_DEFAULT_ADMIN_PASSWORD`.
+4. Espera el deploy y valida `/healthz`.
 
 ## Nota de arquitectura
 
-- La app queda lista para seguir trabajando como monolito modular multiempresa.
-- PostgreSQL es ahora la base recomendada para escalar a mas empresas, mas usuarios y mas volumen operativo.
-
-## Publicacion sin tarjeta en PythonAnywhere
-
-La app ya incluye entrada WSGI en [wsgi.py](/C:/Users/josef/OneDrive/Desktop/JFSS/FerShop/Proyectos/App/wsgi.py) para poder publicarla en PythonAnywhere.
-
-Pasos sugeridos:
-
-1. Crea una cuenta gratis en PythonAnywhere.
-2. En `Files`, sube este proyecto o clonaló desde GitHub.
-3. En `Web`, crea una nueva web app manual con Python 3.11.
-4. Abre el archivo WSGI que crea PythonAnywhere y reemplaza su contenido para importar `application` desde `wsgi.py`.
-5. Configura la carpeta `web/` como static files para `/static/`.
-6. Recarga la web app.
-
-Esta ruta sigue siendo valida para una demo. Para operacion real y crecimiento multiempresa, la ruta recomendada es Render + PostgreSQL.
+- Monolito modular multiempresa.
+- PostgreSQL recomendado para escalar a mas empresas, usuarios y volumen.

@@ -82,7 +82,13 @@ TRAVEL_TRANSPORT_LABELS = {
     TRAVEL_TRANSPORT_LOCKER: "Casillero",
     TRAVEL_TRANSPORT_LUGGAGE: "Maleta",
 }
-COLLECTION_READY_STATUS_KEY = "client_notified"
+COLLECTION_READY_STATUS_KEYS = {
+    "client_notified",
+    "second_payment_received",
+    "shipped_to_client",
+    "delivered_to_client",
+    "cycle_closed",
+}
 
 
 def list_default_order_statuses(include_legacy: bool = False) -> list[dict[str, str]]:
@@ -147,7 +153,7 @@ def is_order_pending_collection(status_key: Any, balance_due_cop: Any) -> bool:
         balance_due = float(balance_due_cop or 0)
     except (TypeError, ValueError):
         balance_due = 0.0
-    return clean_status_key == COLLECTION_READY_STATUS_KEY and balance_due > 0
+    return clean_status_key in COLLECTION_READY_STATUS_KEYS and balance_due > 0
 
 
 def normalize_travel_transport_type(

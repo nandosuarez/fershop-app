@@ -1,14 +1,14 @@
 :root {
-  --bg: #f4eee7;
+  --bg: #f6f1ea;
   --ink: #121111;
-  --ink-soft: #5f5852;
-  --panel: rgba(255, 250, 244, 0.84);
-  --line: rgba(18, 17, 17, 0.1);
+  --ink-soft: #5a534e;
+  --panel: rgba(255, 252, 246, 0.9);
+  --line: rgba(18, 17, 17, 0.09);
   --accent: #111111;
-  --accent-soft: #3f352f;
-  --champagne: #dbcabc;
-  --taupe: #8a7567;
-  --shadow: 0 24px 60px rgba(18, 17, 17, 0.12);
+  --accent-soft: #4f443e;
+  --champagne: #dfd1c3;
+  --taupe: #866f62;
+  --shadow: 0 20px 50px rgba(18, 17, 17, 0.1);
   --radius: 24px;
   --sticky-header-top: 10px;
   --sticky-sidebar-top: 126px;
@@ -23,9 +23,9 @@ body {
   min-height: 100vh;
   color: var(--ink);
   background:
-    radial-gradient(circle at top left, rgba(138, 117, 103, 0.24), transparent 30%),
-    radial-gradient(circle at right center, rgba(17, 17, 17, 0.14), transparent 24%),
-    linear-gradient(180deg, #fbf7f2 0%, #f2e9df 50%, #eaded4 100%);
+    radial-gradient(circle at top left, rgba(148, 122, 103, 0.2), transparent 36%),
+    radial-gradient(circle at 85% 18%, rgba(34, 28, 25, 0.11), transparent 30%),
+    linear-gradient(180deg, #fdfaf6 0%, #f3ebe2 48%, #e9ded2 100%);
   font-family: "Inter", "Aptos", "Segoe UI", sans-serif;
   line-height: 1.45;
 }
@@ -35,10 +35,9 @@ body.menu-open {
 }
 
 .page-shell {
-  width: calc(100vw - 40px);
-  max-width: 1880px;
+  width: min(2200px, calc(100vw - 24px));
   margin: 0 auto;
-  padding: 28px 0 48px;
+  padding: 20px 0 52px;
 }
 
 .site-brand {
@@ -49,10 +48,10 @@ body.menu-open {
   justify-content: space-between;
   align-items: center;
   gap: 20px;
-  padding: 14px 18px;
+  padding: 12px 16px;
   margin-bottom: 18px;
   backdrop-filter: blur(14px);
-  background: rgba(255, 250, 244, 0.66);
+  background: rgba(255, 250, 244, 0.74);
   border: 1px solid rgba(18, 17, 17, 0.08);
   border-radius: 22px;
   box-shadow: var(--shadow);
@@ -61,7 +60,7 @@ body.menu-open {
 .workspace-shell {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
-  gap: 22px;
+  gap: 20px;
   align-items: start;
 }
 
@@ -74,8 +73,8 @@ body.menu-open {
 .dashboard-panel,
 .form-panel {
   border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.72);
-  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.1);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.09);
 }
 
 .panel-header h2,
@@ -1238,7 +1237,7 @@ textarea:disabled {
 button {
   border: none;
   border-radius: 999px;
-  padding: 14px 18px;
+  padding: 12px 18px;
   font-weight: 700;
   cursor: pointer;
   transition: transform 180ms ease, opacity 180ms ease, box-shadow 180ms ease;
@@ -1254,15 +1253,15 @@ button:disabled {
 }
 
 .primary {
-  background: linear-gradient(135deg, var(--accent), #312925);
+  background: linear-gradient(135deg, #121111, #3b312a);
   color: #f9f4e7;
-  box-shadow: 0 16px 32px rgba(18, 17, 17, 0.24);
+  box-shadow: 0 14px 26px rgba(18, 17, 17, 0.2);
 }
 
 .secondary {
-  background: rgba(219, 202, 188, 0.46);
+  background: rgba(223, 209, 195, 0.52);
   color: var(--ink);
-  border: 1px solid rgba(138, 117, 103, 0.22);
+  border: 1px solid rgba(129, 109, 95, 0.24);
 }
 
 .metrics-grid {

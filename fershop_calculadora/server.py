@@ -57,6 +57,7 @@ from .database import (
     list_whatsapp_notifications,
     list_whatsapp_templates,
     maybe_auto_send_order_whatsapp_notification,
+    mark_order_delivered_with_balance,
     record_product_inventory_movement,
     register_second_payment,
     reverse_second_payment,
@@ -1732,6 +1733,24 @@ class FerShopHandler(BaseHTTPRequestHandler):
                     )
                     self._send_json(HTTPStatus.OK, {"item": item})
                     return
+                if action == "deliver-unpaid":
+                    payload = self._read_json()
+                    note = str(payload.get("note", "")).strip()
+                    item = mark_order_delivered_with_balance(
+                        order_id,
+                        note=note,
+                        company_id=session["company"]["id"],
+                    )
+                    notification = maybe_auto_send_order_whatsapp_notification(
+                        order_id,
+                        trigger_key="order_status:delivered_to_client",
+                        company_id=session["company"]["id"],
+                    )
+                    self._send_json(
+                        HTTPStatus.OK,
+                        {"item": item, "notification": notification},
+                    )
+                    return
                 if action == "travel-transport":
                     payload = self._read_json()
                     travel_transport_type = str(payload.get("travel_transport_type", "")).strip()
@@ -1960,6 +1979,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
             "status",
             "second-payment",
             "second-payment-reverse",
+            "deliver-unpaid",
             "travel-transport",
             "whatsapp",
             "image",

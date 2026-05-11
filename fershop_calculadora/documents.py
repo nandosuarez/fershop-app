@@ -22,7 +22,7 @@ def _format_date(value: str) -> str:
 
 def _resolve_company_brand(company: dict[str, Any] | None = None) -> str:
     if company is None:
-        return "FerShop USA"
+        return "Shopper Calculator"
 
     brand_name = str(company.get("brand_name") or "").strip()
     if brand_name:
@@ -31,7 +31,7 @@ def _resolve_company_brand(company: dict[str, Any] | None = None) -> str:
     name = str(company.get("name") or "").strip()
     if name:
         return name
-    return "FerShop USA"
+    return "Shopper Calculator"
 
 
 def get_client_quote_lines(record: dict[str, Any]) -> list[str]:
@@ -100,9 +100,9 @@ def build_quote_message_legacy(
     client_name = (record.get("client_name") or "").strip()
     brand_name = _resolve_company_brand(company)
     intro = (
-        f"Hola {client_name}, esta es tu cotización con FerShop USA."
+        f"Hola {client_name}, esta es tu cotizacion con {brand_name}."
         if client_name
-        else "Hola, esta es tu cotización con FerShop USA."
+        else f"Hola, esta es tu cotizacion con {brand_name}."
     )
     lines = get_client_quote_lines(record)
     final_data = record.get("result", {}).get("final", {})
@@ -171,13 +171,20 @@ def generate_quote_pdf_legacy(record: dict[str, Any]) -> bytes:
     if notes:
         body_lines.extend(["", "Detalles:"])
         body_lines.extend(wrap(notes, width=62))
-    body_lines.extend(["", "FerShop USA"])
+    body_lines.extend(["", "Shopper Calculator"])
 
     content_commands = [
         b"0.07 0.06 0.07 rg",
         b"40 760 515 46 re f",
         b"1 1 1 rg",
-        *_pdf_line_commands(["FerShop USA", "Cotización comercial"], x=56, y=788, font="F2", size=20, leading=18),
+        *_pdf_line_commands(
+            ["Shopper Calculator", "Cotizacion comercial"],
+            x=56,
+            y=788,
+            font="F2",
+            size=20,
+            leading=18,
+        ),
         b"0 0 0 rg",
         b"0.83 0.78 0.72 rg",
         b"40 744 515 3 re f",

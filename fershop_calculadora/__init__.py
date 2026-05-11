@@ -1,1 +1,1 @@
-"""Base de la calculadora web de FerShop."""
+"""Base de la plataforma web Shopper Calculator."""

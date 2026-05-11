@@ -4,12 +4,14 @@ import unittest
 from fershop_calculadora.calculations import QuoteInput, calculate_quote
 from fershop_calculadora.database import (
     authenticate_user,
+    create_company_user,
     create_company_with_admin,
     create_order_from_quote,
     create_order_status,
     create_session_for_user,
     get_default_company_id,
     get_session_by_token,
+    list_company_users,
     list_clients,
     list_order_statuses,
     list_orders,
@@ -18,6 +20,8 @@ from fershop_calculadora.database import (
     save_client,
     save_product,
     save_quote,
+    set_company_user_active,
+    update_company_user_role,
 )
 import fershop_calculadora.database as database
 
@@ -154,6 +158,48 @@ class AuthAndTenantTests(unittest.TestCase):
         self.assertEqual(len(second_orders), 1)
         self.assertNotIn("listo_para_pickup_north", default_status_keys)
         self.assertIn("listo_para_pickup_north", second_status_keys)
+
+    def test_company_user_management_supports_roles_and_activation(self) -> None:
+        created = create_company_with_admin(
+            slug="sur import",
+            name="Sur Import",
+            brand_name="Sur Import",
+            tagline="Operacion comercial modular.",
+            logo_path="/static/assets/fershop-logo-crop.jpg",
+            username="sur_admin",
+            password="SurAdmin2026!",
+            display_name="Admin Sur",
+        )
+        company_id = created["company"]["id"]
+
+        new_user = create_company_user(
+            username="sur_operador",
+            password="Operador2026!",
+            display_name="Operador Sur",
+            role="operator",
+            company_id=company_id,
+        )
+        self.assertEqual(new_user["role"], "operator")
+        self.assertTrue(new_user["is_active"])
+
+        promoted_user = update_company_user_role(
+            new_user["id"],
+            role="admin",
+            company_id=company_id,
+        )
+        self.assertEqual(promoted_user["role"], "admin")
+
+        paused_user = set_company_user_active(
+            new_user["id"],
+            is_active=False,
+            company_id=company_id,
+        )
+        self.assertFalse(paused_user["is_active"])
+
+        users = list_company_users(company_id=company_id)
+        usernames = {item["username"] for item in users}
+        self.assertIn("sur_admin", usernames)
+        self.assertIn("sur_operador", usernames)
 
 
 if __name__ == "__main__":

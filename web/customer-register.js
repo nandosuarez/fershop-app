@@ -91,7 +91,7 @@ function readClientPayload() {
 }
 
 function applyCompanyBranding(company) {
-  const brandName = company?.brand_name || company?.name || "Portal comercial";
+  const brandName = company?.brand_name || company?.name || "FerShop";
   const tagline =
     company?.tagline || "Comparte tus datos y te contactaremos para ayudarte con tu compra.";
   const logoPath = company?.logo_path || "/static/assets/fershop-logo-crop.jpg";

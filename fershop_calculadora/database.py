@@ -8077,6 +8077,109 @@ def update_order_status(
         return _serialize_order(updated, events, all_statuses, active_statuses)
 
 
+def mark_order_delivered_with_balance(
+    order_id: int,
+    note: str = "",
+    company_id: int | None = None,
+) -> dict[str, Any]:
+    init_db()
+    company_id = _normalize_company_id(company_id)
+    now = datetime.now(timezone.utc).isoformat()
+    target_status_key = "delivered_to_client"
+
+    with closing(_connect()) as connection:
+        connection.row_factory = sqlite3.Row
+        _ensure_orders_runtime_columns(connection)
+        all_statuses = _list_status_rows(
+            connection,
+            company_id=company_id,
+            include_inactive=True,
+        )
+        active_statuses = [status for status in all_statuses if status["is_active"]]
+        status_order = {str(status["key"]): index for index, status in enumerate(active_statuses)}
+        existing = connection.execute(
+            "SELECT * FROM orders WHERE id = ? AND company_id = ?",
+            (order_id, company_id),
+        ).fetchone()
+        if existing is None:
+            raise ValueError("La compra no existe.")
+
+        current_status_key = str(existing["status_key"] or "").strip()
+        balance_due = float(existing["balance_due_cop"] or 0)
+        if balance_due <= 0:
+            raise ValueError(
+                "Esta compra no tiene saldo pendiente. Avanzala por el flujo normal."
+            )
+
+        if current_status_key == CLOSED_ORDER_STATUS_KEY:
+            raise ValueError("Esta compra ya está cerrada.")
+
+        if current_status_key == target_status_key:
+            raise ValueError("Esta compra ya está marcada como entregada.")
+
+        if target_status_key not in status_order:
+            raise ValueError("No encontramos el estado entregado dentro del flujo activo.")
+
+        required_status = "client_notified"
+        if required_status not in status_order:
+            raise ValueError("No encontramos el estado cliente notificado en el flujo activo.")
+
+        current_index = status_order.get(current_status_key)
+        if current_index is None:
+            raise ValueError("El estado actual de la compra no está activo en el flujo.")
+
+        if current_index < status_order[required_status]:
+            raise ValueError(
+                "Primero avanza la compra hasta cliente notificado para marcar entrega con saldo."
+            )
+
+        connection.execute(
+            """
+            UPDATE orders
+            SET status_key = ?, balance_due_cop = ?
+            WHERE id = ? AND company_id = ?
+            """,
+            (target_status_key, balance_due, order_id, company_id),
+        )
+
+        reason_note = str(note or "").strip()
+        composed_note = (
+            f"Entrega excepcional con saldo pendiente por {_format_cop_plain(balance_due)}."
+        )
+        if reason_note:
+            composed_note = f"{composed_note} {reason_note}"
+
+        connection.execute(
+            """
+            INSERT INTO order_events (
+                created_at,
+                company_id,
+                order_id,
+                status_key,
+                note
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                now,
+                company_id,
+                order_id,
+                target_status_key,
+                composed_note,
+            ),
+        )
+        connection.commit()
+
+        updated = connection.execute(
+            "SELECT * FROM orders WHERE id = ? AND company_id = ?",
+            (order_id, company_id),
+        ).fetchone()
+        events = _list_order_events(connection, [order_id], all_statuses, company_id).get(
+            order_id, []
+        )
+        return _serialize_order(updated, events, all_statuses, active_statuses)
+
+
 def update_order_travel_transport(
     order_id: int,
     travel_transport_type: str,
