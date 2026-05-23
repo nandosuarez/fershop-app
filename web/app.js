@@ -94,6 +94,9 @@ const productStoresSearchInput = document.getElementById("product-stores-search"
 const publicRegistrationUrlInput = document.getElementById("public-registration-url");
 const copyPublicRegistrationUrlButton = document.getElementById("copy-public-registration-url");
 const openPublicRegistrationUrlLink = document.getElementById("open-public-registration-url");
+const publicStoreUrlInput = document.getElementById("public-store-url");
+const copyPublicStoreUrlButton = document.getElementById("copy-public-store-url");
+const openPublicStoreUrlLink = document.getElementById("open-public-store-url");
 const whatsappSettingsForm = document.getElementById("whatsapp-settings-form");
 const whatsappTemplateForm = document.getElementById("whatsapp-template-form");
 const whatsappTriggerSelect = document.getElementById("whatsapp-trigger-select");
@@ -3518,6 +3521,7 @@ function renderPublicRegistrationLink(company) {
   const registrationUrl = slug
     ? `${window.location.origin}/registro/${encodeURIComponent(slug)}`
     : "";
+  const storeUrl = slug ? `${window.location.origin}/tienda/${encodeURIComponent(slug)}` : "";
 
   publicRegistrationUrlInput.value = registrationUrl;
   openPublicRegistrationUrlLink.href = registrationUrl || "#";
@@ -3526,6 +3530,19 @@ function renderPublicRegistrationLink(company) {
     openPublicRegistrationUrlLink.classList.add("is-disabled");
   } else {
     openPublicRegistrationUrlLink.classList.remove("is-disabled");
+  }
+
+  if (!publicStoreUrlInput || !openPublicStoreUrlLink) {
+    return;
+  }
+
+  publicStoreUrlInput.value = storeUrl;
+  openPublicStoreUrlLink.href = storeUrl || "#";
+  openPublicStoreUrlLink.setAttribute("aria-disabled", storeUrl ? "false" : "true");
+  if (!storeUrl) {
+    openPublicStoreUrlLink.classList.add("is-disabled");
+  } else {
+    openPublicStoreUrlLink.classList.remove("is-disabled");
   }
 }
 
@@ -13794,6 +13811,24 @@ if (copyPublicRegistrationUrlButton) {
       window.location.hash = "administracion";
     } catch (_error) {
       statusMessage.textContent = "No fue posible copiar el enlace publico en este navegador.";
+    }
+  });
+}
+
+if (copyPublicStoreUrlButton) {
+  copyPublicStoreUrlButton.addEventListener("click", async () => {
+    const value = publicStoreUrlInput?.value || "";
+    if (!value) {
+      statusMessage.textContent = "No encontramos el enlace publico de tienda para esta empresa.";
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      statusMessage.textContent = "Enlace de tienda copiado. Ya puedes compartirlo con tus clientes.";
+      window.location.hash = "administracion";
+    } catch (_error) {
+      statusMessage.textContent = "No fue posible copiar el enlace de tienda en este navegador.";
     }
   });
 }

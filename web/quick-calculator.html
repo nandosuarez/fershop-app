@@ -1,104 +1,23 @@
+<!DOCTYPE html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Calculadora rápida</title>
+    <title>Calculadora rapida</title>
     <link rel="stylesheet" href="/static/styles.css" />
-    <style>
-      .quick-calc-shell {
-        max-width: 560px;
-        margin: 0 auto;
-        padding: 20px 16px 40px;
-        display: grid;
-        gap: 18px;
-      }
-
-      .quick-calc-result {
-        display: grid;
-        gap: 14px;
-      }
-
-      .quick-calc-result-hero {
-        padding: 22px;
-        border-radius: 26px;
-        background: linear-gradient(145deg, rgba(18, 17, 17, 0.96), rgba(76, 63, 55, 0.92));
-        color: #fffaf4;
-        box-shadow: 0 24px 48px rgba(18, 17, 17, 0.18);
-      }
-
-      .quick-calc-result-hero span {
-        display: block;
-        color: rgba(255, 250, 244, 0.72);
-        font-size: 0.88rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-      }
-
-      .quick-calc-result-hero strong {
-        display: block;
-        margin-top: 10px;
-        font-size: clamp(2rem, 7vw, 3.2rem);
-        line-height: 1.05;
-        font-family: "Didot", "Bodoni MT", "Times New Roman", serif;
-      }
-
-      .quick-calc-result-hero small {
-        display: block;
-        margin-top: 10px;
-        color: rgba(255, 250, 244, 0.84);
-        font-size: 1rem;
-      }
-
-      .quick-calc-metrics {
-        display: grid;
-        gap: 12px;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .quick-calc-metric {
-        padding: 16px;
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.7);
-        border: 1px solid rgba(18, 17, 17, 0.08);
-      }
-
-      .quick-calc-metric span {
-        display: block;
-        color: var(--ink-soft);
-        font-size: 0.86rem;
-      }
-
-      .quick-calc-metric strong {
-        display: block;
-        margin-top: 8px;
-        font-size: 1.1rem;
-      }
-
-      .quick-calc-note {
-        margin: 0;
-        color: var(--ink-soft);
-        line-height: 1.55;
-      }
-
-      @media (max-width: 640px) {
-        .quick-calc-metrics {
-          grid-template-columns: 1fr;
-        }
-      }
-    </style>
   </head>
   <body>
     <main class="quick-calc-shell">
-      <section class="panel">
+      <section class="panel quick-calc-input-panel">
         <div class="panel-header">
           <div>
-            <p class="eyebrow">Página rápida</p>
+            <p class="eyebrow">Pagina rapida</p>
             <h1>Calculadora sugerida</h1>
-            <p>Escribe el precio USD y la página te calcula al instante el valor sugerido a cobrar.</p>
+            <p>Escribe el costo en USD y obten el valor sugerido para cobrar en COP.</p>
           </div>
         </div>
 
-        <form id="quick-calculator-form" class="catalog-form">
+        <form id="quick-calculator-form" class="catalog-form" novalidate>
           <div class="field-grid">
             <label>
               <span>Precio USD</span>
@@ -106,7 +25,7 @@
             </label>
 
             <label>
-              <span>Envío / costo viaje USD</span>
+              <span>Envio / costo viaje USD</span>
               <input name="shipping_usd" type="number" min="0" step="0.01" value="8" required />
             </label>
 
@@ -120,6 +39,44 @@
               <input name="margin_percent" type="number" min="0" max="99" step="0.1" value="30" required />
             </label>
           </div>
+
+          <div class="quick-calc-preset-groups">
+            <div class="quick-calc-preset-group">
+              <span>Margen rapido</span>
+              <div class="quick-calc-presets">
+                <button type="button" class="secondary quick-calc-preset" data-quick-set="margin_percent" data-quick-value="25">
+                  25%
+                </button>
+                <button type="button" class="secondary quick-calc-preset" data-quick-set="margin_percent" data-quick-value="30">
+                  30%
+                </button>
+                <button type="button" class="secondary quick-calc-preset" data-quick-set="margin_percent" data-quick-value="35">
+                  35%
+                </button>
+              </div>
+            </div>
+
+            <div class="quick-calc-preset-group">
+              <span>TRM rapida</span>
+              <div class="quick-calc-presets">
+                <button type="button" class="secondary quick-calc-preset" data-quick-set="exchange_rate_cop" data-quick-value="3800">
+                  3.800
+                </button>
+                <button type="button" class="secondary quick-calc-preset" data-quick-set="exchange_rate_cop" data-quick-value="3900">
+                  3.900
+                </button>
+                <button type="button" class="secondary quick-calc-preset" data-quick-set="exchange_rate_cop" data-quick-value="4000">
+                  4.000
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="actions quick-calc-actions">
+            <button id="quick-calc-reset" type="button" class="secondary">Limpiar</button>
+            <button id="quick-calc-copy" type="button" class="secondary">Copiar precio sugerido</button>
+          </div>
+          <p id="quick-calc-status" class="login-status quick-calc-status" aria-live="polite"></p>
         </form>
       </section>
 
@@ -132,6 +89,14 @@
 
         <div class="quick-calc-metrics">
           <article class="quick-calc-metric">
+            <span>Precio USD con tax</span>
+            <strong id="quick-calc-taxed-usd">US$0.00</strong>
+          </article>
+          <article class="quick-calc-metric">
+            <span>Tax estimado (7%)</span>
+            <strong id="quick-calc-tax-usd">US$0.00</strong>
+          </article>
+          <article class="quick-calc-metric">
             <span>Total USD a convertir</span>
             <strong id="quick-calc-total-usd">US$0.00</strong>
           </article>
@@ -141,9 +106,25 @@
           </article>
         </div>
 
+        <article class="detail-panel quick-calc-detail-panel">
+          <h3>Desglose rapido</h3>
+          <div class="detail-item">
+            <span>Margen aplicado</span>
+            <strong id="quick-calc-margin-label">0%</strong>
+          </div>
+          <div class="detail-item">
+            <span>Total costo COP</span>
+            <strong id="quick-calc-cost-cop">$0</strong>
+          </div>
+          <div class="detail-item">
+            <span>Utilidad estimada COP</span>
+            <strong id="quick-calc-profit-cop">$0</strong>
+          </div>
+        </article>
+
         <p class="quick-calc-note">
-          Fórmula usada: <strong>(precio USD + envío/costo viaje) × TRM</strong>.
-          Puedes cambiar los valores base cuando lo necesites.
+          Formula usada: <strong>(((precio USD x 1.07) + envio) x TRM) / (1 - utilidad)</strong>.
+          El tax 7% ya viene incluido.
         </p>
       </section>
     </main>

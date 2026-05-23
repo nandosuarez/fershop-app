@@ -109,6 +109,8 @@ from .pending import list_pending_priorities, list_pending_statuses
 ROOT_DIR = Path(__file__).resolve().parent.parent
 WEB_DIR = ROOT_DIR / "web"
 WEB_ROOT = WEB_DIR.resolve()
+PUBLIC_STORE_DEFAULT_MARGIN_PERCENT = 30.0
+PUBLIC_STORE_DEFAULT_ADVANCE_PERCENT = 50.0
 
 
 class FerShopHandler(BaseHTTPRequestHandler):
@@ -201,6 +203,165 @@ class FerShopHandler(BaseHTTPRequestHandler):
         if isinstance(value, str):
             return value.strip().lower() in {"1", "true", "yes", "si", "on"}
         return bool(value)
+
+    @staticmethod
+    def _normalize_identification(value: object) -> str:
+        return " ".join(str(value or "").strip().split())
+
+    @staticmethod
+    def _merge_notes(*parts: str) -> str:
+        clean_parts: list[str] = []
+        for part in parts:
+            clean = str(part or "").strip()
+            if clean and clean not in clean_parts:
+                clean_parts.append(clean)
+        return "\n".join(clean_parts)
+
+    def _resolve_public_store_defaults(self, company_id: int) -> dict[str, float]:
+        template_items = list_direct_order_templates(company_id=company_id)
+        fallback_exchange = 3790.0
+        for template in template_items:
+            if str(template.get("template_key") or "").strip().lower() == "online":
+                try:
+                    fallback_exchange = float(template.get("exchange_rate_cop") or fallback_exchange)
+                except (TypeError, ValueError):
+                    fallback_exchange = 3790.0
+                break
+        fallback_exchange = max(fallback_exchange, 1.0)
+        return {
+            "exchange_rate_cop": fallback_exchange,
+            "desired_margin_percent": PUBLIC_STORE_DEFAULT_MARGIN_PERCENT,
+            "advance_percent": PUBLIC_STORE_DEFAULT_ADVANCE_PERCENT,
+        }
+
+    def _build_public_store_product(
+        self,
+        product: dict[str, object],
+        *,
+        exchange_rate_cop: float,
+        desired_margin_percent: float,
+        advance_percent: float,
+    ) -> dict[str, object] | None:
+        try:
+            unit_price_usd = float(product.get("price_usd_net") or 0)
+            tax_usa_percent = float(product.get("tax_usa_percent") or 0)
+            locker_shipping_usd = float(product.get("locker_shipping_usd") or 0)
+        except (TypeError, ValueError):
+            return None
+
+        if unit_price_usd <= 0:
+            return None
+
+        try:
+            quote = QuoteInput.from_dict(
+                {
+                    "product_name": str(product.get("name") or "").strip() or "Producto",
+                    "product_id": int(product.get("id") or 0) or None,
+                    "reference": str(product.get("reference") or "").strip(),
+                    "category": str(product.get("category") or "").strip(),
+                    "store": str(product.get("store") or "").strip(),
+                    "quantity": 1,
+                    "purchase_type": "online",
+                    "price_usd_net": unit_price_usd,
+                    "tax_usa_percent": tax_usa_percent,
+                    "travel_cost_usd": 0,
+                    "locker_shipping_usd": locker_shipping_usd,
+                    "exchange_rate_cop": exchange_rate_cop,
+                    "local_costs_cop": 0,
+                    "desired_margin_percent": desired_margin_percent,
+                    "advance_percent": advance_percent,
+                }
+            )
+            result = calculate_quote(quote)
+        except (TypeError, ValueError):
+            return None
+        suggested_sale_cop = float(result.get("suggested", {}).get("sale_price_cop") or 0)
+        suggested_advance_cop = float(result.get("suggested", {}).get("advance_cop") or 0)
+        suggested_profit_cop = float(result.get("suggested", {}).get("profit_cop") or 0)
+        real_cost_cop = float(result.get("costs", {}).get("real_total_cost_cop") or 0)
+
+        return {
+            "id": product.get("id"),
+            "name": product.get("name"),
+            "reference": product.get("reference"),
+            "category": product.get("category"),
+            "store": product.get("store"),
+            "description": product.get("description"),
+            "image_data_url": product.get("image_data_url"),
+            "price_usd_net": unit_price_usd,
+            "tax_usa_percent": tax_usa_percent,
+            "locker_shipping_usd": locker_shipping_usd,
+            "inventory_enabled": bool(product.get("inventory_enabled")),
+            "current_stock": int(product.get("current_stock") or 0),
+            "suggested_sale_price_cop": suggested_sale_cop,
+            "suggested_advance_cop": suggested_advance_cop,
+            "suggested_profit_cop": suggested_profit_cop,
+            "estimated_cost_cop": real_cost_cop,
+        }
+
+    def _resolve_public_store_client(
+        self,
+        company_id: int,
+        customer_payload: dict[str, object],
+    ) -> dict[str, object]:
+        client = ClientInput.from_dict(customer_payload)
+        client_data = client.to_dict()
+        identification = self._normalize_identification(client_data.get("identification", ""))
+        if not identification:
+            raise ValueError(
+                "La identificacion del cliente es obligatoria para confirmar la compra online."
+            )
+        client_data["identification"] = identification
+
+        existing_client = next(
+            (
+                item
+                for item in list_clients(
+                    limit=5000,
+                    include_inactive=True,
+                    company_id=company_id,
+                )
+                if self._normalize_identification(item.get("identification", "")) == identification
+            ),
+            None,
+        )
+
+        source_note = "Compra creada desde tienda online."
+        client_data["notes"] = self._merge_notes(source_note, str(client_data.get("notes") or ""))
+        if existing_client is None:
+            return save_client(client_data, company_id=company_id)
+
+        merged_payload = {
+            "name": client_data.get("name") or existing_client.get("name") or "",
+            "identification": identification,
+            "description": client_data.get("description") or existing_client.get("description") or "",
+            "phone": client_data.get("phone") or existing_client.get("phone") or "",
+            "email": client_data.get("email") or existing_client.get("email") or "",
+            "city": client_data.get("city") or existing_client.get("city") or "",
+            "address": client_data.get("address") or existing_client.get("address") or "",
+            "neighborhood": client_data.get("neighborhood") or existing_client.get("neighborhood") or "",
+            "whatsapp_phone": client_data.get("whatsapp_phone")
+            or existing_client.get("whatsapp_phone")
+            or "",
+            "whatsapp_opt_in": bool(client_data.get("whatsapp_opt_in"))
+            or bool(existing_client.get("whatsapp_opt_in")),
+            "preferred_contact_channel": client_data.get("preferred_contact_channel")
+            or existing_client.get("preferred_contact_channel")
+            or "",
+            "preferred_payment_method": client_data.get("preferred_payment_method")
+            or existing_client.get("preferred_payment_method")
+            or "",
+            "interests": client_data.get("interests") or existing_client.get("interests") or "",
+            "notes": self._merge_notes(
+                str(existing_client.get("notes") or ""),
+                str(client_data.get("notes") or ""),
+            ),
+        }
+        return update_client(
+            int(existing_client["id"]),
+            merged_payload,
+            company_id=company_id,
+        )
 
     @staticmethod
     def _can_manage_company_users(session: dict) -> bool:
@@ -299,7 +460,9 @@ class FerShopHandler(BaseHTTPRequestHandler):
     def _do_get(self) -> None:
         parsed = urlparse(self.path)
         public_registration_slug = self._parse_public_registration_page_route(parsed.path)
+        public_store_slug = self._parse_public_store_page_route(parsed.path)
         public_company_slug = self._parse_public_company_route(parsed.path)
+        public_store_api_slug = self._parse_public_store_api_route(parsed.path)
         route = self._parse_quote_route(parsed.path)
         quote_detail_route = self._parse_quote_detail_route(parsed.path)
         order_route = self._parse_order_route(parsed.path)
@@ -325,6 +488,10 @@ class FerShopHandler(BaseHTTPRequestHandler):
             self._serve_file(WEB_DIR / "customer-register.html", "text/html; charset=utf-8")
             return
 
+        if public_store_slug is not None:
+            self._serve_file(WEB_DIR / "storefront.html", "text/html; charset=utf-8")
+            return
+
         if parsed.path == "/calculadora-rapida":
             self._serve_file(WEB_DIR / "quick-calculator.html", "text/html; charset=utf-8")
             return
@@ -338,6 +505,43 @@ class FerShopHandler(BaseHTTPRequestHandler):
                 )
                 return
             self._send_json(HTTPStatus.OK, {"item": company})
+            return
+
+        if public_store_api_slug is not None:
+            company = get_company_by_slug(public_store_api_slug)
+            if company is None or not company.get("is_active"):
+                self._send_json(
+                    HTTPStatus.NOT_FOUND,
+                    {"error": "No encontramos una empresa activa para esa tienda."},
+                )
+                return
+
+            defaults = self._resolve_public_store_defaults(int(company["id"]))
+            raw_products = list_products(
+                limit=2000,
+                include_inactive=False,
+                company_id=int(company["id"]),
+            )
+            products: list[dict[str, object]] = []
+            for raw_product in raw_products:
+                item = self._build_public_store_product(
+                    raw_product,
+                    exchange_rate_cop=float(defaults["exchange_rate_cop"]),
+                    desired_margin_percent=float(defaults["desired_margin_percent"]),
+                    advance_percent=float(defaults["advance_percent"]),
+                )
+                if item is not None:
+                    products.append(item)
+
+            products.sort(key=lambda item: str(item.get("name") or "").casefold())
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "company": company,
+                    "defaults": defaults,
+                    "items": products,
+                },
+            )
             return
 
         if parsed.path == "/":
@@ -1025,6 +1229,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         try:
             public_registration_slug = self._parse_public_registration_api_route(self.path)
+            public_store_checkout_slug = self._parse_public_store_checkout_api_route(self.path)
             if self.path == "/api/whatsapp/twilio/status":
                 form_payload = self._read_form_data()
                 message_sid = str(form_payload.get("MessageSid", "")).strip()
@@ -1068,6 +1273,179 @@ class FerShopHandler(BaseHTTPRequestHandler):
                         "item": record,
                         "company": company,
                         "message": "Tus datos quedaron registrados correctamente.",
+                    },
+                )
+                return
+
+            if public_store_checkout_slug is not None:
+                company = get_company_by_slug(public_store_checkout_slug)
+                if company is None or not company.get("is_active"):
+                    self._send_json(
+                        HTTPStatus.NOT_FOUND,
+                        {"error": "No encontramos una empresa activa para esa tienda."},
+                    )
+                    return
+
+                payload = self._read_json()
+                customer_payload = payload.get("customer")
+                if not isinstance(customer_payload, dict):
+                    raise ValueError(
+                        "Debes completar los datos del cliente para finalizar la compra online."
+                    )
+
+                raw_cart = payload.get("cart")
+                if not isinstance(raw_cart, list) or not raw_cart:
+                    raise ValueError("Debes agregar al menos un producto al carrito.")
+
+                cart_items: list[dict[str, object]] = []
+                for raw_item in raw_cart:
+                    if not isinstance(raw_item, dict):
+                        continue
+                    try:
+                        product_id = int(raw_item.get("product_id"))
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError("Cada item del carrito debe tener un producto valido.") from exc
+                    try:
+                        quantity = int(raw_item.get("quantity") or 1)
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError("La cantidad de cada item debe ser un numero entero.") from exc
+                    if quantity <= 0:
+                        raise ValueError("La cantidad de cada item debe ser mayor que cero.")
+
+                    unit_sale_price_cop = None
+                    if raw_item.get("unit_sale_price_cop") not in (None, ""):
+                        try:
+                            unit_sale_price_cop = float(raw_item.get("unit_sale_price_cop"))
+                        except (TypeError, ValueError) as exc:
+                            raise ValueError(
+                                "El precio de venta por unidad debe ser numerico."
+                            ) from exc
+                        if unit_sale_price_cop <= 0:
+                            raise ValueError("El precio de venta por unidad debe ser mayor que cero.")
+
+                    cart_items.append(
+                        {
+                            "product_id": product_id,
+                            "quantity": quantity,
+                            "unit_sale_price_cop": unit_sale_price_cop,
+                        }
+                    )
+
+                if not cart_items:
+                    raise ValueError("Debes agregar al menos un producto al carrito.")
+
+                company_id = int(company["id"])
+                client_record = self._resolve_public_store_client(company_id, customer_payload)
+                defaults = self._resolve_public_store_defaults(company_id)
+                exchange_rate_cop = float(defaults["exchange_rate_cop"])
+                desired_margin_percent = float(defaults["desired_margin_percent"])
+                advance_percent = float(defaults["advance_percent"])
+
+                available_products = {
+                    int(item["id"]): item
+                    for item in list_products(
+                        limit=2000,
+                        include_inactive=False,
+                        company_id=company_id,
+                    )
+                }
+
+                quote_items: list[dict[str, object]] = []
+                for cart_item in cart_items:
+                    product = available_products.get(int(cart_item["product_id"]))
+                    if product is None:
+                        raise ValueError("Uno de los productos del carrito ya no esta disponible.")
+                    if float(product.get("price_usd_net") or 0) <= 0:
+                        raise ValueError(
+                            f"El producto '{product.get('name')}' no tiene precio USD valido para venderse."
+                        )
+
+                    quantity = int(cart_item["quantity"])
+                    preview = self._build_public_store_product(
+                        product,
+                        exchange_rate_cop=exchange_rate_cop,
+                        desired_margin_percent=desired_margin_percent,
+                        advance_percent=advance_percent,
+                    )
+                    if preview is None:
+                        raise ValueError(
+                            f"No pudimos calcular el precio del producto '{product.get('name')}'."
+                        )
+
+                    unit_sale_price_cop = cart_item.get("unit_sale_price_cop")
+                    if unit_sale_price_cop in (None, ""):
+                        unit_sale_price_cop = float(preview.get("suggested_sale_price_cop") or 0)
+                    line_sale_price_cop = max(float(unit_sale_price_cop), 0.0) * quantity
+
+                    quote_items.append(
+                        {
+                            "product_id": int(product["id"]),
+                            "product_name": str(product.get("name") or "").strip() or "Producto",
+                            "reference": str(product.get("reference") or "").strip(),
+                            "category": str(product.get("category") or "").strip(),
+                            "store": str(product.get("store") or "").strip(),
+                            "quantity": quantity,
+                            "purchase_type": "online",
+                            "price_usd_net": float(product.get("price_usd_net") or 0),
+                            "tax_usa_percent": float(product.get("tax_usa_percent") or 0),
+                            "travel_cost_usd": 0.0,
+                            "locker_shipping_usd": float(product.get("locker_shipping_usd") or 0),
+                            "exchange_rate_cop": exchange_rate_cop,
+                            "local_costs_cop": 0.0,
+                            "desired_margin_percent": desired_margin_percent,
+                            "advance_percent": advance_percent,
+                            "final_sale_price_cop": line_sale_price_cop,
+                            "notes": "",
+                        }
+                    )
+
+                raw_advance_paid_cop = payload.get("advance_paid_cop")
+                advance_paid_cop = None
+                if raw_advance_paid_cop not in (None, ""):
+                    try:
+                        advance_paid_cop = float(raw_advance_paid_cop)
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError("El anticipo pagado debe ser numerico.") from exc
+                    if advance_paid_cop < 0:
+                        raise ValueError("El anticipo pagado no puede ser negativo.")
+
+                client_purchase_note = str(payload.get("notes") or "").strip()
+                order_notes = self._merge_notes(
+                    "Compra creada desde tienda online.",
+                    client_purchase_note,
+                )
+                quote_payload: dict[str, object] = {
+                    "client_id": int(client_record["id"]),
+                    "client_name": str(client_record.get("name") or "").strip(),
+                    "notes": order_notes,
+                    "quote_items": quote_items,
+                }
+                if advance_paid_cop is not None:
+                    quote_payload = self._apply_direct_order_advance(
+                        quote_payload,
+                        advance_paid_cop,
+                    )
+
+                input_data, result = self._build_quote_record(quote_payload)
+                order_record, quote_record = create_direct_order(
+                    input_data,
+                    result,
+                    advance_paid_cop=advance_paid_cop,
+                    company_id=company_id,
+                )
+                notification = maybe_auto_send_order_whatsapp_notification(
+                    int(order_record["id"]),
+                    trigger_key="order_status:quote_confirmed",
+                    company_id=company_id,
+                )
+                self._send_json(
+                    HTTPStatus.CREATED,
+                    {
+                        "item": order_record,
+                        "quote": quote_record,
+                        "client": client_record,
+                        "notification": notification,
+                        "message": "Compra recibida correctamente.",
                     },
                 )
                 return
@@ -1916,9 +2294,21 @@ class FerShopHandler(BaseHTTPRequestHandler):
             return None
         return parts[1]
 
+    def _parse_public_store_page_route(self, path: str) -> str | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) != 2 or parts[0] != "tienda":
+            return None
+        return parts[1]
+
     def _parse_public_company_route(self, path: str) -> str | None:
         parts = [part for part in path.split("/") if part]
         if len(parts) != 4 or parts[0] != "api" or parts[1] != "public" or parts[2] != "company":
+            return None
+        return parts[3]
+
+    def _parse_public_store_api_route(self, path: str) -> str | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) != 4 or parts[0] != "api" or parts[1] != "public" or parts[2] != "store":
             return None
         return parts[3]
 
@@ -1929,6 +2319,18 @@ class FerShopHandler(BaseHTTPRequestHandler):
             or parts[0] != "api"
             or parts[1] != "public"
             or parts[2] != "register"
+        ):
+            return None
+        return parts[3]
+
+    def _parse_public_store_checkout_api_route(self, path: str) -> str | None:
+        parts = [part for part in path.split("/") if part]
+        if (
+            len(parts) != 5
+            or parts[0] != "api"
+            or parts[1] != "public"
+            or parts[2] != "store"
+            or parts[4] != "checkout"
         ):
             return None
         return parts[3]

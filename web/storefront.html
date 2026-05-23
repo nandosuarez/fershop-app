@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tienda online</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="public-store-shell">
+      <section class="panel public-store-brand-panel">
+        <div class="public-register-brand-lockup">
+          <img
+            class="brand-logo public-register-logo"
+            data-public-store-company-logo
+            src="/static/assets/fershop-logo-crop.jpg"
+            alt="Logo de la empresa"
+          />
+          <div>
+            <p class="eyebrow">Tienda online</p>
+            <h1 data-public-store-company-brand>FerShop</h1>
+            <p class="public-register-copy" data-public-store-company-tagline>
+              Compra directo desde el catalogo y recibe confirmacion de tu pedido.
+            </p>
+          </div>
+        </div>
+        <div class="public-store-meta-row">
+          <span class="catalog-chip">TRM: <strong data-store-default-trm>0</strong></span>
+          <span class="catalog-chip">Margen: <strong data-store-default-margin>0%</strong></span>
+        </div>
+      </section>
+
+      <section class="panel public-store-catalog-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Catalogo publico</h2>
+            <p>Selecciona productos, agrega cantidades y confirma tu compra.</p>
+            <p id="public-store-products-summary" class="field-helper public-store-products-summary">
+              Cargando catalogo...
+            </p>
+          </div>
+          <label class="public-store-search">
+            <span>Buscar</span>
+            <input
+              id="public-store-search-input"
+              type="search"
+              placeholder="Busca por nombre, referencia, categoria o tienda"
+              autocomplete="off"
+            />
+          </label>
+        </div>
+
+        <div class="public-store-layout">
+          <section>
+            <div id="public-store-products" class="public-store-products">
+              <p class="catalog-empty">Cargando productos...</p>
+            </div>
+          </section>
+
+          <aside class="public-store-cart">
+            <div class="panel-header public-store-cart-header">
+              <div>
+                <h3>Carrito</h3>
+                <p id="public-store-cart-count">0 producto(s)</p>
+              </div>
+              <button id="public-store-clear-cart" type="button" class="secondary">Vaciar carrito</button>
+            </div>
+
+            <div id="public-store-cart-items" class="catalog-empty">
+              <p>Aun no agregas productos al carrito.</p>
+            </div>
+
+            <div class="public-store-total-row">
+              <span>Total sugerido</span>
+              <strong id="public-store-cart-total">$ 0</strong>
+            </div>
+
+            <form id="public-store-checkout-form" class="catalog-form">
+              <p class="field-helper public-store-checkout-helper">
+                Completa tus datos para confirmar la compra. Puedes dejar campos opcionales vacios.
+              </p>
+              <div class="field-grid">
+                <label>
+                  <span>Nombre</span>
+                  <input name="name" type="text" placeholder="Tu nombre completo" required />
+                </label>
+                <label>
+                  <span>Identificacion</span>
+                  <input name="identification" type="text" placeholder="Tu documento" required />
+                </label>
+                <label>
+                  <span>Telefono</span>
+                  <input name="phone" type="text" inputmode="tel" placeholder="Ej. 3001234567" />
+                </label>
+                <label>
+                  <span>WhatsApp</span>
+                  <input name="whatsapp_phone" type="text" inputmode="tel" placeholder="Ej. +573001234567" />
+                </label>
+                <label>
+                  <span>Email</span>
+                  <input name="email" type="email" placeholder="Opcional" />
+                </label>
+                <label>
+                  <span>Ciudad</span>
+                  <input name="city" type="text" placeholder="Ej. Bogota" />
+                </label>
+                <label class="full-width">
+                  <span>Direccion de envio</span>
+                  <input name="address" type="text" placeholder="Ej. Cra 15 # 93 - 40" />
+                </label>
+                <label>
+                  <span>Anticipo pagado (COP)</span>
+                  <input
+                    name="advance_paid_cop"
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputmode="numeric"
+                    placeholder="Opcional"
+                  />
+                </label>
+              </div>
+
+              <label class="full-width">
+                <span>Notas de la compra</span>
+                <textarea
+                  name="notes"
+                  rows="3"
+                  placeholder="Talla, color, detalles de entrega o referencias."
+                ></textarea>
+              </label>
+
+              <div class="actions">
+                <button id="public-store-submit" type="submit" class="primary">Confirmar compra</button>
+              </div>
+            </form>
+
+            <p id="public-store-status" class="login-status public-store-status" aria-live="polite">
+              Agrega productos al carrito para continuar.
+            </p>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/storefront.js" defer></script>
+  </body>
+</html>
