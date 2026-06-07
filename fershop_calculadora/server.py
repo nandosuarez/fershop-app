@@ -111,6 +111,7 @@ WEB_DIR = ROOT_DIR / "web"
 WEB_ROOT = WEB_DIR.resolve()
 PUBLIC_STORE_DEFAULT_MARGIN_PERCENT = 30.0
 PUBLIC_STORE_DEFAULT_ADVANCE_PERCENT = 50.0
+PUBLIC_STORE_IMMEDIATE_ADVANCE_PERCENT = 100.0
 
 
 class FerShopHandler(BaseHTTPRequestHandler):
@@ -217,6 +218,69 @@ class FerShopHandler(BaseHTTPRequestHandler):
                 clean_parts.append(clean)
         return "\n".join(clean_parts)
 
+    @staticmethod
+    def _format_cop_plain(value: object) -> str:
+        try:
+            amount = int(round(float(value or 0)))
+        except (TypeError, ValueError):
+            amount = 0
+        sign = "-" if amount < 0 else ""
+        digits = f"{abs(amount):,}".replace(",", ".")
+        return f"{sign}${digits}"
+
+    @staticmethod
+    def _format_percent_plain(value: object) -> str:
+        try:
+            percent = float(value or 0)
+        except (TypeError, ValueError):
+            percent = 0.0
+        rounded_percent = round(percent, 2)
+        if abs(rounded_percent - round(rounded_percent)) < 1e-9:
+            return str(int(round(rounded_percent)))
+        return f"{rounded_percent:.2f}".rstrip("0").rstrip(".")
+
+    @staticmethod
+    def _is_public_store_immediate_product(product: dict[str, object]) -> bool:
+        return bool(product.get("inventory_enabled"))
+
+    def _resolve_public_store_payment_policy(
+        self,
+        product: dict[str, object],
+        *,
+        default_advance_percent: float,
+    ) -> dict[str, object]:
+        is_immediate = self._is_public_store_immediate_product(product)
+        current_stock = int(product.get("current_stock") or 0)
+        advance_percent = (
+            PUBLIC_STORE_IMMEDIATE_ADVANCE_PERCENT if is_immediate else float(default_advance_percent)
+        )
+        if is_immediate:
+            availability_label = "Entrega inmediata"
+            payment_terms_label = (
+                "Pagas el 100% hoy para confirmar y despachamos cuando validemos el pago."
+            )
+            stock_status_label = (
+                f"Entrega inmediata: {current_stock} unidad(es) disponibles"
+                if current_stock > 0
+                else "Entrega inmediata agotada por ahora"
+            )
+        else:
+            preorder_percent_label = self._format_percent_plain(default_advance_percent)
+            remaining_percent_label = self._format_percent_plain(100 - float(default_advance_percent))
+            availability_label = f"Pedido {preorder_percent_label}/{remaining_percent_label}"
+            payment_terms_label = (
+                f"Pagas el {preorder_percent_label}% hoy y el saldo cuando llegue a Colombia."
+            )
+            stock_status_label = "Pedido por encargo internacional"
+        return {
+            "availability_type": "immediate" if is_immediate else "preorder",
+            "availability_label": availability_label,
+            "payment_terms_label": payment_terms_label,
+            "stock_status_label": stock_status_label,
+            "advance_percent": advance_percent,
+            "uses_inventory_stock": is_immediate and current_stock > 0,
+        }
+
     def _resolve_public_store_defaults(self, company_id: int) -> dict[str, float]:
         template_items = list_direct_order_templates(company_id=company_id)
         fallback_exchange = 3790.0
@@ -232,6 +296,8 @@ class FerShopHandler(BaseHTTPRequestHandler):
             "exchange_rate_cop": fallback_exchange,
             "desired_margin_percent": PUBLIC_STORE_DEFAULT_MARGIN_PERCENT,
             "advance_percent": PUBLIC_STORE_DEFAULT_ADVANCE_PERCENT,
+            "preorder_advance_percent": PUBLIC_STORE_DEFAULT_ADVANCE_PERCENT,
+            "immediate_advance_percent": PUBLIC_STORE_IMMEDIATE_ADVANCE_PERCENT,
         }
 
     def _build_public_store_product(
@@ -242,10 +308,15 @@ class FerShopHandler(BaseHTTPRequestHandler):
         desired_margin_percent: float,
         advance_percent: float,
     ) -> dict[str, object] | None:
+        payment_policy = self._resolve_public_store_payment_policy(
+            product,
+            default_advance_percent=advance_percent,
+        )
         try:
             unit_price_usd = float(product.get("price_usd_net") or 0)
             tax_usa_percent = float(product.get("tax_usa_percent") or 0)
             locker_shipping_usd = float(product.get("locker_shipping_usd") or 0)
+            inventory_unit_cost_cop = float(product.get("inventory_unit_cost_cop") or 0)
         except (TypeError, ValueError):
             return None
 
@@ -262,6 +333,8 @@ class FerShopHandler(BaseHTTPRequestHandler):
                     "store": str(product.get("store") or "").strip(),
                     "quantity": 1,
                     "purchase_type": "online",
+                    "uses_inventory_stock": bool(payment_policy["uses_inventory_stock"]),
+                    "inventory_unit_cost_cop": inventory_unit_cost_cop,
                     "price_usd_net": unit_price_usd,
                     "tax_usa_percent": tax_usa_percent,
                     "travel_cost_usd": 0,
@@ -269,7 +342,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
                     "exchange_rate_cop": exchange_rate_cop,
                     "local_costs_cop": 0,
                     "desired_margin_percent": desired_margin_percent,
-                    "advance_percent": advance_percent,
+                    "advance_percent": float(payment_policy["advance_percent"]),
                 }
             )
             result = calculate_quote(quote)
@@ -279,6 +352,8 @@ class FerShopHandler(BaseHTTPRequestHandler):
         suggested_advance_cop = float(result.get("suggested", {}).get("advance_cop") or 0)
         suggested_profit_cop = float(result.get("suggested", {}).get("profit_cop") or 0)
         real_cost_cop = float(result.get("costs", {}).get("real_total_cost_cop") or 0)
+        payment_due_today_cop = suggested_advance_cop
+        payment_balance_on_arrival_cop = max(suggested_sale_cop - payment_due_today_cop, 0.0)
 
         return {
             "id": product.get("id"),
@@ -293,8 +368,17 @@ class FerShopHandler(BaseHTTPRequestHandler):
             "locker_shipping_usd": locker_shipping_usd,
             "inventory_enabled": bool(product.get("inventory_enabled")),
             "current_stock": int(product.get("current_stock") or 0),
+            "inventory_unit_cost_cop": inventory_unit_cost_cop,
+            "availability_type": payment_policy["availability_type"],
+            "availability_label": payment_policy["availability_label"],
+            "payment_terms_label": payment_policy["payment_terms_label"],
+            "stock_status_label": payment_policy["stock_status_label"],
+            "advance_percent": float(payment_policy["advance_percent"]),
+            "uses_inventory_stock": bool(payment_policy["uses_inventory_stock"]),
             "suggested_sale_price_cop": suggested_sale_cop,
             "suggested_advance_cop": suggested_advance_cop,
+            "payment_due_today_cop": payment_due_today_cop,
+            "payment_balance_on_arrival_cop": payment_balance_on_arrival_cop,
             "suggested_profit_cop": suggested_profit_cop,
             "estimated_cost_cop": real_cost_cop,
         }
@@ -1339,7 +1423,9 @@ class FerShopHandler(BaseHTTPRequestHandler):
                 defaults = self._resolve_public_store_defaults(company_id)
                 exchange_rate_cop = float(defaults["exchange_rate_cop"])
                 desired_margin_percent = float(defaults["desired_margin_percent"])
-                advance_percent = float(defaults["advance_percent"])
+                preorder_advance_percent = float(
+                    defaults.get("preorder_advance_percent") or defaults["advance_percent"]
+                )
 
                 available_products = {
                     int(item["id"]): item
@@ -1351,6 +1437,8 @@ class FerShopHandler(BaseHTTPRequestHandler):
                 }
 
                 quote_items: list[dict[str, object]] = []
+                expected_payment_due_today_cop = 0.0
+                expected_balance_on_arrival_cop = 0.0
                 for cart_item in cart_items:
                     product = available_products.get(int(cart_item["product_id"]))
                     if product is None:
@@ -1365,7 +1453,7 @@ class FerShopHandler(BaseHTTPRequestHandler):
                         product,
                         exchange_rate_cop=exchange_rate_cop,
                         desired_margin_percent=desired_margin_percent,
-                        advance_percent=advance_percent,
+                        advance_percent=preorder_advance_percent,
                     )
                     if preview is None:
                         raise ValueError(
@@ -1376,6 +1464,14 @@ class FerShopHandler(BaseHTTPRequestHandler):
                     if unit_sale_price_cop in (None, ""):
                         unit_sale_price_cop = float(preview.get("suggested_sale_price_cop") or 0)
                     line_sale_price_cop = max(float(unit_sale_price_cop), 0.0) * quantity
+                    advance_rate = max(
+                        min(float(preview.get("advance_percent") or 0.0) / 100.0, 1.0),
+                        0.0,
+                    )
+                    line_due_today_cop = line_sale_price_cop * advance_rate
+                    line_balance_on_arrival_cop = max(line_sale_price_cop - line_due_today_cop, 0.0)
+                    expected_payment_due_today_cop += line_due_today_cop
+                    expected_balance_on_arrival_cop += line_balance_on_arrival_cop
 
                     quote_items.append(
                         {
@@ -1386,6 +1482,10 @@ class FerShopHandler(BaseHTTPRequestHandler):
                             "store": str(product.get("store") or "").strip(),
                             "quantity": quantity,
                             "purchase_type": "online",
+                            "uses_inventory_stock": bool(preview.get("uses_inventory_stock")),
+                            "inventory_unit_cost_cop": float(
+                                product.get("inventory_unit_cost_cop") or 0
+                            ),
                             "price_usd_net": float(product.get("price_usd_net") or 0),
                             "tax_usa_percent": float(product.get("tax_usa_percent") or 0),
                             "travel_cost_usd": 0.0,
@@ -1393,14 +1493,14 @@ class FerShopHandler(BaseHTTPRequestHandler):
                             "exchange_rate_cop": exchange_rate_cop,
                             "local_costs_cop": 0.0,
                             "desired_margin_percent": desired_margin_percent,
-                            "advance_percent": advance_percent,
+                            "advance_percent": float(preview.get("advance_percent") or 0),
                             "final_sale_price_cop": line_sale_price_cop,
-                            "notes": "",
+                            "notes": str(preview.get("payment_terms_label") or "").strip(),
                         }
                     )
 
                 raw_advance_paid_cop = payload.get("advance_paid_cop")
-                advance_paid_cop = None
+                advance_paid_cop = 0.0
                 if raw_advance_paid_cop not in (None, ""):
                     try:
                         advance_paid_cop = float(raw_advance_paid_cop)
@@ -1409,9 +1509,22 @@ class FerShopHandler(BaseHTTPRequestHandler):
                     if advance_paid_cop < 0:
                         raise ValueError("El anticipo pagado no puede ser negativo.")
 
+                payment_plan_note = self._merge_notes(
+                    (
+                        "Cobro esperado hoy segun tienda: "
+                        f"{self._format_cop_plain(expected_payment_due_today_cop)}."
+                    ),
+                    (
+                        "Saldo estimado cuando llegue a Colombia: "
+                        f"{self._format_cop_plain(expected_balance_on_arrival_cop)}."
+                        if expected_balance_on_arrival_cop > 0
+                        else "Sin saldo pendiente cuando llegue a Colombia."
+                    ),
+                )
                 client_purchase_note = str(payload.get("notes") or "").strip()
                 order_notes = self._merge_notes(
                     "Compra creada desde tienda online.",
+                    payment_plan_note,
                     client_purchase_note,
                 )
                 quote_payload: dict[str, object] = {
@@ -1420,11 +1533,6 @@ class FerShopHandler(BaseHTTPRequestHandler):
                     "notes": order_notes,
                     "quote_items": quote_items,
                 }
-                if advance_paid_cop is not None:
-                    quote_payload = self._apply_direct_order_advance(
-                        quote_payload,
-                        advance_paid_cop,
-                    )
 
                 input_data, result = self._build_quote_record(quote_payload)
                 order_record, quote_record = create_direct_order(
@@ -1445,6 +1553,11 @@ class FerShopHandler(BaseHTTPRequestHandler):
                         "quote": quote_record,
                         "client": client_record,
                         "notification": notification,
+                        "payment_summary": {
+                            "expected_due_today_cop": expected_payment_due_today_cop,
+                            "expected_balance_on_arrival_cop": expected_balance_on_arrival_cop,
+                            "actual_advance_paid_cop": advance_paid_cop,
+                        },
                         "message": "Compra recibida correctamente.",
                     },
                 )

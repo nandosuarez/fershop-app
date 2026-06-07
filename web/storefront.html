@@ -20,13 +20,28 @@
             <p class="eyebrow">Tienda online</p>
             <h1 data-public-store-company-brand>FerShop</h1>
             <p class="public-register-copy" data-public-store-company-tagline>
-              Compra directo desde el catalogo y recibe confirmacion de tu pedido.
+              Compra directo desde el catalogo y elige entre entrega inmediata o pedido 50/50.
             </p>
           </div>
         </div>
+
         <div class="public-store-meta-row">
           <span class="catalog-chip">TRM: <strong data-store-default-trm>0</strong></span>
           <span class="catalog-chip">Margen: <strong data-store-default-margin>0%</strong></span>
+          <span class="catalog-chip">Pedido normal: <strong data-store-preorder-advance>50%</strong> hoy</span>
+        </div>
+
+        <div class="public-store-policy-grid">
+          <article class="public-store-policy-card">
+            <span>Entrega inmediata</span>
+            <strong>Paga completo hoy</strong>
+            <p>Ideal para referencias con stock disponible en tienda y despacho rapido.</p>
+          </article>
+          <article class="public-store-policy-card">
+            <span>Pedido 50/50</span>
+            <strong>50% hoy y 50% al llegar</strong>
+            <p>Para productos por encargo que se confirman con anticipo y se terminan de pagar en Colombia.</p>
+          </article>
         </div>
       </section>
 
@@ -34,7 +49,7 @@
         <div class="panel-header">
           <div>
             <h2>Catalogo publico</h2>
-            <p>Selecciona productos, agrega cantidades y confirma tu compra.</p>
+            <p>Explora las referencias disponibles y arma tu pedido en el formato que mejor te funcione.</p>
             <p id="public-store-products-summary" class="field-helper public-store-products-summary">
               Cargando catalogo...
             </p>
@@ -50,6 +65,12 @@
           </label>
         </div>
 
+        <div class="public-store-filter-bar" role="tablist" aria-label="Filtrar catalogo">
+          <button type="button" class="public-store-filter-button is-active" data-store-filter="all">Todo</button>
+          <button type="button" class="public-store-filter-button" data-store-filter="immediate">Entrega inmediata</button>
+          <button type="button" class="public-store-filter-button" data-store-filter="preorder">Pedido 50/50</button>
+        </div>
+
         <div class="public-store-layout">
           <section>
             <div id="public-store-products" class="public-store-products">
@@ -60,7 +81,7 @@
           <aside class="public-store-cart">
             <div class="panel-header public-store-cart-header">
               <div>
-                <h3>Carrito</h3>
+                <h3>Tu pedido</h3>
                 <p id="public-store-cart-count">0 producto(s)</p>
               </div>
               <button id="public-store-clear-cart" type="button" class="secondary">Vaciar carrito</button>
@@ -71,14 +92,30 @@
             </div>
 
             <div class="public-store-total-row">
-              <span>Total sugerido</span>
+              <span>Total del pedido</span>
               <strong id="public-store-cart-total">$ 0</strong>
             </div>
 
+            <article class="detail-panel public-store-payment-panel">
+              <h3>Resumen de cobro</h3>
+              <div class="detail-item">
+                <span>Cobro esperado hoy</span>
+                <strong id="public-store-pay-today-total">$ 0</strong>
+              </div>
+              <div class="detail-item">
+                <span>Saldo cuando llegue a Colombia</span>
+                <strong id="public-store-balance-total">$ 0</strong>
+              </div>
+              <p class="detail-note">
+                Los productos inmediatos van pago completo hoy. Los productos por encargo salen con politica 50/50.
+              </p>
+            </article>
+
             <form id="public-store-checkout-form" class="catalog-form">
               <p class="field-helper public-store-checkout-helper">
-                Completa tus datos para confirmar la compra. Puedes dejar campos opcionales vacios.
+                Deja tus datos para registrar el pedido y confirmar contigo el pago o anticipo correspondiente.
               </p>
+
               <div class="field-grid">
                 <label>
                   <span>Nombre</span>
@@ -108,21 +145,10 @@
                   <span>Direccion de envio</span>
                   <input name="address" type="text" placeholder="Ej. Cra 15 # 93 - 40" />
                 </label>
-                <label>
-                  <span>Anticipo pagado (COP)</span>
-                  <input
-                    name="advance_paid_cop"
-                    type="number"
-                    min="0"
-                    step="1"
-                    inputmode="numeric"
-                    placeholder="Opcional"
-                  />
-                </label>
               </div>
 
               <label class="full-width">
-                <span>Notas de la compra</span>
+                <span>Notas del pedido</span>
                 <textarea
                   name="notes"
                   rows="3"
@@ -131,7 +157,7 @@
               </label>
 
               <div class="actions">
-                <button id="public-store-submit" type="submit" class="primary">Confirmar compra</button>
+                <button id="public-store-submit" type="submit" class="primary">Enviar pedido</button>
               </div>
             </form>
 
