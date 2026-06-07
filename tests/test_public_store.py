@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from fershop_calculadora.server import (
     FerShopHandler,
@@ -73,6 +74,24 @@ class PublicStoreTests(unittest.TestCase):
         )
         self.assertGreater(preview["payment_balance_on_arrival_cop"], 0)
         self.assertFalse(preview["uses_inventory_stock"])
+
+    def test_resolve_public_store_defaults_reads_template_items_payload(self) -> None:
+        with patch(
+            "fershop_calculadora.server.list_direct_order_templates",
+            return_value={
+                "items": [
+                    {
+                        "template_key": "online",
+                        "exchange_rate_cop": 4123,
+                    }
+                ]
+            },
+        ):
+            defaults = self.handler._resolve_public_store_defaults(company_id=99)
+
+        self.assertEqual(defaults["exchange_rate_cop"], 4123.0)
+        self.assertEqual(defaults["preorder_advance_percent"], PUBLIC_STORE_DEFAULT_ADVANCE_PERCENT)
+        self.assertEqual(defaults["immediate_advance_percent"], PUBLIC_STORE_IMMEDIATE_ADVANCE_PERCENT)
 
 
 if __name__ == "__main__":

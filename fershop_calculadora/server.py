@@ -282,9 +282,16 @@ class FerShopHandler(BaseHTTPRequestHandler):
         }
 
     def _resolve_public_store_defaults(self, company_id: int) -> dict[str, float]:
-        template_items = list_direct_order_templates(company_id=company_id)
+        template_payload = list_direct_order_templates(company_id=company_id)
+        template_items = (
+            template_payload.get("items", [])
+            if isinstance(template_payload, dict)
+            else template_payload
+        )
         fallback_exchange = 3790.0
         for template in template_items:
+            if not isinstance(template, dict):
+                continue
             if str(template.get("template_key") or "").strip().lower() == "online":
                 try:
                     fallback_exchange = float(template.get("exchange_rate_cop") or fallback_exchange)
