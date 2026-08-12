@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
 
 import { products as seedProducts } from "@/lib/catalog";
+import {
+  getProductCategories,
+  getProductCategory,
+} from "@/lib/server/category-store";
 import { readAppDocument, writeAppDocument } from "@/lib/server/document-store";
 import { getInventoryBalances } from "@/lib/server/inventory-balance";
 import type {
   CreateProductInput,
   Product,
-  ProductCategory,
   UpdateProductInput,
   UpdateProductPricingInput,
 } from "@/lib/types";
@@ -15,13 +18,6 @@ interface ProductStore {
   updatedAtIso: string;
   products: Product[];
 }
-
-const categoryLabels: Record<ProductCategory, string> = {
-  sets: "Sets",
-  vestidos: "Vestidos",
-  denim: "Denim",
-  accesorios: "Accesorios",
-};
 
 let mutationQueue = Promise.resolve();
 
@@ -103,13 +99,19 @@ function setAutomaticInventoryMode(product: Product, tracksInventory: boolean) {
 }
 
 export async function getProducts(): Promise<Product[]> {
-  const [store, balances] = await Promise.all([
+  const [store, balances, categories] = await Promise.all([
     ensureStore(),
     getInventoryBalances(),
+    getProductCategories(),
   ]);
+  const categoryLabels = new Map(
+    categories.map((category) => [category.id, category.label])
+  );
   return cloneValue(
     store.products.map((product) => {
       const normalizedProduct = cloneValue(product);
+      normalizedProduct.categoryLabel =
+        categoryLabels.get(product.category) ?? product.categoryLabel;
       setAutomaticInventoryMode(
         normalizedProduct,
         (balances.get(product.id) ?? 0) > 0
@@ -122,6 +124,7 @@ export async function getProducts(): Promise<Product[]> {
 export async function createProduct(input: CreateProductInput): Promise<Product> {
   const run = mutationQueue.then(async () => {
     const store = await ensureStore();
+    const category = await getProductCategory(input.category);
     const name = input.name.trim();
     const priceCop = Math.round(Number(input.priceCop));
     const costCop = Math.round(Number(input.costCop));
@@ -131,7 +134,7 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
     if (name.length < 2) {
       throw new ProductStoreError("Escribe el nombre del producto.");
     }
-    if (!Object.hasOwn(categoryLabels, input.category)) {
+    if (!category) {
       throw new ProductStoreError("Selecciona una categoria valida.");
     }
     if (!Number.isFinite(priceCop) || priceCop <= 0) {
@@ -160,7 +163,7 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
       name,
       imageUrl,
       category: input.category,
-      categoryLabel: categoryLabels[input.category],
+      categoryLabel: category.label,
       priceCop,
       costCop,
       shippingCostCop,
@@ -272,6 +275,7 @@ export async function updateProduct(
   const inventoryBalances = await getInventoryBalances();
   const run = mutationQueue.then(async () => {
     const store = await ensureStore();
+    const category = await getProductCategory(input.category);
     const product = store.products.find((candidate) => candidate.id === productId);
     if (!product) {
       throw new ProductStoreError("No encontramos el producto seleccionado.", 404);
@@ -286,7 +290,7 @@ export async function updateProduct(
     if (name.length < 2) {
       throw new ProductStoreError("Escribe el nombre del producto.");
     }
-    if (!Object.hasOwn(categoryLabels, input.category)) {
+    if (!category) {
       throw new ProductStoreError("Selecciona una categoria valida.");
     }
     if (!Number.isFinite(priceCop) || priceCop <= 0) {
@@ -314,7 +318,7 @@ export async function updateProduct(
     product.name = name;
     product.imageUrl = imageUrl ?? product.imageUrl;
     product.category = input.category;
-    product.categoryLabel = categoryLabels[input.category];
+    product.categoryLabel = category.label;
     product.priceCop = priceCop;
     product.costCop = costCop;
     product.shippingCostCop = shippingCostCop;

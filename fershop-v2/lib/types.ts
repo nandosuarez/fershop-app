@@ -1,6 +1,6 @@
 export type SaleMode = "immediate" | "preorder";
 export type PaymentPolicy = "full_today" | "split_50_50";
-export type ProductCategory = "sets" | "vestidos" | "denim" | "accesorios";
+export type ProductCategory = string;
 export type WorkflowEventType =
   | "order"
   | "payment"
@@ -53,6 +53,11 @@ export interface Product {
   materialNote: string;
   sizes: string[];
   featured?: boolean;
+}
+
+export interface ProductCategoryOption {
+  id: ProductCategory;
+  label: string;
 }
 
 export interface ProductPricingCalculation {

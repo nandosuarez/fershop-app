@@ -4,6 +4,7 @@ import path from "node:path";
 import { getDb, hasDatabaseConfiguration } from "@/lib/db";
 
 export type AppDocumentKey =
+  | "categories"
   | "customers"
   | "expenses"
   | "inventory"
@@ -77,6 +78,7 @@ export async function getAllAppDocuments() {
   }
 
   const keys: AppDocumentKey[] = [
+    "categories",
     "customers",
     "expenses",
     "inventory",

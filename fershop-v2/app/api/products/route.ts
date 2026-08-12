@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     const product = await createProduct({
       name: payload.name ?? "",
       imageUrl: payload.imageUrl,
-      category: payload.category ?? "sets",
+      category: payload.category ?? "",
       priceCop: Number(payload.priceCop ?? 0),
       costCop: Number(payload.costCop ?? 0),
       shippingCostCop: Number(payload.shippingCostCop ?? 0),

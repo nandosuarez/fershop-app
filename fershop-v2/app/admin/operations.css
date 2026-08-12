@@ -222,6 +222,12 @@
   line-height: 1;
 }
 
+.ops-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .ops-kicker {
   margin: 0 0 7px;
   color: var(--ops-muted);
@@ -1126,6 +1132,85 @@
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
+.categories-modal {
+  width: min(620px, 100%);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.categories-manager {
+  padding: 20px;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+.category-create-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.category-create-row input,
+.category-row input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #c8c7c0;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ops-ink);
+}
+
+.category-list {
+  border: 1px solid var(--ops-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.category-row {
+  min-height: 66px;
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--ops-line);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.category-row:last-child {
+  border-bottom: 0;
+}
+
+.category-row > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.category-row small {
+  color: var(--ops-muted);
+}
+
+.category-row > div:last-child {
+  display: flex;
+  gap: 7px;
+}
+
+.category-row button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #cbc9c2;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ops-ink);
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
+.category-row .category-delete-button {
+  color: #9b2c2c;
+}
+
 .customer-create-modal {
   width: min(700px, 100%);
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -1758,6 +1843,21 @@
   .product-create-form {
     grid-template-columns: 1fr;
     padding: 18px;
+  }
+
+  .ops-page-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .category-create-row,
+  .category-row {
+    grid-template-columns: 1fr;
+  }
+
+  .category-row > div:last-child {
+    justify-content: flex-start;
   }
 
   .product-form-field--wide {

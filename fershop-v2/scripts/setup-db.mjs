@@ -12,7 +12,14 @@ const keyLength = 64;
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const projectDir = join(currentDir, "..");
 const schemaPath = join(projectDir, "database", "schema.sql");
-const documentKeys = ["customers", "expenses", "inventory", "operations", "products"];
+const documentKeys = [
+  "categories",
+  "customers",
+  "expenses",
+  "inventory",
+  "operations",
+  "products",
+];
 
 async function hashPassword(password) {
   const salt = randomBytes(16).toString("hex");

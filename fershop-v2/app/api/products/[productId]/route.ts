@@ -37,7 +37,7 @@ export async function PUT(request: Request, { params }: ProductRouteProps) {
     const product = await updateProduct(productId, {
       name: payload.name ?? "",
       imageUrl: payload.imageUrl,
-      category: payload.category ?? "sets",
+      category: payload.category ?? "",
       priceCop: Number(payload.priceCop ?? 0),
       costCop: Number(payload.costCop ?? 0),
       shippingCostCop: Number(payload.shippingCostCop ?? 0),
