@@ -29,15 +29,19 @@ async function readSeedDocument(key) {
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   const adminName = process.env.ADMIN_NAME || "Administrador FerShop";
-  const adminUsername = process.env.ADMIN_USERNAME || "admin";
-  const adminEmail = process.env.ADMIN_EMAIL;
-  const adminPassword = process.env.ADMIN_PASSWORD;
+  const adminUsername =
+    process.env.ADMIN_USERNAME || process.env.FERSHOP_DEFAULT_ADMIN_USERNAME || "admin";
+  const adminEmail = process.env.ADMIN_EMAIL || "admin@fershop.co";
+  const adminPassword =
+    process.env.ADMIN_PASSWORD || process.env.FERSHOP_DEFAULT_ADMIN_PASSWORD;
 
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required.");
   }
-  if (!adminEmail || !adminPassword) {
-    throw new Error("ADMIN_EMAIL and ADMIN_PASSWORD are required.");
+  if (!adminPassword) {
+    throw new Error(
+      "ADMIN_PASSWORD is required. Add it in Render > Environment and redeploy."
+    );
   }
   if (adminPassword.length < 10) {
     throw new Error("ADMIN_PASSWORD must have at least 10 characters.");

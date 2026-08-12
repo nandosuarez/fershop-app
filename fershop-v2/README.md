@@ -43,6 +43,8 @@ El script de preparacion:
 - Migra `products`, `customers`, `operations`, `inventory` y `expenses` solo cuando aun no existen en PostgreSQL.
 - Nunca reemplaza la clave ni los datos existentes en despliegues posteriores.
 
+Para reemplazar v1 sin interrumpir el despliegue, el primer inicio tambien reconoce temporalmente `FERSHOP_DEFAULT_ADMIN_USERNAME` y `FERSHOP_DEFAULT_ADMIN_PASSWORD`. Las variables nuevas `ADMIN_USERNAME` y `ADMIN_PASSWORD` tienen prioridad.
+
 Los archivos reales de `data/` no se publican porque contienen informacion privada de clientes y pedidos. `database/seeds/` contiene estructuras vacias y seguras para el primer despliegue.
 
 ## Respaldos
