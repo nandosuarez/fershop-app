@@ -5,6 +5,11 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.pnpm-store/
+tmp/
+data/
+.sync_backup/
+_codex_sync_fix/
 data/*.sqlite3
 data/*-journal
 data/*-wal

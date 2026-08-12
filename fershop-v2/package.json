@@ -1,0 +1,28 @@
+{
+  "name": "fershop-v2",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.16.0",
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "start:render": "next start -p $PORT",
+    "db:setup": "node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/setup-db.mjs",
+    "db:setup:render": "node scripts/setup-db.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "16",
+    "pg": "^8.23.0",
+    "react": "19",
+    "react-dom": "19"
+  },
+  "devDependencies": {
+    "@types/node": "24",
+    "@types/pg": "^8.21.0",
+    "@types/react": "19",
+    "@types/react-dom": "19",
+    "typescript": "5"
+  }
+}

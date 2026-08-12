@@ -1,1 +1,0 @@
-from fershop_calculadora.wsgi_app import application

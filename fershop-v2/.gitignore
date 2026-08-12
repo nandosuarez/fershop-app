@@ -1,0 +1,12 @@
+node_modules/
+.next/
+*.tsbuildinfo
+.codex-*.log
+.codex-*-error.log
+*.log
+.env*
+!.env.example
+.local-admin-password
+data/*.json
+public/uploads/
+tmp/
