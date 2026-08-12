@@ -45,6 +45,10 @@ El script de preparacion:
 
 Para reemplazar v1 sin interrumpir el despliegue, el primer inicio tambien reconoce temporalmente `FERSHOP_DEFAULT_ADMIN_USERNAME` y `FERSHOP_DEFAULT_ADMIN_PASSWORD`. Las variables nuevas `ADMIN_USERNAME` y `ADMIN_PASSWORD` tienen prioridad.
 
+Si no se conoce la clave del administrador desplegado, agrega temporalmente `RESET_ADMIN_PASSWORD=true` en Render junto con la nueva `ADMIN_PASSWORD`, despliega y luego cambia `RESET_ADMIN_PASSWORD` a `false`.
+
+Los redirects usan `RENDER_EXTERNAL_URL` automaticamente en Render. `APP_URL` permite definir el dominio publico en otro proveedor.
+
 Los archivos reales de `data/` no se publican porque contienen informacion privada de clientes y pedidos. `database/seeds/` contiene estructuras vacias y seguras para el primer despliegue.
 
 ## Respaldos

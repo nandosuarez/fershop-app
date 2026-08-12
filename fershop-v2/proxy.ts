@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { publicUrl } from "@/lib/redirects";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/session";
 
 const publicApiPaths = ["/api/auth/login", "/api/auth/logout", "/api/health"];
@@ -18,10 +19,7 @@ export function proxy(request: NextRequest) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ message: "Tu sesion expiro." }, { status: 401 });
     }
-    const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = "/login";
-    loginUrl.search = "";
-    return NextResponse.redirect(loginUrl);
+    return NextResponse.redirect(publicUrl(request, "/login"));
   }
 
   if (
@@ -31,7 +29,7 @@ export function proxy(request: NextRequest) {
   ) {
     return pathname.startsWith("/api/")
       ? NextResponse.json({ message: "No tienes permiso para realizar esta accion." }, { status: 403 })
-      : NextResponse.redirect(new URL("/admin?error=forbidden", request.url));
+      : NextResponse.redirect(publicUrl(request, "/admin?error=forbidden"));
   }
 
   return NextResponse.next();

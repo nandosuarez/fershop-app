@@ -34,6 +34,7 @@ async function main() {
   const adminEmail = process.env.ADMIN_EMAIL || "admin@fershop.co";
   const adminPassword =
     process.env.ADMIN_PASSWORD || process.env.FERSHOP_DEFAULT_ADMIN_PASSWORD;
+  const resetAdminPassword = process.env.RESET_ADMIN_PASSWORD === "true";
 
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required.");
@@ -58,8 +59,13 @@ async function main() {
     await client.query(await readFile(schemaPath, "utf8"));
 
     const existingAdmin = await client.query(
-      `SELECT id FROM fershop_v2.app_user WHERE LOWER(email) = LOWER($1) LIMIT 1`,
-      [adminEmail]
+      `
+        SELECT id FROM fershop_v2.app_user
+        WHERE LOWER(email) = LOWER($1) OR LOWER(username) = LOWER($2)
+        ORDER BY CASE WHEN LOWER(email) = LOWER($1) THEN 0 ELSE 1 END
+        LIMIT 1
+      `,
+      [adminEmail, adminUsername]
     );
     if (existingAdmin.rowCount === 0) {
       await client.query(
@@ -71,6 +77,23 @@ async function main() {
         [adminName, adminEmail, adminUsername, await hashPassword(adminPassword)]
       );
       console.log("Initial administrator created.");
+    } else if (resetAdminPassword) {
+      await client.query(
+        `
+          UPDATE fershop_v2.app_user
+          SET name = $2, email = LOWER($3), username = LOWER($4),
+              password_hash = $5, role = 'SUPERADMIN', is_active = TRUE
+          WHERE id = $1
+        `,
+        [
+          existingAdmin.rows[0].id,
+          adminName,
+          adminEmail,
+          adminUsername,
+          await hashPassword(adminPassword),
+        ]
+      );
+      console.log("Administrator access reset from Render environment variables.");
     } else {
       console.log("Administrator already exists; password was not overwritten.");
     }
