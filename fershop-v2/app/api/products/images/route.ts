@@ -50,7 +50,8 @@ export async function POST(request: Request) {
     await mkdir(uploadDirectory, { recursive: true });
     await writeFile(path.join(uploadDirectory, fileName), data);
     return NextResponse.json({ imageUrl: `/uploads/products/${fileName}` }, { status: 201 });
-  } catch {
+  } catch (error) {
+    console.error("Error saving product image", error);
     return NextResponse.json({ message: "No pudimos guardar la imagen." }, { status: 500 });
   }
 }

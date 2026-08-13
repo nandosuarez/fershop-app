@@ -411,7 +411,7 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
                 </span>
                 <span>
                   <strong>Imagen del producto</strong>
-                  <small>JPG, PNG o WebP</small>
+                  <small>JPG, PNG o WebP · maximo 8 MB</small>
                 </span>
                 <span className="ops-button">Seleccionar imagen</span>
                 <input

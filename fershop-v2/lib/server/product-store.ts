@@ -88,6 +88,13 @@ function uniqueSlug(name: string, products: Product[]) {
   return slug;
 }
 
+function isValidProductImageUrl(imageUrl: string) {
+  return (
+    /^\/uploads\/products\/[a-z0-9-]+\.(?:jpg|png|webp)$/i.test(imageUrl) ||
+    /^\/api\/products\/images\/[0-9a-f-]{36}$/i.test(imageUrl)
+  );
+}
+
 function setAutomaticInventoryMode(product: Product, tracksInventory: boolean) {
   product.tracksInventory = tracksInventory;
   product.saleMode = tracksInventory ? "immediate" : "preorder";
@@ -146,7 +153,7 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
     if (!Number.isFinite(shippingCostCop) || shippingCostCop < 0) {
       throw new ProductStoreError("El costo de envio no puede ser negativo.");
     }
-    if (imageUrl && !imageUrl.startsWith("/uploads/products/")) {
+    if (imageUrl && !isValidProductImageUrl(imageUrl)) {
       throw new ProductStoreError("La imagen del producto no es valida.");
     }
     if (
@@ -302,7 +309,7 @@ export async function updateProduct(
     if (!Number.isFinite(shippingCostCop) || shippingCostCop < 0) {
       throw new ProductStoreError("El costo de envio no puede ser negativo.");
     }
-    if (imageUrl && !imageUrl.startsWith("/uploads/products/")) {
+    if (imageUrl && !isValidProductImageUrl(imageUrl)) {
       throw new ProductStoreError("La imagen del producto no es valida.");
     }
     if (
