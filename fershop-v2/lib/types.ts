@@ -375,6 +375,7 @@ export interface OperationsSnapshot {
 
 export interface CreateOrderInput {
   items: CartItem[];
+  orderDate: string;
   customerId?: string;
   customerName: string;
   customerEmail?: string;
@@ -392,6 +393,7 @@ export interface UpdateOrderItemInput extends CartItem {
 
 export interface UpdateOrderInput {
   items: UpdateOrderItemInput[];
+  orderDate: string;
   customerId?: string;
   customerName: string;
   customerEmail?: string;

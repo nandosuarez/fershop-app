@@ -19,6 +19,21 @@ interface ApiErrorPayload {
   message?: string;
 }
 
+function getOrderDateValue(iso: string) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      timeZone: "America/Bogota",
+    })
+      .formatToParts(new Date(iso))
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 function ProductThumb({ name, imageUrl }: { name: string; imageUrl?: string }) {
   return (
     <span className="ops-product-thumb">
@@ -91,6 +106,10 @@ export function NewOrderWorkbench({
     );
   });
   const [paymentReceivedCop, setPaymentReceivedCop] = useState(0);
+  const todayDate = getOrderDateValue(new Date().toISOString());
+  const [orderDate, setOrderDate] = useState(() =>
+    initialOrder ? getOrderDateValue(initialOrder.createdAtIso) : todayDate
+  );
   const [purchaseWithoutAdvance, setPurchaseWithoutAdvance] = useState(
     Boolean(initialOrder?.purchaseWithoutAdvance)
   );
@@ -239,6 +258,10 @@ export function NewOrderWorkbench({
       setError("Selecciona un cliente.");
       return;
     }
+    if (!orderDate || orderDate > todayDate) {
+      setError("Selecciona una fecha valida para el pedido.");
+      return;
+    }
     if (!isEditing && paymentReceivedCop > totalCop) {
       setError("El pago recibido no puede superar el total.");
       return;
@@ -275,6 +298,7 @@ export function NewOrderWorkbench({
             quantity,
             unitPriceCop: product.priceCop,
           })),
+          orderDate,
           customerId: selectedCustomer.id,
           customerName: selectedCustomer.fullName,
           customerEmail: selectedCustomer.email,
@@ -474,6 +498,19 @@ export function NewOrderWorkbench({
             </div>
 
             <aside className="order-customer-column">
+              <section className="order-section order-date-section">
+                <label>
+                  <span>Fecha del pedido</span>
+                  <input
+                    type="date"
+                    required
+                    max={todayDate}
+                    value={orderDate}
+                    onChange={(event) => setOrderDate(event.target.value)}
+                  />
+                </label>
+              </section>
+
               <section className="order-section customer-section">
                 <div className="order-section__header">
                   <h2>Cliente</h2>

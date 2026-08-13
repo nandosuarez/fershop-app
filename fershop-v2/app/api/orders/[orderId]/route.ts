@@ -38,6 +38,7 @@ export async function PUT(
             unitPriceCop: Number(item.unitPriceCop ?? 0),
           }))
         : [],
+      orderDate: payload.orderDate ?? "",
       customerId: payload.customerId,
       customerName: payload.customerName ?? "",
       customerEmail: payload.customerEmail,

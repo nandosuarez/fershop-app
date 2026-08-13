@@ -127,6 +127,49 @@ function formatDateLabel(iso: string) {
   }).format(new Date(iso));
 }
 
+function getDateParts(iso: string) {
+  return Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+      timeZone,
+    })
+      .formatToParts(new Date(iso))
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+}
+
+function getOrderDateIso(orderDate: string, referenceIso: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(orderDate)) {
+    throw new OperationsStoreError("Selecciona una fecha valida para el pedido.");
+  }
+  const selectedDate = new Date(`${orderDate}T12:00:00-05:00`);
+  const selectedParts = Number.isNaN(selectedDate.getTime())
+    ? null
+    : getDateParts(selectedDate.toISOString());
+  if (
+    !selectedParts ||
+    `${selectedParts.year}-${selectedParts.month}-${selectedParts.day}` !== orderDate
+  ) {
+    throw new OperationsStoreError("Selecciona una fecha valida para el pedido.");
+  }
+  const todayParts = getDateParts(new Date().toISOString());
+  const today = `${todayParts.year}-${todayParts.month}-${todayParts.day}`;
+  if (orderDate > today) {
+    throw new OperationsStoreError("La fecha del pedido no puede estar en el futuro.");
+  }
+  const timeParts = getDateParts(referenceIso);
+  return new Date(
+    `${orderDate}T${timeParts.hour}:${timeParts.minute}:${timeParts.second}-05:00`
+  ).toISOString();
+}
+
 function updateOrderPresentation(order: DashboardOrder) {
   const presentation = getOrderStatusPresentation(order);
   order.statusCode = presentation.statusCode;
@@ -401,6 +444,7 @@ export async function createOrder(input: CreateOrderInput): Promise<OperationMut
   const catalogProducts = await getProducts();
   return withStoreMutation(async (store) => {
     const nowIso = new Date().toISOString();
+    const orderDateIso = getOrderDateIso(input.orderDate, nowIso);
     const actualInitialPaymentCop = Math.max(Math.round(input.actualInitialPaymentCop || 0), 0);
     const customerName = input.customerName.trim();
     const customerPhone = input.customerPhone.trim() || "Por confirmar";
@@ -496,7 +540,7 @@ export async function createOrder(input: CreateOrderInput): Promise<OperationMut
       assignedTo: input.assignedTo?.trim() || "Equipo FerShop",
       currentStageTitle: "Pedido creado",
       nextActionLabel: "Revisar pago pendiente",
-      createdAtIso: nowIso,
+      createdAtIso: orderDateIso,
       updatedAtIso: nowIso,
       payments: [],
       notifications: [
@@ -511,7 +555,7 @@ export async function createOrder(input: CreateOrderInput): Promise<OperationMut
           type: "order",
           title: "Pedido registrado",
           detail: `Pedido creado desde WhatsApp con ${summary.lines.length} producto(s) y ${totalQuantity} unidad(es).`,
-          atLabel: formatDateTimeLabel(nowIso),
+          atLabel: formatDateTimeLabel(orderDateIso),
           completed: true,
         }),
       ],
@@ -599,6 +643,7 @@ export async function updateOrder(
   return withStoreMutation(async (store) => {
     const order = getOrderByIdOrThrow(store, orderId);
     const nowIso = new Date().toISOString();
+    const orderDateIso = getOrderDateIso(input.orderDate, order.createdAtIso);
     const customerName = input.customerName.trim();
 
     if (!customerName) {
@@ -710,6 +755,13 @@ export async function updateOrder(
     order.etaLabel = containsPreorder
       ? "Incluye productos con pago 50/50"
       : "Existencias reservadas en inventario";
+    order.createdAtIso = orderDateIso;
+    const registrationEvent = order.timeline.find(
+      (event) => event.type === "order" && event.title === "Pedido registrado"
+    );
+    if (registrationEvent) {
+      registrationEvent.atLabel = formatDateTimeLabel(orderDateIso);
+    }
 
     if (order.statusCode === "delivered") {
       order.dueTodayCop = 0;

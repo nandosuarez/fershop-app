@@ -28,6 +28,7 @@ export async function POST(request: Request) {
         : [];
     const result = await createOrder({
       items,
+      orderDate: payload.orderDate ?? "",
       customerId: payload.customerId,
       customerName: payload.customerName ?? "",
       customerEmail: payload.customerEmail,
