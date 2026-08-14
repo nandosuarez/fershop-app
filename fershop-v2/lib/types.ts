@@ -389,6 +389,8 @@ export interface CreateOrderInput {
 
 export interface UpdateOrderItemInput extends CartItem {
   unitPriceCop: number;
+  unitCostCop?: number;
+  unitShippingCostCop?: number;
 }
 
 export interface UpdateOrderInput {

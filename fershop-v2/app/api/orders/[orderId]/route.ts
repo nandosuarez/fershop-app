@@ -36,6 +36,12 @@ export async function PUT(
             productId: item.productId,
             quantity: Number(item.quantity ?? 1),
             unitPriceCop: Number(item.unitPriceCop ?? 0),
+            unitCostCop:
+              item.unitCostCop === undefined ? undefined : Number(item.unitCostCop),
+            unitShippingCostCop:
+              item.unitShippingCostCop === undefined
+                ? undefined
+                : Number(item.unitShippingCostCop),
           }))
         : [],
       orderDate: payload.orderDate ?? "",

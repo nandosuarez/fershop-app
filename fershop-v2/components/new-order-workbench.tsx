@@ -298,6 +298,8 @@ export function NewOrderWorkbench({
             productId: product.id,
             quantity,
             unitPriceCop: product.priceCop,
+            unitCostCop: product.costCop,
+            unitShippingCostCop: product.shippingCostCop,
           })),
           orderDate,
           customerId: selectedCustomer.id,

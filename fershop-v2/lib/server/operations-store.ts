@@ -676,6 +676,30 @@ export async function updateOrder(
 
       const currentItem = currentItems.find((item) => item.productId === inputItem.productId);
       const keepsOriginalPrice = currentItem?.unitPriceCop === unitPriceCop;
+      const unitCostCop =
+        inputItem.unitCostCop === undefined
+          ? keepsOriginalPrice
+            ? currentItem?.unitCostCop ?? product.costCop
+            : product.costCop
+          : Math.round(Number(inputItem.unitCostCop));
+      const unitShippingCostCop =
+        inputItem.unitShippingCostCop === undefined
+          ? keepsOriginalPrice
+            ? currentItem?.unitShippingCostCop ?? product.shippingCostCop
+            : product.shippingCostCop
+          : Math.round(Number(inputItem.unitShippingCostCop));
+      if (
+        unitCostCop !== undefined &&
+        (!Number.isFinite(unitCostCop) || unitCostCop < 0)
+      ) {
+        throw new OperationsStoreError(`Revisa el costo de ${product.name}.`);
+      }
+      if (
+        unitShippingCostCop !== undefined &&
+        (!Number.isFinite(unitShippingCostCop) || unitShippingCostCop < 0)
+      ) {
+        throw new OperationsStoreError(`Revisa el envio de ${product.name}.`);
+      }
       const tracksInventory = currentItem
         ? currentItem.saleMode === "immediate"
         : Boolean(product.tracksInventory);
@@ -685,12 +709,8 @@ export async function updateOrder(
         imageUrl: product.imageUrl,
         quantity,
         unitPriceCop,
-        unitCostCop: keepsOriginalPrice
-          ? currentItem?.unitCostCop ?? product.costCop
-          : product.costCop,
-        unitShippingCostCop: keepsOriginalPrice
-          ? currentItem?.unitShippingCostCop ?? product.shippingCostCop
-          : product.shippingCostCop,
+        unitCostCop,
+        unitShippingCostCop,
         lineTotalCop: unitPriceCop * quantity,
         saleMode: tracksInventory ? ("immediate" as const) : ("preorder" as const),
         paymentPolicy: tracksInventory
