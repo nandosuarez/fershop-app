@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState, useEffect } from "react";
 
+import { FormattedNumberInput } from "@/components/formatted-number-input";
 import { formatCop } from "@/lib/commerce";
 import {
   calculateMarginPercent,
@@ -168,14 +169,13 @@ export function ProductPriceCalculator({
                 <span>Precio de compra USD</span>
                 <span className="calculator-currency-input">
                   <span>US$</span>
-                  <input
+                  <FormattedNumberInput
                     autoFocus
-                    type="number"
                     min={0}
-                    step="0.01"
-                    value={purchasePriceUsd || ""}
+                    maxFractionDigits={2}
+                    value={purchasePriceUsd}
                     placeholder="0.00"
-                    onChange={(event) => setPurchasePriceUsd(Math.max(0, Number(event.target.value) || 0))}
+                    onValueChange={setPurchasePriceUsd}
                   />
                 </span>
               </label>
@@ -183,13 +183,13 @@ export function ProductPriceCalculator({
               <label className="product-form-field">
                 <span>Impuesto USA</span>
                 <span className="calculator-currency-input">
-                  <input
-                    type="number"
+                  <FormattedNumberInput
                     min={0}
                     max={100}
-                    step="0.1"
+                    maxFractionDigits={2}
+                    emptyWhenZero={false}
                     value={taxPercent}
-                    onChange={(event) => setTaxPercent(Math.max(0, Number(event.target.value) || 0))}
+                    onValueChange={setTaxPercent}
                   />
                   <span>%</span>
                 </span>
@@ -199,13 +199,12 @@ export function ProductPriceCalculator({
                 <span>Envio USD</span>
                 <span className="calculator-currency-input">
                   <span>US$</span>
-                  <input
-                    type="number"
+                  <FormattedNumberInput
                     min={0}
-                    step="0.01"
-                    value={shippingUsd || ""}
+                    maxFractionDigits={2}
+                    value={shippingUsd}
                     placeholder="0.00"
-                    onChange={(event) => setShippingUsd(Math.max(0, Number(event.target.value) || 0))}
+                    onValueChange={setShippingUsd}
                   />
                 </span>
               </label>
@@ -214,12 +213,10 @@ export function ProductPriceCalculator({
                 <span>TRM</span>
                 <span className="calculator-currency-input">
                   <span>$</span>
-                  <input
-                    type="number"
+                  <FormattedNumberInput
                     min={1}
-                    step={1}
-                    value={exchangeRateCop || ""}
-                    onChange={(event) => setExchangeRateCop(Math.max(0, Number(event.target.value) || 0))}
+                    value={exchangeRateCop}
+                    onValueChange={setExchangeRateCop}
                   />
                 </span>
               </label>
@@ -227,12 +224,13 @@ export function ProductPriceCalculator({
               <label className="product-form-field">
                 <span>Margen</span>
                 <span className="calculator-currency-input">
-                  <input
-                    type="number"
+                  <FormattedNumberInput
                     max={99.9}
-                    step="0.01"
+                    maxFractionDigits={2}
+                    allowNegative
+                    emptyWhenZero={false}
                     value={marginPercent}
-                    onChange={(event) => setMarginPercent(Number(event.target.value) || 0)}
+                    onValueChange={setMarginPercent}
                   />
                   <span>%</span>
                 </span>
@@ -269,12 +267,10 @@ export function ProductPriceCalculator({
               <span>Precio de venta</span>
               <span className="product-money-input">
                 <span>$</span>
-                <input
-                  type="number"
+                <FormattedNumberInput
                   min={1}
-                  step={1}
-                  value={finalSalePriceCop || ""}
-                  onChange={(event) => updateFinalSalePrice(Number(event.target.value))}
+                  value={finalSalePriceCop}
+                  onValueChange={updateFinalSalePrice}
                 />
               </span>
             </label>

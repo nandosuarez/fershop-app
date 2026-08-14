@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { FormattedNumberInput } from "@/components/formatted-number-input";
 import { formatCop } from "@/lib/commerce";
 import type {
   ExpenseCategory,
@@ -57,7 +58,7 @@ export function ExpensesWorkbench({ initialSnapshot }: ExpensesWorkbenchProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<ExpenseCategory>("box_shipping");
-  const [amountCop, setAmountCop] = useState("");
+  const [amountCop, setAmountCop] = useState(0);
   const [expenseDate, setExpenseDate] = useState(getTodayInColombia);
   const [note, setNote] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -65,7 +66,7 @@ export function ExpensesWorkbench({ initialSnapshot }: ExpensesWorkbenchProps) {
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  const numericAmount = Math.max(Math.round(Number(amountCop) || 0), 0);
+  const numericAmount = Math.max(Math.round(amountCop || 0), 0);
   const paymentSource: ExpensePaymentSource =
     category === "box_shipping" ? "shipping_fund" : "general";
   const willCreateDeficit =
@@ -74,7 +75,7 @@ export function ExpensesWorkbench({ initialSnapshot }: ExpensesWorkbenchProps) {
   function resetForm() {
     setDescription("");
     setCategory("box_shipping");
-    setAmountCop("");
+    setAmountCop(0);
     setExpenseDate(getTodayInColombia());
     setNote("");
     setError(null);
@@ -356,12 +357,10 @@ export function ExpensesWorkbench({ initialSnapshot }: ExpensesWorkbenchProps) {
                 <span>Valor</span>
                 <span className="product-money-input">
                   <span>$</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
+                  <FormattedNumberInput
+                    min={1}
                     value={amountCop}
-                    onChange={(event) => setAmountCop(event.target.value)}
+                    onValueChange={setAmountCop}
                   />
                 </span>
               </label>

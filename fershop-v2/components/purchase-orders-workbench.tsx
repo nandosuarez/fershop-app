@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { FormattedNumberInput } from "@/components/formatted-number-input";
 import { ProductPriceCalculator } from "@/components/product-price-calculator";
 import { formatCop } from "@/lib/commerce";
 import type { Product, PurchaseOrder } from "@/lib/types";
@@ -403,33 +404,26 @@ export function PurchaseOrdersWorkbench({
                         </label>
                         <label className="purchase-order-line-field">
                           <span>Costo unidad</span>
-                          <input
+                          <FormattedNumberInput
                             aria-label={`Costo de ${line.product.name}`}
-                            type="number"
                             min={0}
-                            step={1}
                             value={line.unitCostCop}
-                            onChange={(event) =>
+                            onValueChange={(value) =>
                               updateLine(line.product.id, {
-                                unitCostCop: Math.max(0, Number(event.target.value) || 0),
+                                unitCostCop: value,
                               })
                             }
                           />
                         </label>
                         <label className="purchase-order-line-field">
                           <span>Envio unidad</span>
-                          <input
+                          <FormattedNumberInput
                             aria-label={`Envio de ${line.product.name}`}
-                            type="number"
                             min={0}
-                            step={1}
                             value={line.unitShippingCostCop}
-                            onChange={(event) =>
+                            onValueChange={(value) =>
                               updateLine(line.product.id, {
-                                unitShippingCostCop: Math.max(
-                                  0,
-                                  Number(event.target.value) || 0
-                                ),
+                                unitShippingCostCop: value,
                               })
                             }
                           />

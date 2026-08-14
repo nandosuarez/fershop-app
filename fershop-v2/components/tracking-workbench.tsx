@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { FormattedNumberInput } from "@/components/formatted-number-input";
 import { formatCop } from "@/lib/commerce";
 import { getAvailableOperationalActions, getAvailablePaymentOptions } from "@/lib/operations";
 import type { DashboardOrder } from "@/lib/types";
@@ -263,13 +264,11 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
                   <span>Pago recibido</span>
                   <span className="money-input">
                     <span>$</span>
-                    <input
-                      type="number"
+                    <FormattedNumberInput
                       min={1}
                       max={pendingCop}
-                      step={1000}
-                      value={paymentAmountCop || ""}
-                      onChange={(event) => setPaymentAmountCop(Math.max(0, Number(event.target.value) || 0))}
+                      value={paymentAmountCop}
+                      onValueChange={setPaymentAmountCop}
                     />
                   </span>
                 </label>

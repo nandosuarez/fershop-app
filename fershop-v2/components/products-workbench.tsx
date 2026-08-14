@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { ProductPriceCalculator } from "@/components/product-price-calculator";
+import { FormattedNumberInput } from "@/components/formatted-number-input";
 import { formatCop } from "@/lib/commerce";
 import type { Product, ProductCategory, ProductCategoryOption } from "@/lib/types";
 
@@ -446,13 +447,11 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
                 <span>Costo del producto</span>
                 <span className="product-money-input">
                   <span>$</span>
-                  <input
-                    type="number"
+                  <FormattedNumberInput
                     min={1}
-                    step={1}
-                    value={costCop || ""}
+                    value={costCop}
                     placeholder="0"
-                    onChange={(event) => setCostCop(Math.max(0, Number(event.target.value) || 0))}
+                    onValueChange={setCostCop}
                   />
                 </span>
               </label>
@@ -461,15 +460,11 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
                 <span>Costo de envio</span>
                 <span className="product-money-input">
                   <span>$</span>
-                  <input
-                    type="number"
+                  <FormattedNumberInput
                     min={0}
-                    step={1}
-                    value={shippingCostCop || ""}
+                    value={shippingCostCop}
                     placeholder="0"
-                    onChange={(event) =>
-                      setShippingCostCop(Math.max(0, Number(event.target.value) || 0))
-                    }
+                    onValueChange={setShippingCostCop}
                   />
                 </span>
               </label>
@@ -478,13 +473,11 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
                 <span>Precio de venta</span>
                 <span className="product-money-input">
                   <span>$</span>
-                  <input
-                    type="number"
+                  <FormattedNumberInput
                     min={1}
-                    step={1}
-                    value={priceCop || ""}
+                    value={priceCop}
                     placeholder="0"
-                    onChange={(event) => setPriceCop(Math.max(0, Number(event.target.value) || 0))}
+                    onValueChange={setPriceCop}
                   />
                 </span>
               </label>

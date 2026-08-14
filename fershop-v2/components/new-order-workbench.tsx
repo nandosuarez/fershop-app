@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { ProductPriceCalculator } from "@/components/product-price-calculator";
+import { FormattedNumberInput } from "@/components/formatted-number-input";
 import { formatCop } from "@/lib/commerce";
 import type {
   CartItem,
@@ -454,17 +455,13 @@ export function NewOrderWorkbench({
                       <span>Pago recibido</span>
                       <span className="money-input">
                         <span>$</span>
-                        <input
-                          type="number"
+                        <FormattedNumberInput
                           min={0}
                           max={totalCop || undefined}
-                          step={1}
-                          value={paymentReceivedCop || ""}
+                          value={paymentReceivedCop}
                           placeholder="0"
                           disabled={purchaseWithoutAdvance}
-                          onChange={(event) =>
-                            setPaymentReceivedCop(Math.max(0, Number(event.target.value) || 0))
-                          }
+                          onValueChange={setPaymentReceivedCop}
                         />
                       </span>
                     </label>

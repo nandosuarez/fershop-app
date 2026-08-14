@@ -726,6 +726,125 @@
   }
 }
 
+.reports-page {
+  width: min(1280px, calc(100% - 56px));
+}
+
+.reports-filter-card {
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.reports-filter-card > div:first-child,
+.reports-monthly-header > div {
+  display: grid;
+  gap: 5px;
+}
+
+.reports-filter-card > div:first-child span,
+.reports-monthly-header > div span,
+.reports-section > .ops-card__header > span {
+  color: var(--ops-muted);
+  font-size: 0.78rem;
+}
+
+.reports-date-fields {
+  display: flex;
+  gap: 12px;
+}
+
+.reports-date-fields label,
+.reports-monthly-header label {
+  color: var(--ops-muted);
+  display: grid;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.reports-date-fields input,
+.reports-monthly-header select {
+  height: 40px;
+  border: 1px solid #c8c7c0;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ops-ink);
+  padding: 0 11px;
+  font: inherit;
+}
+
+.reports-stat-grid {
+  margin-bottom: 0;
+}
+
+.reports-section {
+  margin-top: 18px;
+}
+
+.reports-orders-table td:nth-child(1),
+.reports-orders-table td:nth-child(5),
+.reports-orders-table td:nth-child(6),
+.reports-monthly-table td:not(:first-child) {
+  white-space: nowrap;
+}
+
+.reports-monthly-header label {
+  grid-template-columns: auto 100px;
+  align-items: center;
+}
+
+.reports-month-name {
+  text-transform: capitalize;
+  font-weight: 650;
+}
+
+.reports-empty-state {
+  min-height: 180px;
+}
+
+@media (max-width: 980px) {
+  .reports-page {
+    width: min(100% - 32px, 900px);
+  }
+
+  .reports-filter-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reports-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .reports-page {
+    width: calc(100% - 24px);
+  }
+
+  .reports-date-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .reports-date-fields input {
+    width: 100%;
+  }
+
+  .reports-stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .reports-monthly-header {
+    align-items: flex-start;
+    gap: 12px;
+  }
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

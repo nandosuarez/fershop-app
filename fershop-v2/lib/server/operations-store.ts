@@ -109,7 +109,10 @@ async function withStoreMutation<T>(
 }
 
 function sortOrders(orders: DashboardOrder[]) {
-  return [...orders].sort((left, right) => right.updatedAtIso.localeCompare(left.updatedAtIso));
+  return [...orders].sort((left, right) => {
+    const dateComparison = right.createdAtIso.localeCompare(left.createdAtIso);
+    return dateComparison || right.id.localeCompare(left.id, undefined, { numeric: true });
+  });
 }
 
 function formatDateTimeLabel(iso: string) {
