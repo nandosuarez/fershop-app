@@ -1,9 +1,7 @@
-import { ReportsWorkbench } from "@/components/reports-workbench";
-import { getOperationsSnapshot } from "@/lib/server/operations-store";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default async function ReportsPage() {
-  const snapshot = await getOperationsSnapshot();
-  return <ReportsWorkbench orders={snapshot.orders} />;
+export default function ReportsPage() {
+  redirect("/admin/informes/ventas");
 }

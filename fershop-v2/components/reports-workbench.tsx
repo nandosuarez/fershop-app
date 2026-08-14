@@ -8,6 +8,7 @@ import type { DashboardOrder } from "@/lib/types";
 
 interface ReportsWorkbenchProps {
   orders: DashboardOrder[];
+  view: "range" | "monthly";
 }
 
 const timeZone = "America/Bogota";
@@ -55,7 +56,7 @@ function summarizeOrders(orders: DashboardOrder[]) {
   );
 }
 
-export function ReportsWorkbench({ orders }: ReportsWorkbenchProps) {
+export function ReportsWorkbench({ orders, view }: ReportsWorkbenchProps) {
   const today = getDateKey(new Date().toISOString());
   const currentYear = Number(today.slice(0, 4));
   const [fromDate, setFromDate] = useState(`${today.slice(0, 7)}-01`);
@@ -106,141 +107,166 @@ export function ReportsWorkbench({ orders }: ReportsWorkbenchProps) {
     <main className="ops-page reports-page">
       <div className="ops-page-header">
         <div>
-          <p className="ops-kicker">Ventas</p>
-          <h1>Informes</h1>
+          <p className="ops-kicker">Informes</p>
+          <h1>{view === "range" ? "Ventas por fechas" : "Resumen mensual"}</h1>
         </div>
       </div>
 
-      <section className="ops-card reports-filter-card">
-        <div>
-          <strong>Ventas por rango de fechas</strong>
-          <span>Las fechas incluyen el dia inicial y el dia final.</span>
-        </div>
-        <div className="reports-date-fields">
-          <label>
-            <span>Desde</span>
-            <input type="date" value={fromDate} max={today} onChange={(event) => setFromDate(event.target.value)} />
-          </label>
-          <label>
-            <span>Hasta</span>
-            <input type="date" value={toDate} max={today} onChange={(event) => setToDate(event.target.value)} />
-          </label>
-        </div>
-      </section>
+      {view === "range" ? (
+        <>
+          <section className="ops-card reports-filter-card">
+            <div>
+              <strong>Selecciona el rango</strong>
+            </div>
+            <div className="reports-date-fields">
+              <label>
+                <span>Desde</span>
+                <input
+                  type="date"
+                  value={fromDate}
+                  max={today}
+                  onChange={(event) => setFromDate(event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Hasta</span>
+                <input
+                  type="date"
+                  value={toDate}
+                  max={today}
+                  onChange={(event) => setToDate(event.target.value)}
+                />
+              </label>
+            </div>
+          </section>
 
-      {!hasValidRange ? (
-        <p className="order-form-error" role="alert">
-          La fecha inicial debe ser anterior o igual a la fecha final.
-        </p>
-      ) : null}
+          {!hasValidRange ? (
+            <p className="order-form-error" role="alert">
+              La fecha inicial debe ser anterior o igual a la fecha final.
+            </p>
+          ) : null}
 
-      <section className="ops-stat-grid reports-stat-grid" aria-label="Resumen del rango">
-        <article className="ops-stat-card">
-          <span>Total vendido</span>
-          <strong>{formatCop(rangeSummary.totalSoldCop)}</strong>
-        </article>
-        <article className="ops-stat-card">
-          <span>Pedidos</span>
-          <strong>{numberFormatter.format(rangeOrders.length)}</strong>
-        </article>
-        <article className="ops-stat-card">
-          <span>Utilidad</span>
-          <strong>{formatCop(rangeSummary.profitCop)}</strong>
-        </article>
-        <article className="ops-stat-card">
-          <span>Pendiente por cobrar</span>
-          <strong>{formatCop(rangeSummary.pendingCop)}</strong>
-        </article>
-      </section>
+          <section className="ops-stat-grid reports-stat-grid" aria-label="Resumen del rango">
+            <article className="ops-stat-card">
+              <span>Total vendido</span>
+              <strong>{formatCop(rangeSummary.totalSoldCop)}</strong>
+            </article>
+            <article className="ops-stat-card">
+              <span>Pedidos</span>
+              <strong>{numberFormatter.format(rangeOrders.length)}</strong>
+            </article>
+            <article className="ops-stat-card">
+              <span>Utilidad</span>
+              <strong>{formatCop(rangeSummary.profitCop)}</strong>
+            </article>
+            <article className="ops-stat-card">
+              <span>Pendiente por cobrar</span>
+              <strong>{formatCop(rangeSummary.pendingCop)}</strong>
+            </article>
+          </section>
 
-      <section className="ops-card ops-table-card reports-section">
-        <div className="ops-card__header">
-          <h2>Pedidos del rango</h2>
-          <span>{numberFormatter.format(rangeSummary.totalUnits)} unidades</span>
-        </div>
-        {rangeOrders.length ? (
+          <section className="ops-card ops-table-card reports-section">
+            <div className="ops-card__header">
+              <h2>Pedidos del rango</h2>
+              <span>{numberFormatter.format(rangeSummary.totalUnits)} unidades</span>
+            </div>
+            {rangeOrders.length ? (
+              <div className="ops-table-scroll">
+                <table className="ops-table reports-orders-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Pedido</th>
+                      <th>Cliente</th>
+                      <th>Productos</th>
+                      <th>Total</th>
+                      <th>Utilidad</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rangeOrders.map((order) => {
+                      const profitCop = getOrderProfitCop(order);
+                      return (
+                        <tr key={order.id}>
+                          <td>{formatOrderDate(order.createdAtIso)}</td>
+                          <td>
+                            <Link
+                              href={`/admin/seguimiento?order=${order.id}`}
+                              className="ops-order-link"
+                            >
+                              {order.id}
+                            </Link>
+                          </td>
+                          <td>{order.customerName}</td>
+                          <td>{order.productName}</td>
+                          <td><strong>{formatCop(order.totalCop)}</strong></td>
+                          <td>{profitCop === null ? "Sin costo" : formatCop(profitCop)}</td>
+                          <td>
+                            <span className={`ops-status ops-status--${order.statusCode}`}>
+                              {order.statusLabel}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="ops-empty-state reports-empty-state">
+                <h2>No hay ventas en este rango</h2>
+              </div>
+            )}
+          </section>
+        </>
+      ) : (
+        <section className="ops-card ops-table-card">
+          <div className="ops-card__header reports-monthly-header">
+            <div>
+              <h2>Ventas por mes</h2>
+              <span>Total anual: {formatCop(yearlySummary.totalSoldCop)}</span>
+            </div>
+            <label>
+              <span>Anno</span>
+              <select
+                value={selectedYear}
+                onChange={(event) => setSelectedYear(Number(event.target.value))}
+              >
+                {availableYears.map((year) => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div className="ops-table-scroll">
-            <table className="ops-table reports-orders-table">
+            <table className="ops-table reports-monthly-table">
               <thead>
                 <tr>
-                  <th>Fecha</th>
-                  <th>Pedido</th>
-                  <th>Cliente</th>
-                  <th>Productos</th>
-                  <th>Total</th>
+                  <th>Mes</th>
+                  <th>Pedidos</th>
+                  <th>Unidades</th>
+                  <th>Total vendido</th>
                   <th>Utilidad</th>
-                  <th>Estado</th>
+                  <th>Pendiente</th>
                 </tr>
               </thead>
               <tbody>
-                {rangeOrders.map((order) => {
-                  const profitCop = getOrderProfitCop(order);
-                  return (
-                    <tr key={order.id}>
-                      <td>{formatOrderDate(order.createdAtIso)}</td>
-                      <td>
-                        <Link href={`/admin/seguimiento?order=${order.id}`} className="ops-order-link">
-                          {order.id}
-                        </Link>
-                      </td>
-                      <td>{order.customerName}</td>
-                      <td>{order.productName}</td>
-                      <td><strong>{formatCop(order.totalCop)}</strong></td>
-                      <td>{profitCop === null ? "Sin costo" : formatCop(profitCop)}</td>
-                      <td><span className={`ops-status ops-status--${order.statusCode}`}>{order.statusLabel}</span></td>
-                    </tr>
-                  );
-                })}
+                {monthlyRows.map((row) => (
+                  <tr key={row.monthLabel}>
+                    <td className="reports-month-name">{row.monthLabel}</td>
+                    <td>{numberFormatter.format(row.orders.length)}</td>
+                    <td>{numberFormatter.format(row.summary.totalUnits)}</td>
+                    <td><strong>{formatCop(row.summary.totalSoldCop)}</strong></td>
+                    <td>{formatCop(row.summary.profitCop)}</td>
+                    <td>{formatCop(row.summary.pendingCop)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-        ) : (
-          <div className="ops-empty-state reports-empty-state">
-            <h2>No hay ventas en este rango</h2>
-          </div>
-        )}
-      </section>
-
-      <section className="ops-card ops-table-card reports-section">
-        <div className="ops-card__header reports-monthly-header">
-          <div>
-            <h2>Resumen mensual</h2>
-            <span>Total anual: {formatCop(yearlySummary.totalSoldCop)}</span>
-          </div>
-          <label>
-            <span>Anno</span>
-            <select value={selectedYear} onChange={(event) => setSelectedYear(Number(event.target.value))}>
-              {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
-            </select>
-          </label>
-        </div>
-        <div className="ops-table-scroll">
-          <table className="ops-table reports-monthly-table">
-            <thead>
-              <tr>
-                <th>Mes</th>
-                <th>Pedidos</th>
-                <th>Unidades</th>
-                <th>Total vendido</th>
-                <th>Utilidad</th>
-                <th>Pendiente</th>
-              </tr>
-            </thead>
-            <tbody>
-              {monthlyRows.map((row) => (
-                <tr key={row.monthLabel}>
-                  <td className="reports-month-name">{row.monthLabel}</td>
-                  <td>{numberFormatter.format(row.orders.length)}</td>
-                  <td>{numberFormatter.format(row.summary.totalUnits)}</td>
-                  <td><strong>{formatCop(row.summary.totalSoldCop)}</strong></td>
-                  <td>{formatCop(row.summary.profitCop)}</td>
-                  <td>{formatCop(row.summary.pendingCop)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+        </section>
+      )}
     </main>
   );
 }

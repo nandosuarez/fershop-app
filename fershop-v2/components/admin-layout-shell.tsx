@@ -152,10 +152,52 @@ export function AdminLayoutShell({
         </Link>
 
         <nav className="ops-nav" aria-label="Menu operativo">
-          {navigation.filter((item) => item.icon !== "users" || canManageUsers).map((item) =>
-            item.href === "/admin/productos" ? (
-              <div key={item.href} className="ops-nav-group">
+          {navigation
+            .filter((item) => item.icon !== "users" || canManageUsers)
+            .map((item) => {
+              const subItems =
+                item.href === "/admin/productos"
+                  ? [
+                      { href: "/admin/productos/inventario", label: "Inventario" },
+                      { href: "/admin/productos/ordenes-compra", label: "Ordenes de compra" },
+                    ]
+                  : item.href === "/admin/informes"
+                    ? [
+                        { href: "/admin/informes/ventas", label: "Ventas por fechas" },
+                        { href: "/admin/informes/mensual", label: "Resumen mensual" },
+                      ]
+                    : [];
+
+              if (subItems.length) {
+                return (
+                  <div key={item.href} className="ops-nav-group">
+                    <Link
+                      href={item.href}
+                      className={isCurrent(item.href) ? "is-current" : undefined}
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      <NavigationIcon name={item.icon} />
+                      <span>{item.label}</span>
+                    </Link>
+                    <div className="ops-subnav">
+                      {subItems.map((subItem) => (
+                        <Link
+                          key={subItem.href}
+                          href={subItem.href}
+                          className={pathname.startsWith(subItem.href) ? "is-current" : undefined}
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          {subItem.label}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
                 <Link
+                  key={item.href}
                   href={item.href}
                   className={isCurrent(item.href) ? "is-current" : undefined}
                   onClick={() => setIsMenuOpen(false)}
@@ -163,35 +205,8 @@ export function AdminLayoutShell({
                   <NavigationIcon name={item.icon} />
                   <span>{item.label}</span>
                 </Link>
-                <div className="ops-subnav">
-                  <Link
-                    href="/admin/productos/inventario"
-                    className={pathname.startsWith("/admin/productos/inventario") ? "is-current" : undefined}
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Inventario
-                  </Link>
-                  <Link
-                    href="/admin/productos/ordenes-compra"
-                    className={pathname.startsWith("/admin/productos/ordenes-compra") ? "is-current" : undefined}
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Ordenes de compra
-                  </Link>
-                </div>
-              </div>
-            ) : (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={isCurrent(item.href) ? "is-current" : undefined}
-                onClick={() => setIsMenuOpen(false)}
-              >
-                <NavigationIcon name={item.icon} />
-                <span>{item.label}</span>
-              </Link>
-            )
-          )}
+              );
+            })}
         </nav>
 
         <div className="ops-sidebar__footer">
