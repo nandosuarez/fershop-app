@@ -11,6 +11,7 @@ const navigation = [
   { href: "/admin", label: "Inicio", icon: "home" },
   { href: "/admin/pedidos", label: "Pedidos", icon: "orders" },
   { href: "/admin/productos", label: "Productos", icon: "products" },
+  { href: "/admin/calculadora", label: "Calculadora", icon: "calculator" },
   { href: "/admin/clientes", label: "Clientes", icon: "customers" },
   { href: "/admin/gastos", label: "Gastos", icon: "expenses" },
   { href: "/admin/usuarios", label: "Usuarios", icon: "users" },
@@ -49,6 +50,15 @@ function NavigationIcon({ name }: { name: (typeof navigation)[number]["icon"] })
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M5 3h14v18l-3-2-4 2-4-2-3 2Z" />
         <path d="M8 8h8M8 12h8M8 16h5" />
+      </svg>
+    );
+  }
+
+  if (name === "calculator") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="5" y="2.5" width="14" height="19" rx="2" />
+        <path d="M8 6h8v4H8ZM8 14h1M12 14h1M16 14h1M8 18h1M12 18h1M16 18h1" />
       </svg>
     );
   }

@@ -3,6 +3,10 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 
 import { formatCop } from "@/lib/commerce";
+import {
+  calculateMarginPercent,
+  calculateProductPrice,
+} from "@/lib/price-calculation";
 import type { Product } from "@/lib/types";
 
 interface ProductPriceCalculatorProps {
@@ -13,11 +17,6 @@ interface ProductPriceCalculatorProps {
 
 interface ApiErrorPayload {
   message?: string;
-}
-
-function roundToThousand(value: number) {
-  const roundedToCents = Math.round(value * 100) / 100;
-  return Math.ceil(roundedToCents / 1000) * 1000;
 }
 
 export function ProductPriceCalculator({
@@ -57,23 +56,13 @@ export function ProductPriceCalculator({
   const skipNextSuggestedPriceSync = useRef(false);
 
   const calculation = useMemo(() => {
-    const safePurchaseUsd = Math.max(0, purchasePriceUsd || 0);
-    const safeTaxPercent = Math.min(100, Math.max(0, taxPercent || 0));
-    const safeShippingUsd = Math.max(0, shippingUsd || 0);
-    const safeTrm = Math.max(0, exchangeRateCop || 0);
-    const safeMargin = Math.min(99.9, marginPercent || 0);
-    const productCostCop = safePurchaseUsd * (1 + safeTaxPercent / 100) * safeTrm;
-    const shippingCostCop = safeShippingUsd * safeTrm;
-    const totalCostCop = productCostCop + shippingCostCop;
-    const suggestedSalePriceCop =
-      safeMargin < 100 ? totalCostCop / (1 - safeMargin / 100) : 0;
-
-    return {
-      productCostCop: Math.round(productCostCop),
-      shippingCostCop: Math.round(shippingCostCop),
-      totalCostCop: Math.round(totalCostCop),
-      suggestedSalePriceCop: roundToThousand(suggestedSalePriceCop),
-    };
+    return calculateProductPrice({
+      purchasePriceUsd,
+      taxPercent,
+      shippingUsd,
+      exchangeRateCop,
+      marginPercent,
+    });
   }, [exchangeRateCop, marginPercent, purchasePriceUsd, shippingUsd, taxPercent]);
 
   useEffect(() => {
@@ -98,8 +87,9 @@ export function ProductPriceCalculator({
       return;
     }
 
-    const calculatedMargin = Number(
-      ((1 - calculation.totalCostCop / normalizedPrice) * 100).toFixed(2)
+    const calculatedMargin = calculateMarginPercent(
+      calculation.totalCostCop,
+      normalizedPrice
     );
     if (Math.abs(calculatedMargin - marginPercent) > 0.001) {
       skipNextSuggestedPriceSync.current = true;
