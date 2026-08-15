@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 
 import { formatCop, getOrderProfitCop } from "@/lib/commerce";
 import type { DashboardOrder } from "@/lib/types";
@@ -29,13 +29,14 @@ function getDateKey(iso: string) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-function formatOrderDate(iso: string) {
+function formatDayLabel(dateKey: string) {
   return new Intl.DateTimeFormat("es-CO", {
+    weekday: "long",
     day: "numeric",
-    month: "short",
+    month: "long",
     year: "numeric",
     timeZone,
-  }).format(new Date(iso));
+  }).format(new Date(`${dateKey}T12:00:00-05:00`));
 }
 
 function summarizeOrders(orders: DashboardOrder[]) {
@@ -61,6 +62,7 @@ export function ReportsWorkbench({ orders, view }: ReportsWorkbenchProps) {
   const currentYear = Number(today.slice(0, 4));
   const [fromDate, setFromDate] = useState(`${today.slice(0, 7)}-01`);
   const [toDate, setToDate] = useState(today);
+  const [expandedDateKey, setExpandedDateKey] = useState<string | null>(null);
   const availableYears = useMemo(() => {
     const years = new Set(orders.map((order) => Number(getDateKey(order.createdAtIso).slice(0, 4))));
     years.add(currentYear);
@@ -80,7 +82,21 @@ export function ReportsWorkbench({ orders, view }: ReportsWorkbenchProps) {
     [fromDate, hasValidRange, orders, toDate]
   );
   const rangeSummary = useMemo(() => summarizeOrders(rangeOrders), [rangeOrders]);
-
+  const dailyRows = useMemo(() => {
+    const ordersByDate = new Map<string, DashboardOrder[]>();
+    rangeOrders.forEach((order) => {
+      const dateKey = getDateKey(order.createdAtIso);
+      ordersByDate.set(dateKey, [...(ordersByDate.get(dateKey) ?? []), order]);
+    });
+    return [...ordersByDate.entries()]
+      .sort(([leftDate], [rightDate]) => rightDate.localeCompare(leftDate))
+      .map(([dateKey, dayOrders]) => ({
+        dateKey,
+        dateLabel: formatDayLabel(dateKey),
+        orders: dayOrders,
+        summary: summarizeOrders(dayOrders),
+      }));
+  }, [rangeOrders]);
   const monthlyRows = useMemo(
     () =>
       Array.from({ length: 12 }, (_, monthIndex) => {
@@ -167,47 +183,111 @@ export function ReportsWorkbench({ orders, view }: ReportsWorkbenchProps) {
 
           <section className="ops-card ops-table-card reports-section">
             <div className="ops-card__header">
-              <h2>Pedidos del rango</h2>
-              <span>{numberFormatter.format(rangeSummary.totalUnits)} unidades</span>
+              <h2>Ventas agrupadas por dia</h2>
+              <span>{numberFormatter.format(dailyRows.length)} dias</span>
             </div>
-            {rangeOrders.length ? (
+            {dailyRows.length ? (
               <div className="ops-table-scroll">
-                <table className="ops-table reports-orders-table">
+                <table className="ops-table reports-daily-table">
                   <thead>
                     <tr>
                       <th>Fecha</th>
-                      <th>Pedido</th>
-                      <th>Cliente</th>
-                      <th>Productos</th>
-                      <th>Total</th>
+                      <th>Pedidos</th>
+                      <th>Unidades</th>
+                      <th>Total vendido</th>
                       <th>Utilidad</th>
-                      <th>Estado</th>
+                      <th>Pendiente</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rangeOrders.map((order) => {
-                      const profitCop = getOrderProfitCop(order);
+                    {dailyRows.map((row) => {
+                      const isExpanded = expandedDateKey === row.dateKey;
                       return (
-                        <tr key={order.id}>
-                          <td>{formatOrderDate(order.createdAtIso)}</td>
-                          <td>
-                            <Link
-                              href={`/admin/seguimiento?order=${order.id}`}
-                              className="ops-order-link"
-                            >
-                              {order.id}
-                            </Link>
-                          </td>
-                          <td>{order.customerName}</td>
-                          <td>{order.productName}</td>
-                          <td><strong>{formatCop(order.totalCop)}</strong></td>
-                          <td>{profitCop === null ? "Sin costo" : formatCop(profitCop)}</td>
-                          <td>
-                            <span className={`ops-status ops-status--${order.statusCode}`}>
-                              {order.statusLabel}
-                            </span>
-                          </td>
-                        </tr>
+                        <Fragment key={row.dateKey}>
+                          <tr className={isExpanded ? "is-selected" : undefined}>
+                            <td>
+                              <button
+                                type="button"
+                                className="reports-day-button"
+                                aria-expanded={isExpanded}
+                                onClick={() =>
+                                  setExpandedDateKey((current) =>
+                                    current === row.dateKey ? null : row.dateKey
+                                  )
+                                }
+                              >
+                                <span>{row.dateLabel}</span>
+                                <small>{isExpanded ? "Ocultar detalle" : "Ver detalle"}</small>
+                              </button>
+                            </td>
+                            <td>{numberFormatter.format(row.orders.length)}</td>
+                            <td>{numberFormatter.format(row.summary.totalUnits)}</td>
+                            <td><strong>{formatCop(row.summary.totalSoldCop)}</strong></td>
+                            <td>{formatCop(row.summary.profitCop)}</td>
+                            <td>{formatCop(row.summary.pendingCop)}</td>
+                          </tr>
+                          {isExpanded ? (
+                            <tr className="reports-inline-detail-row">
+                              <td colSpan={6} className="reports-inline-detail-cell">
+                                <div className="reports-inline-detail">
+                                  <div className="ops-card__header reports-day-detail-header">
+                                    <div>
+                                      <span>Detalle del dia</span>
+                                      <h2>{row.dateLabel}</h2>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="ops-button"
+                                      onClick={() => setExpandedDateKey(null)}
+                                    >
+                                      Cerrar
+                                    </button>
+                                  </div>
+                                  <table className="ops-table reports-orders-table">
+                                    <thead>
+                                      <tr>
+                                        <th>Pedido</th>
+                                        <th>Cliente</th>
+                                        <th>Productos</th>
+                                        <th>Total</th>
+                                        <th>Utilidad</th>
+                                        <th>Estado</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {row.orders.map((order) => {
+                                        const profitCop = getOrderProfitCop(order);
+                                        return (
+                                          <tr key={order.id}>
+                                            <td>
+                                              <Link
+                                                href={`/admin/seguimiento?order=${order.id}`}
+                                                className="ops-order-link"
+                                              >
+                                                {order.id}
+                                              </Link>
+                                            </td>
+                                            <td>{order.customerName}</td>
+                                            <td>{order.productName}</td>
+                                            <td><strong>{formatCop(order.totalCop)}</strong></td>
+                                            <td>
+                                              {profitCop === null ? "Sin costo" : formatCop(profitCop)}
+                                            </td>
+                                            <td>
+                                              <span className={`ops-status ops-status--${order.statusCode}`}>
+                                                {order.statusLabel}
+                                              </span>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
                       );
                     })}
                   </tbody>
@@ -219,6 +299,7 @@ export function ReportsWorkbench({ orders, view }: ReportsWorkbenchProps) {
               </div>
             )}
           </section>
+
         </>
       ) : (
         <section className="ops-card ops-table-card">

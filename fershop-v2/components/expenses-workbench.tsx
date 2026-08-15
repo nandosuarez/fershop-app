@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { FormattedNumberInput } from "@/components/formatted-number-input";
+import { ListSearch } from "@/components/list-search";
 import { formatCop } from "@/lib/commerce";
+import { matchesSearch } from "@/lib/search";
 import type {
   ExpenseCategory,
   ExpensePaymentSource,
@@ -55,6 +57,7 @@ function formatOrderDate(iso: string) {
 
 export function ExpensesWorkbench({ initialSnapshot }: ExpensesWorkbenchProps) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const [search, setSearch] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<ExpenseCategory>("box_shipping");
@@ -71,6 +74,21 @@ export function ExpensesWorkbench({ initialSnapshot }: ExpensesWorkbenchProps) {
     category === "box_shipping" ? "shipping_fund" : "general";
   const willCreateDeficit =
     paymentSource === "shipping_fund" && numericAmount > snapshot.metrics.shippingFundBalanceCop;
+  const filteredExpenses = useMemo(
+    () =>
+      snapshot.expenses.filter((expense) =>
+        matchesSearch(search, [
+          expense.description,
+          expense.note,
+          expense.categoryLabel,
+          expense.paymentSourceLabel,
+          expense.expenseDate,
+          formatExpenseDate(expense.expenseDate),
+          expense.amountCop,
+        ])
+      ),
+    [search, snapshot.expenses]
+  );
 
   function resetForm() {
     setDescription("");
@@ -216,7 +234,13 @@ export function ExpensesWorkbench({ initialSnapshot }: ExpensesWorkbenchProps) {
               <h2>Gastos registrados</h2>
               <strong>{formatCop(snapshot.metrics.totalExpensesCop)}</strong>
             </div>
-            {snapshot.expenses.length ? (
+            <ListSearch
+              value={search}
+              onChange={setSearch}
+              placeholder="Buscar gasto, categoria o fecha"
+              resultLabel={`${filteredExpenses.length} resultado${filteredExpenses.length === 1 ? "" : "s"}`}
+            />
+            {filteredExpenses.length ? (
               <div className="ops-table-scroll">
                 <table className="ops-table expense-table">
                   <thead>
@@ -230,7 +254,7 @@ export function ExpensesWorkbench({ initialSnapshot }: ExpensesWorkbenchProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    {snapshot.expenses.map((expense) => (
+                    {filteredExpenses.map((expense) => (
                       <tr key={expense.id}>
                         <td>{formatExpenseDate(expense.expenseDate)}</td>
                         <td>
@@ -262,8 +286,14 @@ export function ExpensesWorkbench({ initialSnapshot }: ExpensesWorkbenchProps) {
               </div>
             ) : (
               <div className="expense-empty-state">
-                <strong>No hay gastos registrados</strong>
-                <span>Usa Registrar gasto para agregar el primero.</span>
+                <strong>{search ? "No encontramos gastos" : "No hay gastos registrados"}</strong>
+                {search ? (
+                  <button type="button" className="ops-button" onClick={() => setSearch("")}>
+                    Limpiar busqueda
+                  </button>
+                ) : (
+                  <span>Usa Registrar gasto para agregar el primero.</span>
+                )}
               </div>
             )}
           </section>

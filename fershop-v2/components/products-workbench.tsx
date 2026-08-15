@@ -4,7 +4,9 @@ import { useMemo, useState } from "react";
 
 import { ProductPriceCalculator } from "@/components/product-price-calculator";
 import { FormattedNumberInput } from "@/components/formatted-number-input";
+import { ListSearch } from "@/components/list-search";
 import { formatCop } from "@/lib/commerce";
+import { matchesSearch } from "@/lib/search";
 import type { Product, ProductCategory, ProductCategoryOption } from "@/lib/types";
 
 interface ProductsWorkbenchProps {
@@ -18,6 +20,7 @@ interface ApiErrorPayload {
 
 export function ProductsWorkbench({ initialProducts, initialCategories }: ProductsWorkbenchProps) {
   const [products, setProducts] = useState(initialProducts);
+  const [search, setSearch] = useState("");
   const [categories, setCategories] = useState(initialCategories);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCategoriesModalOpen, setIsCategoriesModalOpen] = useState(false);
@@ -50,6 +53,20 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
   const calculatorProduct = calculatorProductId
     ? products.find((product) => product.id === calculatorProductId) ?? null
     : null;
+  const filteredProducts = useMemo(
+    () =>
+      products.filter((product) =>
+        matchesSearch(search, [
+          product.name,
+          product.categoryLabel,
+          product.priceCop,
+          product.costCop,
+          product.shippingCostCop,
+          product.tracksInventory ? "maneja inventario disponible" : "sin inventario 50/50",
+        ])
+      ),
+    [products, search]
+  );
 
   function openCreateModal() {
     setEditingProductId(null);
@@ -320,7 +337,13 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
         ) : null}
 
         <section className="ops-card ops-table-card">
-          <div className="ops-table-scroll">
+          <ListSearch
+            value={search}
+            onChange={setSearch}
+            placeholder="Buscar producto o categoria"
+            resultLabel={`${filteredProducts.length} resultado${filteredProducts.length === 1 ? "" : "s"}`}
+          />
+          {filteredProducts.length ? <div className="ops-table-scroll">
             <table className="ops-table">
               <thead>
                 <tr>
@@ -333,7 +356,7 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
                 </tr>
               </thead>
               <tbody>
-                {products.map((product) => (
+                {filteredProducts.map((product) => (
                   <tr key={product.id}>
                     <td>
                       <div className="ops-product-cell">
@@ -376,7 +399,14 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
                 ))}
               </tbody>
             </table>
-          </div>
+          </div> : (
+            <div className="ops-empty-state">
+              <h2>No encontramos productos</h2>
+              <button type="button" className="ops-button" onClick={() => setSearch("")}>
+                Limpiar busqueda
+              </button>
+            </div>
+          )}
         </section>
       </main>
 

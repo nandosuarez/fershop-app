@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
+import { ListSearch } from "@/components/list-search";
+import { matchesSearch } from "@/lib/search";
 import type { UserRole, UserView } from "@/lib/auth-types";
 
 interface UsersWorkbenchProps {
@@ -30,6 +32,7 @@ function formatDate(iso?: string) {
 
 export function UsersWorkbench({ initialUsers, currentUserId }: UsersWorkbenchProps) {
   const [users, setUsers] = useState(initialUsers);
+  const [search, setSearch] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -43,6 +46,19 @@ export function UsersWorkbench({ initialUsers, currentUserId }: UsersWorkbenchPr
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const editingUser = users.find((user) => user.id === editingUserId) ?? null;
+  const filteredUsers = useMemo(
+    () =>
+      users.filter((user) =>
+        matchesSearch(search, [
+          user.name,
+          user.email,
+          user.username,
+          roleLabels[user.role],
+          user.isActive ? "activo" : "inactivo",
+        ])
+      ),
+    [search, users]
+  );
 
   function resetForm() {
     setName("");
@@ -148,7 +164,13 @@ export function UsersWorkbench({ initialUsers, currentUserId }: UsersWorkbenchPr
         </section>
 
         <section className="ops-card ops-table-card">
-          <div className="ops-table-scroll">
+          <ListSearch
+            value={search}
+            onChange={setSearch}
+            placeholder="Buscar usuario, correo o rol"
+            resultLabel={`${filteredUsers.length} resultado${filteredUsers.length === 1 ? "" : "s"}`}
+          />
+          {filteredUsers.length ? <div className="ops-table-scroll">
             <table className="ops-table users-table">
               <thead>
                 <tr>
@@ -161,7 +183,7 @@ export function UsersWorkbench({ initialUsers, currentUserId }: UsersWorkbenchPr
                 </tr>
               </thead>
               <tbody>
-                {users.map((user) => (
+                {filteredUsers.map((user) => (
                   <tr key={user.id}>
                     <td>
                       <strong>{user.name}</strong>
@@ -180,7 +202,14 @@ export function UsersWorkbench({ initialUsers, currentUserId }: UsersWorkbenchPr
                 ))}
               </tbody>
             </table>
-          </div>
+          </div> : (
+            <div className="ops-empty-state">
+              <h2>No encontramos usuarios</h2>
+              <button type="button" className="ops-button" onClick={() => setSearch("")}>
+                Limpiar busqueda
+              </button>
+            </div>
+          )}
         </section>
       </main>
 

@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
+import { ListSearch } from "@/components/list-search";
+import { matchesSearch } from "@/lib/search";
 import type { Customer } from "@/lib/types";
 
 interface CustomersWorkbenchProps {
@@ -23,6 +25,7 @@ function getInitials(fullName: string) {
 
 export function CustomersWorkbench({ initialCustomers }: CustomersWorkbenchProps) {
   const [customers, setCustomers] = useState(initialCustomers);
+  const [search, setSearch] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [fullName, setFullName] = useState("");
@@ -40,6 +43,21 @@ export function CustomersWorkbench({ initialCustomers }: CustomersWorkbenchProps
   const editingCustomer = editingCustomerId
     ? customers.find((customer) => customer.id === editingCustomerId) ?? null
     : null;
+  const filteredCustomers = useMemo(
+    () =>
+      customers.filter((customer) =>
+        matchesSearch(search, [
+          customer.fullName,
+          customer.email,
+          customer.phone,
+          customer.address,
+          customer.city,
+          customer.department,
+          customer.postalCode,
+        ])
+      ),
+    [customers, search]
+  );
 
   function resetForm() {
     setFullName("");
@@ -163,7 +181,13 @@ export function CustomersWorkbench({ initialCustomers }: CustomersWorkbenchProps
         ) : null}
 
         <section className="ops-card ops-table-card">
-          <div className="ops-table-scroll">
+          <ListSearch
+            value={search}
+            onChange={setSearch}
+            placeholder="Buscar cliente, telefono o ciudad"
+            resultLabel={`${filteredCustomers.length} resultado${filteredCustomers.length === 1 ? "" : "s"}`}
+          />
+          {filteredCustomers.length ? <div className="ops-table-scroll">
             <table className="ops-table">
               <thead>
                 <tr>
@@ -175,7 +199,7 @@ export function CustomersWorkbench({ initialCustomers }: CustomersWorkbenchProps
                 </tr>
               </thead>
               <tbody>
-                {customers.map((customer) => (
+                {filteredCustomers.map((customer) => (
                   <tr key={customer.id}>
                     <td>
                       <div className="ops-customer-cell">
@@ -200,7 +224,14 @@ export function CustomersWorkbench({ initialCustomers }: CustomersWorkbenchProps
                 ))}
               </tbody>
             </table>
-          </div>
+          </div> : (
+            <div className="ops-empty-state">
+              <h2>No encontramos clientes</h2>
+              <button type="button" className="ops-button" onClick={() => setSearch("")}>
+                Limpiar busqueda
+              </button>
+            </div>
+          )}
         </section>
       </main>
 

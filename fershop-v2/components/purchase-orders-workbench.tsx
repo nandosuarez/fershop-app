@@ -3,8 +3,10 @@
 import { useMemo, useState } from "react";
 
 import { FormattedNumberInput } from "@/components/formatted-number-input";
+import { ListSearch } from "@/components/list-search";
 import { ProductPriceCalculator } from "@/components/product-price-calculator";
 import { formatCop } from "@/lib/commerce";
+import { matchesSearch } from "@/lib/search";
 import type { Product, PurchaseOrder } from "@/lib/types";
 
 interface PurchaseOrdersWorkbenchProps {
@@ -47,6 +49,7 @@ export function PurchaseOrdersWorkbench({
 }: PurchaseOrdersWorkbenchProps) {
   const [catalogProducts, setCatalogProducts] = useState(products);
   const [purchaseOrders, setPurchaseOrders] = useState(initialPurchaseOrders);
+  const [orderSearch, setOrderSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
   const [supplier, setSupplier] = useState("");
@@ -77,6 +80,21 @@ export function PurchaseOrdersWorkbench({
         )
       : catalogProducts;
   }, [catalogProducts, productSearch]);
+  const filteredPurchaseOrders = useMemo(
+    () =>
+      purchaseOrders.filter((order) =>
+        matchesSearch(orderSearch, [
+          order.id,
+          order.supplier,
+          order.statusLabel,
+          formatDate(order.createdAtIso),
+          order.totalUnits,
+          order.totalCostCop,
+          ...order.items.map((item) => item.productName),
+        ])
+      ),
+    [orderSearch, purchaseOrders]
+  );
   const calculatorProduct = calculatorProductId
     ? catalogProducts.find((product) => product.id === calculatorProductId) ?? null
     : null;
@@ -273,7 +291,13 @@ export function PurchaseOrdersWorkbench({
         ) : null}
 
         <section className="ops-card ops-table-card">
-          {purchaseOrders.length ? (
+          <ListSearch
+            value={orderSearch}
+            onChange={setOrderSearch}
+            placeholder="Buscar orden, proveedor o producto"
+            resultLabel={`${filteredPurchaseOrders.length} resultado${filteredPurchaseOrders.length === 1 ? "" : "s"}`}
+          />
+          {filteredPurchaseOrders.length ? (
             <div className="ops-table-scroll">
               <table className="ops-table">
                 <thead>
@@ -288,7 +312,7 @@ export function PurchaseOrdersWorkbench({
                   </tr>
                 </thead>
                 <tbody>
-                  {purchaseOrders.map((order) => (
+                  {filteredPurchaseOrders.map((order) => (
                     <tr key={order.id}>
                       <td><strong>{order.id}</strong><small>{formatDate(order.createdAtIso)}</small></td>
                       <td>{order.supplier}</td>
@@ -323,10 +347,16 @@ export function PurchaseOrdersWorkbench({
             </div>
           ) : (
             <div className="ops-empty-state">
-              <strong>No hay ordenes de compra</strong>
-              <button type="button" className="ops-button ops-button--primary" onClick={openCreate}>
-                Crear primera orden
-              </button>
+              <strong>{orderSearch ? "No encontramos ordenes" : "No hay ordenes de compra"}</strong>
+              {orderSearch ? (
+                <button type="button" className="ops-button" onClick={() => setOrderSearch("")}>
+                  Limpiar busqueda
+                </button>
+              ) : (
+                <button type="button" className="ops-button ops-button--primary" onClick={openCreate}>
+                  Crear primera orden
+                </button>
+              )}
             </div>
           )}
         </section>
