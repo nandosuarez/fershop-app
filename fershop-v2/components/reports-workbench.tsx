@@ -1,14 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
-import { formatCop, getOrderProfitCop } from "@/lib/commerce";
+import {
+  formatCop,
+  getOrderOutstandingCop,
+  getOrderPaidCop,
+  getOrderProfitCop,
+} from "@/lib/commerce";
 import type { DashboardOrder } from "@/lib/types";
 
 interface ReportsWorkbenchProps {
   orders: DashboardOrder[];
   view: "range" | "monthly";
+}
+
+interface OrdersApiPayload {
+  orders?: DashboardOrder[];
 }
 
 const timeZone = "America/Bogota";
@@ -44,7 +53,7 @@ function summarizeOrders(orders: DashboardOrder[]) {
     (summary, order) => {
       summary.totalSoldCop += order.totalCop;
       summary.totalUnits += order.quantity;
-      summary.pendingCop += order.dueTodayCop + order.dueOnArrivalCop;
+      summary.pendingCop += getOrderOutstandingCop(order);
       summary.profitCop += getOrderProfitCop(order) ?? 0;
       return summary;
     },
@@ -57,7 +66,8 @@ function summarizeOrders(orders: DashboardOrder[]) {
   );
 }
 
-export function ReportsWorkbench({ orders, view }: ReportsWorkbenchProps) {
+export function ReportsWorkbench({ orders: initialOrders, view }: ReportsWorkbenchProps) {
+  const [orders, setOrders] = useState(initialOrders);
   const today = getDateKey(new Date().toISOString());
   const currentYear = Number(today.slice(0, 4));
   const [fromDate, setFromDate] = useState(`${today.slice(0, 7)}-01`);
@@ -70,6 +80,47 @@ export function ReportsWorkbench({ orders, view }: ReportsWorkbenchProps) {
   }, [currentYear, orders]);
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const hasValidRange = Boolean(fromDate && toDate && fromDate <= toDate);
+
+  useEffect(() => {
+    setOrders(initialOrders);
+  }, [initialOrders]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function refreshOrders() {
+      try {
+        const response = await fetch("/api/orders", { cache: "no-store" });
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as OrdersApiPayload;
+        if (isActive && Array.isArray(payload.orders)) {
+          setOrders(payload.orders);
+        }
+      } catch {
+        // Keep the last valid report visible if a background refresh fails.
+      }
+    }
+
+    function refreshVisibleReport() {
+      if (document.visibilityState === "visible") {
+        void refreshOrders();
+      }
+    }
+
+    void refreshOrders();
+    const intervalId = window.setInterval(refreshVisibleReport, 30_000);
+    window.addEventListener("focus", refreshVisibleReport);
+    document.addEventListener("visibilitychange", refreshVisibleReport);
+
+    return () => {
+      isActive = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshVisibleReport);
+      document.removeEventListener("visibilitychange", refreshVisibleReport);
+    };
+  }, []);
 
   const rangeOrders = useMemo(
     () =>
@@ -250,6 +301,8 @@ export function ReportsWorkbench({ orders, view }: ReportsWorkbenchProps) {
                                         <th>Cliente</th>
                                         <th>Productos</th>
                                         <th>Total</th>
+                                        <th>Pagado</th>
+                                        <th>Pendiente</th>
                                         <th>Utilidad</th>
                                         <th>Estado</th>
                                       </tr>
@@ -257,6 +310,8 @@ export function ReportsWorkbench({ orders, view }: ReportsWorkbenchProps) {
                                     <tbody>
                                       {row.orders.map((order) => {
                                         const profitCop = getOrderProfitCop(order);
+                                        const paidCop = getOrderPaidCop(order);
+                                        const pendingCop = getOrderOutstandingCop(order);
                                         return (
                                           <tr key={order.id}>
                                             <td>
@@ -270,6 +325,8 @@ export function ReportsWorkbench({ orders, view }: ReportsWorkbenchProps) {
                                             <td>{order.customerName}</td>
                                             <td>{order.productName}</td>
                                             <td><strong>{formatCop(order.totalCop)}</strong></td>
+                                            <td>{formatCop(paidCop)}</td>
+                                            <td><strong>{formatCop(pendingCop)}</strong></td>
                                             <td>
                                               {profitCop === null ? "Sin costo" : formatCop(profitCop)}
                                             </td>

@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { dashboardOrders, products as seedProducts } from "@/lib/catalog";
 import {
   formatCop,
+  getOrderOutstandingCop,
+  getOrderPaidCop,
   summarizeCart,
 } from "@/lib/commerce";
 import { customers as seedCustomers } from "@/lib/customers";
@@ -226,24 +228,34 @@ function normalizeOrderDetails(
     order.customerAddress ??= customer.address;
   }
 
-  if (order.saleMode === "preorder" && !order.arrivalRecordedAtIso) {
-    const receivedCop = order.payments
-      .filter((payment) => payment.statusCode === "received")
-      .reduce((sum, payment) => sum + payment.amountCop, 0);
+  const receivedCop = getOrderPaidCop(order);
+  const outstandingCop = getOrderOutstandingCop(order);
 
-    if (receivedCop > 0) {
-      order.dueTodayCop = 0;
-      order.dueOnArrivalCop = Math.max(order.totalCop - receivedCop, 0);
+  if (order.saleMode === "immediate") {
+    order.dueTodayCop = outstandingCop;
+    order.dueOnArrivalCop = 0;
+  } else if (
+    receivedCop > 0 ||
+    order.purchaseWithoutAdvance ||
+    order.purchaseRecordedAtIso ||
+    order.arrivalRecordedAtIso
+  ) {
+    order.dueTodayCop = 0;
+    order.dueOnArrivalCop = outstandingCop;
+  } else {
+    order.dueTodayCop = Math.min(order.plannedDueTodayCop, outstandingCop);
+    order.dueOnArrivalCop = Math.max(outstandingCop - order.dueTodayCop, 0);
+  }
 
-      const legacyPartialEvent = order.timeline.find(
-        (event) =>
-          event.type === "payment" &&
-          (event.title === "Pago parcial registrado" || event.title === "Anticipo parcial registrado")
-      );
-      if (legacyPartialEvent) {
-        legacyPartialEvent.title = "Anticipo registrado";
-        legacyPartialEvent.detail = `Anticipo recibido. El saldo total pendiente quedo en ${formatCop(order.dueOnArrivalCop)}.`;
-      }
+  if (order.saleMode === "preorder" && !order.arrivalRecordedAtIso && receivedCop > 0) {
+    const legacyPartialEvent = order.timeline.find(
+      (event) =>
+        event.type === "payment" &&
+        (event.title === "Pago parcial registrado" || event.title === "Anticipo parcial registrado")
+    );
+    if (legacyPartialEvent) {
+      legacyPartialEvent.title = "Anticipo registrado";
+      legacyPartialEvent.detail = `Anticipo recibido. El saldo total pendiente quedo en ${formatCop(order.dueOnArrivalCop)}.`;
     }
   }
 }

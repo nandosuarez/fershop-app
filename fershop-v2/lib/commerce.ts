@@ -63,6 +63,18 @@ export function getOrderProfitCop(order: DashboardOrder): number | null {
   return Math.round(profitCop);
 }
 
+export function getOrderPaidCop(order: Pick<DashboardOrder, "payments">): number {
+  return order.payments
+    .filter((payment) => payment.statusCode === "received")
+    .reduce((sum, payment) => sum + payment.amountCop, 0);
+}
+
+export function getOrderOutstandingCop(
+  order: Pick<DashboardOrder, "totalCop" | "payments">
+): number {
+  return Math.max(order.totalCop - getOrderPaidCop(order), 0);
+}
+
 export function summarizeCart(items: CartItem[], catalogProducts: Product[] = products): CartSummary {
   const lines = items
     .map((item) => {

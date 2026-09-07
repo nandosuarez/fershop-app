@@ -858,8 +858,7 @@
 }
 
 .reports-orders-table td:nth-child(1),
-.reports-orders-table td:nth-child(5),
-.reports-orders-table td:nth-child(6),
+.reports-orders-table td:nth-child(n + 4),
 .reports-monthly-table td:not(:first-child) {
   white-space: nowrap;
 }
@@ -878,9 +877,7 @@
   min-height: 180px;
 }
 
-.reports-daily-table td:not(:first-child),
-.reports-orders-table td:nth-child(4),
-.reports-orders-table td:nth-child(5) {
+.reports-daily-table td:not(:first-child) {
   white-space: nowrap;
 }
 
