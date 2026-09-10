@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FormattedNumberInput } from "@/components/formatted-number-input";
 import { formatCop } from "@/lib/commerce";
 import { getAvailableOperationalActions, getAvailablePaymentOptions } from "@/lib/operations";
-import type { DashboardOrder } from "@/lib/types";
+import type { DashboardOrder, PaymentLogEntry } from "@/lib/types";
 
 interface ApiErrorPayload {
   message?: string;
@@ -34,12 +34,27 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
   const [paymentAmountCop, setPaymentAmountCop] = useState(0);
   const [comment, setComment] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [busyAction, setBusyAction] = useState<"payment" | "action" | "comment" | "notification" | null>(null);
+  const [busyAction, setBusyAction] = useState<
+    "payment" | "payment-update" | "payment-delete" | "action" | "comment" | "notification" | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [editingPayment, setEditingPayment] = useState<PaymentLogEntry | null>(null);
+  const [deletingPayment, setDeletingPayment] = useState<PaymentLogEntry | null>(null);
+  const [editedPaymentAmountCop, setEditedPaymentAmountCop] = useState(0);
+  const [editedPaymentNote, setEditedPaymentNote] = useState("");
 
   const paymentOptions = useMemo(() => (order ? getAvailablePaymentOptions(order) : []), [order]);
   const actions = useMemo(() => (order ? getAvailableOperationalActions(order) : []), [order]);
+  const receivedPayments = useMemo(
+    () =>
+      order?.payments
+        .filter((payment) => payment.statusCode === "received")
+        .sort((left, right) =>
+          (right.recordedAtIso ?? "").localeCompare(left.recordedAtIso ?? "")
+        ) ?? [],
+    [order]
+  );
   const paidCop =
     order?.payments
       .filter((payment) => payment.statusCode === "received")
@@ -47,6 +62,9 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
   const pendingCop = order ? order.dueTodayCop + order.dueOnArrivalCop : 0;
   const latestNotification = order?.notifications[0] ?? null;
   const pendingNotification = order?.notifications.find((notification) => notification.statusCode === "draft");
+  const maximumEditedPaymentCop = editingPayment
+    ? Math.max((order?.totalCop ?? 0) - (paidCop - editingPayment.amountCop), 0)
+    : 0;
 
   useEffect(() => {
     if (!initialOrderId) {
@@ -121,6 +139,77 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
       { kind: option.kind, amountCop: paymentAmountCop },
       "payment",
       "Pago registrado."
+    );
+  }
+
+  function openPaymentEditor(payment: PaymentLogEntry) {
+    setEditingPayment(payment);
+    setEditedPaymentAmountCop(payment.amountCop);
+    setEditedPaymentNote(payment.note);
+    setError(null);
+    setFeedback(null);
+  }
+
+  async function changeExistingPayment(
+    paymentId: string,
+    method: "PATCH" | "DELETE",
+    body: Record<string, unknown> | undefined,
+    action: "payment-update" | "payment-delete",
+    successMessage: string
+  ) {
+    if (!order) {
+      return;
+    }
+
+    setBusyAction(action);
+    setError(null);
+    setFeedback(null);
+    try {
+      const response = await fetch(`/api/orders/${order.id}/payments/${paymentId}`, {
+        method,
+        headers: body ? { "Content-Type": "application/json" } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (!response.ok) {
+        const payload = (await response.json()) as ApiErrorPayload;
+        throw new Error(payload.message || "No pudimos actualizar el pago.");
+      }
+      const payload = (await response.json()) as OrderApiPayload;
+      setOrder(payload.order);
+      setEditingPayment(null);
+      setDeletingPayment(null);
+      setFeedback(successMessage);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "No pudimos actualizar el pago.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handlePaymentUpdate() {
+    if (!editingPayment || editedPaymentAmountCop <= 0) {
+      setError("El monto del pago debe ser mayor a cero.");
+      return;
+    }
+    await changeExistingPayment(
+      editingPayment.id,
+      "PATCH",
+      { amountCop: editedPaymentAmountCop, note: editedPaymentNote },
+      "payment-update",
+      "Pago actualizado y saldo recalculado."
+    );
+  }
+
+  async function handlePaymentDelete() {
+    if (!deletingPayment) {
+      return;
+    }
+    await changeExistingPayment(
+      deletingPayment.id,
+      "DELETE",
+      undefined,
+      "payment-delete",
+      "Pago eliminado y saldo recalculado."
     );
   }
 
@@ -258,6 +347,50 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
               <div><span>Pagado</span><strong>{formatCop(paidCop)}</strong></div>
               <div className="order-payment-summary__pending"><span>Pendiente</span><strong>{formatCop(pendingCop)}</strong></div>
             </div>
+            <div className="order-payment-history">
+              <div className="order-payment-history__header">
+                <h3>Pagos registrados</h3>
+                <span>{receivedPayments.length}</span>
+              </div>
+              {receivedPayments.length > 0 ? (
+                <div className="order-payment-history__list">
+                  {receivedPayments.map((payment) => (
+                    <article key={payment.id} className="order-payment-history__item">
+                      <div className="order-payment-history__details">
+                        <strong>{payment.kind === "advance" ? "Anticipo o abono" : "Pago de saldo"}</strong>
+                        <small>{payment.recordedAtLabel}</small>
+                        <p>{payment.note}</p>
+                      </div>
+                      <strong className="order-payment-history__amount">{formatCop(payment.amountCop)}</strong>
+                      <div className="order-payment-history__actions">
+                        <button
+                          type="button"
+                          className="ops-button ops-button--compact"
+                          disabled={busyAction !== null}
+                          onClick={() => openPaymentEditor(payment)}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          className="ops-button ops-button--compact ops-button--danger"
+                          disabled={busyAction !== null}
+                          onClick={() => {
+                            setDeletingPayment(payment);
+                            setError(null);
+                            setFeedback(null);
+                          }}
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="order-payment-history__empty">No hay pagos recibidos registrados.</p>
+              )}
+            </div>
             {paymentOptions[0] ? (
               <div className="order-payment-action">
                 <label>
@@ -372,6 +505,129 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
           </section>
         </aside>
       </div>
+
+      {editingPayment ? (
+        <div className="order-modal-backdrop" role="presentation">
+          <section
+            className="order-modal payment-edit-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="payment-edit-title"
+          >
+            <div className="order-modal__header">
+              <div>
+                <h2 id="payment-edit-title">Editar pago</h2>
+                <small>{editingPayment.recordedAtLabel}</small>
+              </div>
+              <button
+                type="button"
+                aria-label="Cerrar"
+                disabled={busyAction !== null}
+                onClick={() => setEditingPayment(null)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="payment-edit-form">
+              <label>
+                <span>Valor recibido</span>
+                <span className="money-input">
+                  <span>$</span>
+                  <FormattedNumberInput
+                    min={1}
+                    max={maximumEditedPaymentCop}
+                    value={editedPaymentAmountCop}
+                    onValueChange={setEditedPaymentAmountCop}
+                  />
+                </span>
+                <small>Maximo permitido: {formatCop(maximumEditedPaymentCop)}</small>
+              </label>
+              <label>
+                <span>Nota del pago</span>
+                <textarea
+                  rows={3}
+                  maxLength={500}
+                  value={editedPaymentNote}
+                  onChange={(event) => setEditedPaymentNote(event.target.value)}
+                />
+              </label>
+            </div>
+            <div className="order-modal__footer">
+              <span>La correccion quedara registrada en la cronologia.</span>
+              <div>
+                <button
+                  type="button"
+                  className="ops-button"
+                  disabled={busyAction !== null}
+                  onClick={() => setEditingPayment(null)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="ops-button ops-button--primary"
+                  disabled={busyAction !== null || editedPaymentAmountCop <= 0}
+                  onClick={() => void handlePaymentUpdate()}
+                >
+                  {busyAction === "payment-update" ? "Actualizando..." : "Actualizar pago"}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {deletingPayment ? (
+        <div className="order-modal-backdrop" role="presentation">
+          <section
+            className="order-modal payment-delete-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="payment-delete-title"
+          >
+            <div className="order-modal__header">
+              <h2 id="payment-delete-title">Eliminar pago</h2>
+              <button
+                type="button"
+                aria-label="Cerrar"
+                disabled={busyAction !== null}
+                onClick={() => setDeletingPayment(null)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="payment-delete-confirmation">
+              <p>Estas seguro de eliminar este pago?</p>
+              <div>
+                <span>{deletingPayment.recordedAtLabel}</span>
+                <strong>{formatCop(deletingPayment.amountCop)}</strong>
+              </div>
+              <small>El saldo pendiente aumentara y el cambio quedara en la cronologia.</small>
+            </div>
+            <div className="order-modal__footer">
+              <span>Esta accion corrige el registro financiero del pedido.</span>
+              <div>
+                <button
+                  type="button"
+                  className="ops-button"
+                  disabled={busyAction !== null}
+                  onClick={() => setDeletingPayment(null)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="ops-button ops-button--danger-solid"
+                  disabled={busyAction !== null}
+                  onClick={() => void handlePaymentDelete()}
+                >
+                  {busyAction === "payment-delete" ? "Eliminando..." : "Si, eliminar pago"}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </>
   );
 }

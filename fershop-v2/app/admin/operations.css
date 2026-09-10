@@ -267,6 +267,34 @@
   background: #090908;
 }
 
+.ops-button--compact {
+  min-height: 34px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+}
+
+.ops-button--danger {
+  border-color: #e3b9b6;
+  color: #9f2924;
+}
+
+.ops-button--danger:hover {
+  border-color: #c96a64;
+  background: #fff5f4;
+}
+
+.ops-button--danger-solid {
+  border-color: #a9322c;
+  background: #a9322c;
+  color: #fff;
+}
+
+.ops-button--danger-solid:hover {
+  border-color: #7d1d19;
+  background: #7d1d19;
+}
+
 .ops-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
@@ -2885,6 +2913,164 @@
   font-size: 1.04rem;
 }
 
+.order-payment-history {
+  border-top: 1px solid var(--ops-line);
+}
+
+.order-payment-history__header {
+  min-height: 46px;
+  padding: 0 18px;
+  background: #fafaf8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.order-payment-history__header h3 {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.order-payment-history__header span {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #ebe9e2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #58554e;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.order-payment-history__list {
+  display: grid;
+}
+
+.order-payment-history__item {
+  min-height: 76px;
+  padding: 13px 18px;
+  border-top: 1px solid var(--ops-line);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.order-payment-history__details {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.order-payment-history__details strong,
+.order-payment-history__amount {
+  font-size: 0.84rem;
+}
+
+.order-payment-history__details small,
+.order-payment-history__details p,
+.order-payment-history__empty {
+  color: var(--ops-muted);
+  font-size: 0.74rem;
+}
+
+.order-payment-history__details p,
+.order-payment-history__empty {
+  margin: 0;
+}
+
+.order-payment-history__actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.order-payment-history__empty {
+  padding: 16px 18px;
+  border-top: 1px solid var(--ops-line);
+}
+
+.payment-edit-modal,
+.payment-delete-modal {
+  width: min(520px, 100%);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.payment-edit-modal .order-modal__header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.payment-edit-modal .order-modal__header small {
+  color: var(--ops-muted);
+  font-size: 0.72rem;
+}
+
+.payment-edit-form,
+.payment-delete-confirmation {
+  padding: 20px;
+  display: grid;
+  gap: 18px;
+}
+
+.payment-edit-form label {
+  display: grid;
+  gap: 8px;
+  color: #45423c;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.payment-edit-form label > small {
+  color: var(--ops-muted);
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+
+.payment-edit-form .money-input {
+  width: 100%;
+}
+
+.payment-edit-form textarea {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #c8c7c0;
+  border-radius: 9px;
+  outline: 0;
+  resize: vertical;
+}
+
+.payment-edit-form textarea:focus {
+  border-color: #2a61a8;
+  box-shadow: 0 0 0 2px rgba(42, 97, 168, 0.14);
+}
+
+.payment-delete-confirmation > p {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.payment-delete-confirmation > div {
+  padding: 14px;
+  border-radius: 11px;
+  background: #f4f1ea;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.payment-delete-confirmation span,
+.payment-delete-confirmation small {
+  color: var(--ops-muted);
+  font-size: 0.78rem;
+}
+
 .order-payment-action {
   padding: 14px 18px;
   border-top: 1px solid var(--ops-line);
@@ -3124,6 +3310,31 @@
 
   .order-payment-action .money-input {
     width: 100%;
+  }
+
+  .order-payment-history__item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .order-payment-history__actions {
+    grid-column: 1 / -1;
+  }
+
+  .payment-edit-modal .order-modal__footer,
+  .payment-delete-modal .order-modal__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .payment-edit-modal .order-modal__footer > div,
+  .payment-delete-modal .order-modal__footer > div {
+    width: 100%;
+  }
+
+  .payment-edit-modal .order-modal__footer .ops-button,
+  .payment-delete-modal .order-modal__footer .ops-button {
+    flex: 1;
   }
 
   .order-comment-box {

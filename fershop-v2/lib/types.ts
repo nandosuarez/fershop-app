@@ -411,6 +411,11 @@ export interface RegisterPaymentInput {
   note?: string;
 }
 
+export interface UpdatePaymentInput {
+  amountCop: number;
+  note?: string;
+}
+
 export interface ApplyOperationalActionInput {
   actionType: OperationalActionType;
   note?: string;

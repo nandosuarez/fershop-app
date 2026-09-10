@@ -25,6 +25,7 @@ import type {
   OrderTimelineEvent,
   PaymentLogEntry,
   RegisterPaymentInput,
+  UpdatePaymentInput,
   UpdateOrderInput,
 } from "@/lib/types";
 
@@ -183,6 +184,27 @@ function updateOrderPresentation(order: DashboardOrder) {
   order.nextActionLabel = presentation.nextActionLabel;
 }
 
+function reconcileOrderBalances(order: DashboardOrder) {
+  const receivedCop = getOrderPaidCop(order);
+  const outstandingCop = getOrderOutstandingCop(order);
+
+  if (order.saleMode === "immediate") {
+    order.dueTodayCop = outstandingCop;
+    order.dueOnArrivalCop = 0;
+  } else if (
+    receivedCop > 0 ||
+    order.purchaseWithoutAdvance ||
+    order.purchaseRecordedAtIso ||
+    order.arrivalRecordedAtIso
+  ) {
+    order.dueTodayCop = 0;
+    order.dueOnArrivalCop = outstandingCop;
+  } else {
+    order.dueTodayCop = Math.min(order.plannedDueTodayCop, outstandingCop);
+    order.dueOnArrivalCop = Math.max(outstandingCop - order.dueTodayCop, 0);
+  }
+}
+
 function normalizeOrderDetails(
   order: DashboardOrder,
   catalogProducts = seedProducts,
@@ -228,24 +250,9 @@ function normalizeOrderDetails(
     order.customerAddress ??= customer.address;
   }
 
-  const receivedCop = getOrderPaidCop(order);
-  const outstandingCop = getOrderOutstandingCop(order);
+  reconcileOrderBalances(order);
 
-  if (order.saleMode === "immediate") {
-    order.dueTodayCop = outstandingCop;
-    order.dueOnArrivalCop = 0;
-  } else if (
-    receivedCop > 0 ||
-    order.purchaseWithoutAdvance ||
-    order.purchaseRecordedAtIso ||
-    order.arrivalRecordedAtIso
-  ) {
-    order.dueTodayCop = 0;
-    order.dueOnArrivalCop = outstandingCop;
-  } else {
-    order.dueTodayCop = Math.min(order.plannedDueTodayCop, outstandingCop);
-    order.dueOnArrivalCop = Math.max(outstandingCop - order.dueTodayCop, 0);
-  }
+  const receivedCop = getOrderPaidCop(order);
 
   if (order.saleMode === "preorder" && !order.arrivalRecordedAtIso && receivedCop > 0) {
     const legacyPartialEvent = order.timeline.find(
@@ -985,6 +992,109 @@ export async function registerPayment(
     );
     store.updatedAtIso = nowIso;
     return cloneValue(result);
+  });
+}
+
+function getReceivedPaymentOrThrow(order: DashboardOrder, paymentId: string) {
+  const payment = order.payments.find(
+    (candidate) => candidate.id === paymentId && candidate.statusCode === "received"
+  );
+  if (!payment) {
+    throw new OperationsStoreError("No encontramos el pago registrado.", 404);
+  }
+  return payment;
+}
+
+function finishPaymentCorrection(order: DashboardOrder, nowIso: string) {
+  reconcileOrderBalances(order);
+  order.updatedAtIso = nowIso;
+  updateOrderPresentation(order);
+  refreshPendingPaymentEntries(order);
+}
+
+export async function updatePayment(
+  orderId: string,
+  paymentId: string,
+  input: UpdatePaymentInput
+): Promise<OperationMutationResult> {
+  return withStoreMutation((store) => {
+    const order = getOrderByIdOrThrow(store, orderId);
+    const payment = getReceivedPaymentOrThrow(order, paymentId);
+    const amountCop = Math.max(Math.round(input.amountCop || 0), 0);
+
+    if (amountCop <= 0) {
+      throw new OperationsStoreError("El monto del pago debe ser mayor a cero.");
+    }
+
+    const paidWithoutThisPaymentCop = getOrderPaidCop(order) - payment.amountCop;
+    const maximumPaymentCop = Math.max(order.totalCop - paidWithoutThisPaymentCop, 0);
+    if (amountCop > maximumPaymentCop) {
+      throw new OperationsStoreError(
+        `El pago supera el saldo disponible de ${formatCop(maximumPaymentCop)}.`
+      );
+    }
+
+    const previousAmountCop = payment.amountCop;
+    const nowIso = new Date().toISOString();
+    payment.amountCop = amountCop;
+    payment.note =
+      input.note === undefined
+        ? payment.note
+        : input.note.trim() || "Pago corregido manualmente.";
+    payment.statusLabel = "Recibido";
+
+    finishPaymentCorrection(order, nowIso);
+    const outstandingCop = getOrderOutstandingCop(order);
+    order.timeline.push(
+      makeTimelineEvent({
+        type: "payment",
+        title: "Pago corregido",
+        detail:
+          previousAmountCop === amountCop
+            ? `Se actualizo la nota del pago por ${formatCop(amountCop)}.`
+            : `El pago se corrigio de ${formatCop(previousAmountCop)} a ${formatCop(amountCop)}. El saldo pendiente quedo en ${formatCop(outstandingCop)}.`,
+        atLabel: formatDateTimeLabel(nowIso),
+        completed: true,
+      })
+    );
+    store.updatedAtIso = nowIso;
+
+    return cloneValue({
+      order,
+      internalNote: `Pago corregido. El saldo pendiente quedo en ${formatCop(outstandingCop)}.`,
+      customerMessage: "",
+    });
+  });
+}
+
+export async function deletePayment(
+  orderId: string,
+  paymentId: string
+): Promise<OperationMutationResult> {
+  return withStoreMutation((store) => {
+    const order = getOrderByIdOrThrow(store, orderId);
+    const payment = getReceivedPaymentOrThrow(order, paymentId);
+    const nowIso = new Date().toISOString();
+
+    order.payments = order.payments.filter((candidate) => candidate.id !== paymentId);
+    finishPaymentCorrection(order, nowIso);
+    const outstandingCop = getOrderOutstandingCop(order);
+    order.timeline.push(
+      makeTimelineEvent({
+        type: "payment",
+        title: "Pago eliminado",
+        detail: `Se elimino el pago registrado por ${formatCop(payment.amountCop)}. El saldo pendiente quedo en ${formatCop(outstandingCop)}.`,
+        atLabel: formatDateTimeLabel(nowIso),
+        completed: true,
+      })
+    );
+    store.updatedAtIso = nowIso;
+
+    return cloneValue({
+      order,
+      internalNote: `Pago eliminado. El saldo pendiente quedo en ${formatCop(outstandingCop)}.`,
+      customerMessage: "",
+    });
   });
 }
 
