@@ -75,6 +75,7 @@ export interface CreateProductInput {
   priceCop: number;
   costCop: number;
   shippingCostCop: number;
+  pricingCalculation?: ProductPricingCalculation;
 }
 
 export interface UpdateProductPricingInput extends ProductPricingCalculation {

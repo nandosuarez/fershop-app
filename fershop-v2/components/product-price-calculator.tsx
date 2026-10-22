@@ -8,12 +8,25 @@ import {
   calculateMarginPercent,
   calculateProductPrice,
 } from "@/lib/price-calculation";
-import type { Product } from "@/lib/types";
+import type { Product, ProductPricingCalculation } from "@/lib/types";
+
+export interface ProductPriceValues {
+  costCop: number;
+  shippingCostCop: number;
+  priceCop: number;
+  pricingCalculation: ProductPricingCalculation;
+}
+
+type CalculatorProduct = Pick<
+  Product,
+  "id" | "name" | "costCop" | "shippingCostCop" | "priceCop" | "pricingCalculation"
+>;
 
 interface ProductPriceCalculatorProps {
-  product: Product;
+  product: CalculatorProduct;
   onClose: () => void;
-  onUpdated: (product: Product) => void;
+  onUpdated?: (product: Product) => void;
+  onApply?: (values: ProductPriceValues) => void;
 }
 
 interface ApiErrorPayload {
@@ -24,6 +37,7 @@ export function ProductPriceCalculator({
   product,
   onClose,
   onUpdated,
+  onApply,
 }: ProductPriceCalculatorProps) {
   const savedCalculation = product.pricingCalculation;
   const initialTrm = savedCalculation?.exchangeRateCop ?? 3800;
@@ -112,6 +126,22 @@ export function ProductPriceCalculator({
       return;
     }
 
+    if (onApply) {
+      onApply({
+        costCop: calculation.productCostCop,
+        shippingCostCop: calculation.shippingCostCop,
+        priceCop: Math.round(finalSalePriceCop),
+        pricingCalculation: {
+          purchasePriceUsd,
+          taxPercent,
+          shippingUsd,
+          exchangeRateCop,
+          marginPercent,
+        },
+      });
+      return;
+    }
+
     setIsSaving(true);
     setError(null);
     try {
@@ -132,7 +162,7 @@ export function ProductPriceCalculator({
         throw new Error(payload.message || "No pudimos actualizar el producto.");
       }
       const payload = (await response.json()) as { product: Product };
-      onUpdated(payload.product);
+      onUpdated?.(payload.product);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "No pudimos actualizar el producto.");
     } finally {
@@ -291,7 +321,11 @@ export function ProductPriceCalculator({
               Cancelar
             </button>
             <button type="submit" className="ops-button ops-button--primary" disabled={isSaving}>
-              {isSaving ? "Actualizando..." : "Aplicar y actualizar"}
+              {isSaving
+                ? "Actualizando..."
+                : onApply
+                  ? "Aplicar al producto"
+                  : "Aplicar y actualizar"}
             </button>
           </div>
         </div>

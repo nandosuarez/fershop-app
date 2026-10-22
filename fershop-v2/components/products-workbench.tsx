@@ -2,12 +2,28 @@
 
 import { useMemo, useState } from "react";
 
-import { ProductPriceCalculator } from "@/components/product-price-calculator";
+import {
+  ProductPriceCalculator,
+  type ProductPriceValues,
+} from "@/components/product-price-calculator";
 import { FormattedNumberInput } from "@/components/formatted-number-input";
 import { ListSearch } from "@/components/list-search";
 import { formatCop } from "@/lib/commerce";
 import { matchesSearch } from "@/lib/search";
-import type { Product, ProductCategory, ProductCategoryOption } from "@/lib/types";
+import type {
+  Product,
+  ProductCategory,
+  ProductCategoryOption,
+  ProductPricingCalculation,
+} from "@/lib/types";
+
+type ProductInputCurrency = "COP" | "USD";
+
+const formatUsd = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+});
 
 interface ProductsWorkbenchProps {
   initialProducts: Product[];
@@ -29,6 +45,10 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
   const [costCop, setCostCop] = useState(0);
   const [shippingCostCop, setShippingCostCop] = useState(0);
   const [priceCop, setPriceCop] = useState(0);
+  const [inputCurrency, setInputCurrency] = useState<ProductInputCurrency>("COP");
+  const [draftPricingCalculation, setDraftPricingCalculation] =
+    useState<ProductPricingCalculation>();
+  const [isFormCalculatorOpen, setIsFormCalculatorOpen] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -53,6 +73,14 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
   const calculatorProduct = calculatorProductId
     ? products.find((product) => product.id === calculatorProductId) ?? null
     : null;
+  const formCalculatorProduct = {
+    id: editingProductId ?? "new-product",
+    name: name.trim() || "Nuevo producto",
+    costCop,
+    shippingCostCop,
+    priceCop,
+    pricingCalculation: draftPricingCalculation,
+  };
   const filteredProducts = useMemo(
     () =>
       products.filter((product) =>
@@ -75,6 +103,9 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
     setCostCop(0);
     setShippingCostCop(0);
     setPriceCop(0);
+    setInputCurrency("COP");
+    setDraftPricingCalculation(undefined);
+    setIsFormCalculatorOpen(false);
     setImageFile(null);
     setImagePreviewUrl(null);
     setError(null);
@@ -189,6 +220,9 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
     setCostCop(product.costCop ?? 0);
     setShippingCostCop(product.shippingCostCop ?? 0);
     setPriceCop(product.priceCop);
+    setInputCurrency(product.pricingCalculation ? "USD" : "COP");
+    setDraftPricingCalculation(product.pricingCalculation);
+    setIsFormCalculatorOpen(false);
     setImageFile(null);
     setImagePreviewUrl(product.imageUrl ?? null);
     setError(null);
@@ -204,8 +238,28 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
       setEditingProductId(null);
       setImageFile(null);
       setImagePreviewUrl(null);
+      setDraftPricingCalculation(undefined);
+      setIsFormCalculatorOpen(false);
       setError(null);
     }
+  }
+
+  function chooseInputCurrency(currency: ProductInputCurrency) {
+    setInputCurrency(currency);
+    setError(null);
+    if (currency === "USD") {
+      setIsFormCalculatorOpen(true);
+    }
+  }
+
+  function applyCalculatedPrice(values: ProductPriceValues) {
+    setCostCop(values.costCop);
+    setShippingCostCop(values.shippingCostCop);
+    setPriceCop(values.priceCop);
+    setDraftPricingCalculation(values.pricingCalculation);
+    setInputCurrency("USD");
+    setIsFormCalculatorOpen(false);
+    setError(null);
   }
 
   function selectImage(file: File | null) {
@@ -259,6 +313,10 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
       setError("Escribe el costo del producto.");
       return;
     }
+    if (inputCurrency === "USD" && !draftPricingCalculation) {
+      setError("Usa la calculadora para convertir los valores en dolares.");
+      return;
+    }
 
     setIsSaving(true);
     setError(null);
@@ -278,6 +336,8 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
           costCop,
           shippingCostCop,
           priceCop,
+          pricingCalculation:
+            inputCurrency === "USD" ? draftPricingCalculation : undefined,
         }),
         }
       );
@@ -305,6 +365,8 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
       setEditingProductId(null);
       setImageFile(null);
       setImagePreviewUrl(null);
+      setDraftPricingCalculation(undefined);
+      setIsFormCalculatorOpen(false);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "No pudimos guardar el producto.");
     } finally {
@@ -473,44 +535,120 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
                 </select>
               </label>
 
-              <label className="product-form-field">
-                <span>Costo del producto</span>
-                <span className="product-money-input">
-                  <span>$</span>
-                  <FormattedNumberInput
-                    min={1}
-                    value={costCop}
-                    placeholder="0"
-                    onValueChange={setCostCop}
-                  />
-                </span>
-              </label>
+              <div className="product-currency-field product-form-field--wide">
+                <div>
+                  <strong>Moneda de los valores</strong>
+                  <small>El producto siempre se guardara finalmente en pesos colombianos.</small>
+                </div>
+                <div className="product-currency-options" role="group" aria-label="Moneda de los valores">
+                  <button
+                    type="button"
+                    className={inputCurrency === "COP" ? "is-active" : ""}
+                    aria-pressed={inputCurrency === "COP"}
+                    onClick={() => chooseInputCurrency("COP")}
+                  >
+                    <strong>COP</strong>
+                    <span>Ingresar en pesos</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={inputCurrency === "USD" ? "is-active" : ""}
+                    aria-pressed={inputCurrency === "USD"}
+                    onClick={() => chooseInputCurrency("USD")}
+                  >
+                    <strong>USD</strong>
+                    <span>Convertir con calculadora</span>
+                  </button>
+                </div>
+              </div>
 
-              <label className="product-form-field">
-                <span>Costo de envio</span>
-                <span className="product-money-input">
-                  <span>$</span>
-                  <FormattedNumberInput
-                    min={0}
-                    value={shippingCostCop}
-                    placeholder="0"
-                    onValueChange={setShippingCostCop}
-                  />
-                </span>
-              </label>
+              {inputCurrency === "COP" ? (
+                <>
+                  <label className="product-form-field">
+                    <span>Costo del producto</span>
+                    <span className="product-money-input">
+                      <span>$</span>
+                      <FormattedNumberInput
+                        min={1}
+                        value={costCop}
+                        placeholder="0"
+                        onValueChange={setCostCop}
+                      />
+                    </span>
+                  </label>
 
-              <label className="product-form-field product-form-field--wide">
-                <span>Precio de venta</span>
-                <span className="product-money-input">
-                  <span>$</span>
-                  <FormattedNumberInput
-                    min={1}
-                    value={priceCop}
-                    placeholder="0"
-                    onValueChange={setPriceCop}
-                  />
-                </span>
-              </label>
+                  <label className="product-form-field">
+                    <span>Costo de envio</span>
+                    <span className="product-money-input">
+                      <span>$</span>
+                      <FormattedNumberInput
+                        min={0}
+                        value={shippingCostCop}
+                        placeholder="0"
+                        onValueChange={setShippingCostCop}
+                      />
+                    </span>
+                  </label>
+
+                  <label className="product-form-field product-form-field--wide">
+                    <span>Precio de venta</span>
+                    <span className="product-money-input">
+                      <span>$</span>
+                      <FormattedNumberInput
+                        min={1}
+                        value={priceCop}
+                        placeholder="0"
+                        onValueChange={setPriceCop}
+                      />
+                    </span>
+                  </label>
+                </>
+              ) : (
+                <section className="product-usd-summary product-form-field--wide">
+                  <div className="product-usd-summary__header">
+                    <div>
+                      <span>Conversion a pesos</span>
+                      <strong>
+                        {draftPricingCalculation
+                          ? "Valores listos para guardar"
+                          : "Completa la calculadora en USD"}
+                      </strong>
+                    </div>
+                    <button
+                      type="button"
+                      className="ops-button"
+                      onClick={() => setIsFormCalculatorOpen(true)}
+                    >
+                      {draftPricingCalculation ? "Revisar calculo" : "Abrir calculadora"}
+                    </button>
+                  </div>
+
+                  <div className="product-usd-summary__values">
+                    <div>
+                      <span>Costo producto</span>
+                      <strong>{costCop > 0 ? formatCop(costCop) : "Pendiente"}</strong>
+                    </div>
+                    <div>
+                      <span>Costo envio</span>
+                      <strong>{formatCop(shippingCostCop)}</strong>
+                    </div>
+                    <div>
+                      <span>Precio de venta</span>
+                      <strong>{priceCop > 0 ? formatCop(priceCop) : "Pendiente"}</strong>
+                    </div>
+                  </div>
+
+                  {draftPricingCalculation ? (
+                    <p>
+                      Compra {formatUsd.format(draftPricingCalculation.purchasePriceUsd)} · Envio{" "}
+                      {formatUsd.format(draftPricingCalculation.shippingUsd)} · TRM{" "}
+                      {formatCop(draftPricingCalculation.exchangeRateCop)}
+                    </p>
+                  ) : (
+                    <p>La calculadora convertira costo, envio y precio de venta a COP.</p>
+                  )}
+                </section>
+              )}
 
               <span className="sr-only" aria-live="polite">
                 Categoria seleccionada: {categoryLabel}
@@ -683,6 +821,14 @@ export function ProductsWorkbench({ initialProducts, initialCategories }: Produc
             setProductFeedback(`${updatedProduct.name} fue actualizado correctamente.`);
             setCalculatorProductId(null);
           }}
+        />
+      ) : null}
+
+      {isFormCalculatorOpen ? (
+        <ProductPriceCalculator
+          product={formCalculatorProduct}
+          onClose={() => setIsFormCalculatorOpen(false)}
+          onApply={applyCalculatedPrice}
         />
       ) : null}
     </>

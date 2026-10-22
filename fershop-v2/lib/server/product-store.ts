@@ -10,6 +10,7 @@ import { getInventoryBalances } from "@/lib/server/inventory-balance";
 import type {
   CreateProductInput,
   Product,
+  ProductPricingCalculation,
   UpdateProductInput,
   UpdateProductPricingInput,
 } from "@/lib/types";
@@ -33,6 +34,44 @@ export class ProductStoreError extends Error {
 
 function cloneValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function normalizePricingCalculation(
+  input?: ProductPricingCalculation
+): ProductPricingCalculation | undefined {
+  if (!input) {
+    return undefined;
+  }
+
+  const pricingCalculation = {
+    purchasePriceUsd: Number(input.purchasePriceUsd),
+    taxPercent: Number(input.taxPercent),
+    shippingUsd: Number(input.shippingUsd),
+    exchangeRateCop: Number(input.exchangeRateCop),
+    marginPercent: Number(input.marginPercent),
+  };
+  const numericValues = Object.values(pricingCalculation);
+
+  if (numericValues.some((value) => !Number.isFinite(value))) {
+    throw new ProductStoreError("Revisa los valores de la calculadora.");
+  }
+  if (pricingCalculation.purchasePriceUsd <= 0) {
+    throw new ProductStoreError("El precio de compra en USD debe ser mayor a cero.");
+  }
+  if (pricingCalculation.taxPercent < 0 || pricingCalculation.taxPercent > 100) {
+    throw new ProductStoreError("El impuesto debe estar entre 0% y 100%.");
+  }
+  if (pricingCalculation.shippingUsd < 0) {
+    throw new ProductStoreError("El envio no puede ser negativo.");
+  }
+  if (pricingCalculation.exchangeRateCop <= 0) {
+    throw new ProductStoreError("La TRM debe ser mayor a cero.");
+  }
+  if (pricingCalculation.marginPercent >= 100) {
+    throw new ProductStoreError("El margen debe ser menor al 100%.");
+  }
+
+  return pricingCalculation;
 }
 
 function buildSeedStore(): ProductStore {
@@ -134,8 +173,19 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
     const category = await getProductCategory(input.category);
     const name = input.name.trim();
     const priceCop = Math.round(Number(input.priceCop));
-    const costCop = Math.round(Number(input.costCop));
-    const shippingCostCop = Math.round(Number(input.shippingCostCop));
+    const pricingCalculation = normalizePricingCalculation(input.pricingCalculation);
+    const costCop = pricingCalculation
+      ? Math.round(
+          pricingCalculation.purchasePriceUsd *
+            (1 + pricingCalculation.taxPercent / 100) *
+            pricingCalculation.exchangeRateCop
+        )
+      : Math.round(Number(input.costCop));
+    const shippingCostCop = pricingCalculation
+      ? Math.round(
+          pricingCalculation.shippingUsd * pricingCalculation.exchangeRateCop
+        )
+      : Math.round(Number(input.shippingCostCop));
     const imageUrl = input.imageUrl?.trim() || undefined;
 
     if (name.length < 2) {
@@ -174,6 +224,7 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
       priceCop,
       costCop,
       shippingCostCop,
+      pricingCalculation,
       tracksInventory: false,
       saleMode: "preorder",
       paymentPolicy: "split_50_50",
@@ -290,8 +341,19 @@ export async function updateProduct(
 
     const name = input.name.trim();
     const priceCop = Math.round(Number(input.priceCop));
-    const costCop = Math.round(Number(input.costCop));
-    const shippingCostCop = Math.round(Number(input.shippingCostCop));
+    const pricingCalculation = normalizePricingCalculation(input.pricingCalculation);
+    const costCop = pricingCalculation
+      ? Math.round(
+          pricingCalculation.purchasePriceUsd *
+            (1 + pricingCalculation.taxPercent / 100) *
+            pricingCalculation.exchangeRateCop
+        )
+      : Math.round(Number(input.costCop));
+    const shippingCostCop = pricingCalculation
+      ? Math.round(
+          pricingCalculation.shippingUsd * pricingCalculation.exchangeRateCop
+        )
+      : Math.round(Number(input.shippingCostCop));
     const imageUrl = input.imageUrl?.trim() || undefined;
 
     if (name.length < 2) {
@@ -333,7 +395,11 @@ export async function updateProduct(
       product,
       (inventoryBalances.get(product.id) ?? 0) > 0
     );
-    delete product.pricingCalculation;
+    if (pricingCalculation) {
+      product.pricingCalculation = pricingCalculation;
+    } else {
+      delete product.pricingCalculation;
+    }
 
     store.updatedAtIso = new Date().toISOString();
     await persistStore(store);

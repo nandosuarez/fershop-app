@@ -24,6 +24,15 @@ export async function POST(request: Request) {
       priceCop: Number(payload.priceCop ?? 0),
       costCop: Number(payload.costCop ?? 0),
       shippingCostCop: Number(payload.shippingCostCop ?? 0),
+      pricingCalculation: payload.pricingCalculation
+        ? {
+            purchasePriceUsd: Number(payload.pricingCalculation.purchasePriceUsd ?? 0),
+            taxPercent: Number(payload.pricingCalculation.taxPercent ?? 0),
+            shippingUsd: Number(payload.pricingCalculation.shippingUsd ?? 0),
+            exchangeRateCop: Number(payload.pricingCalculation.exchangeRateCop ?? 0),
+            marginPercent: Number(payload.pricingCalculation.marginPercent ?? 0),
+          }
+        : undefined,
     });
     return NextResponse.json({ product }, { status: 201 });
   } catch (error) {
