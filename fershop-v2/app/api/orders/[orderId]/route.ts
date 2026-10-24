@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
+  deleteOrder,
   getOperationsErrorMessage,
   getOrder,
   updateOrder,
@@ -56,6 +57,20 @@ export async function PUT(
           ? undefined
           : Boolean(payload.purchaseWithoutAdvance),
     });
+    return NextResponse.json(result);
+  } catch (error) {
+    const failure = getOperationsErrorMessage(error);
+    return NextResponse.json({ message: failure.message }, { status: failure.status });
+  }
+}
+
+export async function DELETE(
+  _request: Request,
+  context: { params: Promise<{ orderId: string }> }
+) {
+  try {
+    const { orderId } = await context.params;
+    const result = await deleteOrder(orderId);
     return NextResponse.json(result);
   } catch (error) {
     const failure = getOperationsErrorMessage(error);

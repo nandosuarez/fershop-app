@@ -462,6 +462,25 @@ export async function getOrder(orderId: string) {
   return order;
 }
 
+export async function deleteOrder(orderId: string) {
+  return withStoreMutation(async (store) => {
+    const orderIndex = store.orders.findIndex((candidate) => candidate.id === orderId);
+    if (orderIndex === -1) {
+      throw new OperationsStoreError("No encontramos el pedido solicitado.", 404);
+    }
+
+    const order = store.orders[orderIndex];
+
+    // Reconcile the reservation before removing the order so inventory is not lost.
+    await adjustInventoryForOrder(order.id, []);
+
+    store.orders.splice(orderIndex, 1);
+    store.updatedAtIso = new Date().toISOString();
+
+    return { deletedOrderId: order.id };
+  });
+}
+
 export async function createOrder(input: CreateOrderInput): Promise<OperationMutationResult> {
   const catalogProducts = await getProducts();
   return withStoreMutation(async (store) => {

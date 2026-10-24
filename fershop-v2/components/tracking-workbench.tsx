@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { FormattedNumberInput } from "@/components/formatted-number-input";
@@ -30,17 +31,26 @@ function formatOrderDate(iso: string) {
 }
 
 export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProps) {
+  const router = useRouter();
   const [order, setOrder] = useState<DashboardOrder | null>(null);
   const [paymentAmountCop, setPaymentAmountCop] = useState(0);
   const [comment, setComment] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<
-    "payment" | "payment-update" | "payment-delete" | "action" | "comment" | "notification" | null
+    | "payment"
+    | "payment-update"
+    | "payment-delete"
+    | "order-delete"
+    | "action"
+    | "comment"
+    | "notification"
+    | null
   >(null);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [editingPayment, setEditingPayment] = useState<PaymentLogEntry | null>(null);
   const [deletingPayment, setDeletingPayment] = useState<PaymentLogEntry | null>(null);
+  const [isDeletingOrder, setIsDeletingOrder] = useState(false);
   const [editedPaymentAmountCop, setEditedPaymentAmountCop] = useState(0);
   const [editedPaymentNote, setEditedPaymentNote] = useState("");
 
@@ -243,6 +253,32 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
     await postOrderChange("notifications", undefined, "notification", "Cliente marcado como notificado.");
   }
 
+  async function handleOrderDelete() {
+    if (!order) {
+      return;
+    }
+
+    setBusyAction("order-delete");
+    setError(null);
+    setFeedback(null);
+    try {
+      const response = await fetch(`/api/orders/${encodeURIComponent(order.id)}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const payload = (await response.json()) as ApiErrorPayload;
+        throw new Error(payload.message || "No pudimos eliminar el pedido.");
+      }
+
+      router.push(`/admin/pedidos?eliminado=${encodeURIComponent(order.id)}`);
+      router.refresh();
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "No pudimos eliminar el pedido.");
+      setBusyAction(null);
+      setIsDeletingOrder(false);
+    }
+  }
+
   if (isLoading) {
     return <div className="ops-card order-detail-loading">Cargando pedido...</div>;
   }
@@ -273,12 +309,26 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
             <p>{formatOrderDate(order.createdAtIso)} · {order.customerName}</p>
           </div>
         </div>
-        <Link
-          href={`/admin/nuevo-pedido?editar=${encodeURIComponent(order.id)}`}
-          className="ops-button"
-        >
-          Editar pedido
-        </Link>
+        <div className="order-detail-header__actions">
+          <button
+            type="button"
+            className="ops-button ops-button--danger"
+            disabled={busyAction !== null}
+            onClick={() => {
+              setError(null);
+              setFeedback(null);
+              setIsDeletingOrder(true);
+            }}
+          >
+            Eliminar pedido
+          </button>
+          <Link
+            href={`/admin/nuevo-pedido?editar=${encodeURIComponent(order.id)}`}
+            className="ops-button"
+          >
+            Editar pedido
+          </Link>
+        </div>
       </header>
 
       {feedback ? <div className="ops-success-notice order-detail-notice" role="status">{feedback}</div> : null}
@@ -622,6 +672,68 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
                   onClick={() => void handlePaymentDelete()}
                 >
                   {busyAction === "payment-delete" ? "Eliminando..." : "Si, eliminar pago"}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isDeletingOrder ? (
+        <div className="order-modal-backdrop" role="presentation">
+          <section
+            className="order-modal order-delete-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="order-delete-title"
+            aria-describedby="order-delete-description"
+          >
+            <div className="order-modal__header">
+              <h2 id="order-delete-title">Eliminar pedido</h2>
+              <button
+                type="button"
+                aria-label="Cerrar"
+                disabled={busyAction !== null}
+                onClick={() => setIsDeletingOrder(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="order-delete-confirmation">
+              <p id="order-delete-description">
+                Esta accion es definitiva. ¿Estas seguro de eliminar el pedido?
+              </p>
+              <div>
+                <span>
+                  <strong>{order.id}</strong>
+                  {order.customerName}
+                </span>
+                <strong>{formatCop(order.totalCop)}</strong>
+              </div>
+              <ul>
+                <li>Se eliminaran los pagos, comentarios y notificaciones asociados.</li>
+                <li>El pedido dejara de aparecer en informes y saldos pendientes.</li>
+                <li>Las unidades reservadas se devolveran al inventario.</li>
+              </ul>
+            </div>
+            <div className="order-modal__footer">
+              <span>Utiliza esta opcion solamente para corregir pedidos creados por error.</span>
+              <div>
+                <button
+                  type="button"
+                  className="ops-button"
+                  disabled={busyAction !== null}
+                  onClick={() => setIsDeletingOrder(false)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="ops-button ops-button--danger-solid"
+                  disabled={busyAction !== null}
+                  onClick={() => void handleOrderDelete()}
+                >
+                  {busyAction === "order-delete" ? "Eliminando..." : "Si, eliminar pedido"}
                 </button>
               </div>
             </div>

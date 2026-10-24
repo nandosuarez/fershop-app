@@ -11,6 +11,7 @@ import type { DashboardOrder } from "@/lib/types";
 interface OrdersWorkbenchProps {
   orders: DashboardOrder[];
   createdOrderId?: string;
+  deletedOrderId?: string;
 }
 
 function formatDate(iso: string) {
@@ -22,7 +23,7 @@ function formatDate(iso: string) {
   }).format(new Date(iso));
 }
 
-export function OrdersWorkbench({ orders, createdOrderId }: OrdersWorkbenchProps) {
+export function OrdersWorkbench({ orders, createdOrderId, deletedOrderId }: OrdersWorkbenchProps) {
   const [search, setSearch] = useState("");
   const filteredOrders = useMemo(
     () =>
@@ -56,6 +57,12 @@ export function OrdersWorkbench({ orders, createdOrderId }: OrdersWorkbenchProps
       {createdOrderId ? (
         <div className="ops-success-notice" role="status">
           Pedido {createdOrderId} guardado correctamente.
+        </div>
+      ) : null}
+
+      {deletedOrderId ? (
+        <div className="ops-success-notice" role="status">
+          Pedido {deletedOrderId} eliminado correctamente.
         </div>
       ) : null}
 
