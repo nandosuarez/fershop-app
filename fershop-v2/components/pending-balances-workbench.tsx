@@ -30,6 +30,27 @@ interface PendingCustomer {
 }
 
 const numberFormatter = new Intl.NumberFormat("es-CO");
+const printLogoUrl = "/brand/fershop-logo-print.png";
+
+function waitForNextFrame() {
+  return new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
+function waitForImageDecode(image: HTMLImageElement) {
+  return new Promise<void>((resolve) => {
+    const timeoutId = window.setTimeout(resolve, 3_000);
+    image.decode().then(
+      () => {
+        window.clearTimeout(timeoutId);
+        resolve();
+      },
+      () => {
+        window.clearTimeout(timeoutId);
+        resolve();
+      }
+    );
+  });
+}
 
 function getCustomerKey(order: DashboardOrder) {
   const phone = order.customerPhone.replace(/\D/g, "");
@@ -140,7 +161,7 @@ function PrintableBalanceReport({ customer }: { customer: PendingCustomer }) {
     <section className="balances-print-report" aria-label={`Estado de cuenta de ${customer.name}`}>
       <header className="balances-print-header">
         <div className="balances-print-brand">
-          <img src="/brand/fershop-logo-light.png" alt="FerShop USA" />
+          <img id="fershop-print-logo" src={printLogoUrl} alt="FerShop USA" />
         </div>
         <div>
           <span>Estado de cuenta</span>
@@ -281,6 +302,12 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
   }, [initialOrders]);
 
   useEffect(() => {
+    const logo = new window.Image();
+    logo.src = printLogoUrl;
+    void logo.decode().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     let isActive = true;
 
     async function refreshOrders() {
@@ -365,11 +392,17 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
     return () => window.removeEventListener("afterprint", clearPrintCustomer);
   }, []);
 
-  function printBalance(customerKey: string) {
+  async function printBalance(customerKey: string) {
     setPrintCustomerKey(customerKey);
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => window.print());
-    });
+    await waitForNextFrame();
+    await waitForNextFrame();
+
+    const logo = document.querySelector<HTMLImageElement>("#fershop-print-logo");
+    if (logo) {
+      await waitForImageDecode(logo);
+    }
+
+    window.print();
   }
 
   return (
@@ -498,7 +531,7 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                                   <button
                                     type="button"
                                     className="ops-button ops-button--primary"
-                                    onClick={() => printBalance(customer.key)}
+                                    onClick={() => void printBalance(customer.key)}
                                   >
                                     Imprimir / guardar PDF
                                   </button>

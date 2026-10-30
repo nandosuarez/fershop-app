@@ -1341,15 +1341,20 @@
   .balances-print-brand {
     width: 218px;
     height: 70px;
+    position: relative;
     display: flex;
     align-items: center;
+    overflow: hidden;
   }
 
   .balances-print-brand img {
-    width: 100%;
+    position: absolute;
+    top: -96px;
+    left: -16px;
+    width: 340px;
+    max-width: none;
     height: auto;
     display: block;
-    filter: brightness(0);
   }
 
   .balances-print-header > div:last-child {
