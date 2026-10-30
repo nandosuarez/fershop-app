@@ -974,13 +974,13 @@
 }
 
 .balances-highlight-card {
-  border-color: #d2b982;
-  background: linear-gradient(145deg, #fffaf0, #f5eddd);
+  border-color: #d6d7e2;
+  background: linear-gradient(145deg, #fdfdff, #e9eaf3);
 }
 
 .balances-highlight-card strong,
 .balances-pending-amount {
-  color: #76501a;
+  color: #202027;
 }
 
 .balances-section {
@@ -1006,7 +1006,7 @@
 }
 
 .balances-table tr.is-selected > td {
-  background: #f0ede6;
+  background: #eff0f6;
 }
 
 .balances-customer-cell {
@@ -1033,10 +1033,10 @@
   width: 42px;
   height: 42px;
   flex: 0 0 42px;
-  border: 1px solid #ddd7cb;
+  border: 1px solid #d8d8e1;
   border-radius: 50%;
-  background: #f3efe7;
-  color: #615849;
+  background: #ebecf3;
+  color: #33333b;
   display: grid;
   place-items: center;
   font-family: "Iowan Old Style", "Palatino Linotype", serif;
@@ -1109,8 +1109,8 @@
 }
 
 .balances-detail-total strong {
-  color: #76501a;
-  font-family: "Iowan Old Style", "Palatino Linotype", serif;
+  color: #202027;
+  font-family: Didot, "Bodoni MT", "Bodoni 72", "Iowan Old Style", serif;
   font-size: 1.55rem;
   font-weight: 500;
 }
@@ -1123,7 +1123,7 @@
 
 .balances-order-list {
   padding: 16px;
-  background: #f7f5f0;
+  background: #f7f7fa;
   display: grid;
   gap: 14px;
 }
@@ -1159,7 +1159,7 @@
 .balances-order-summary {
   padding: 14px 16px;
   border-bottom: 1px solid var(--ops-line);
-  background: #fafaf8;
+  background: #fafafd;
   display: grid;
   grid-template-columns: repeat(3, minmax(120px, 1fr));
   gap: 12px;
@@ -1177,7 +1177,7 @@
 }
 
 .balances-order-summary .is-pending strong {
-  color: #76501a;
+  color: #202027;
 }
 
 .balances-product-list {
@@ -1314,16 +1314,24 @@
   }
 
   .balances-print-report {
+    --print-ink: #111114;
+    --print-muted: #66666e;
+    --print-line: #d8d8df;
+    --print-soft: #f6f6f9;
+    --print-lavender: #e8e9f2;
     width: 100%;
-    color: #1c1c1a;
+    color: var(--print-ink);
     display: block !important;
-    font-family: "Aptos", "Segoe UI", sans-serif;
+    font-family: "Aptos", "Helvetica Neue", "Segoe UI", sans-serif;
     font-size: 10pt;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   .balances-print-header {
-    padding-bottom: 16px;
-    border-bottom: 2px solid #1c1c1a;
+    min-height: 86px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--print-ink);
     display: flex;
     align-items: end;
     justify-content: space-between;
@@ -1331,48 +1339,49 @@
   }
 
   .balances-print-brand {
+    width: 218px;
+    height: 70px;
     display: flex;
-    align-items: baseline;
-    gap: 9px;
+    align-items: center;
   }
 
-  .balances-print-brand strong {
-    font-family: "Iowan Old Style", "Palatino Linotype", serif;
-    font-size: 29pt;
-    font-weight: 500;
-    line-height: 1;
-  }
-
-  .balances-print-brand span {
-    font-size: 9pt;
-    font-weight: 800;
-    letter-spacing: 0.34em;
+  .balances-print-brand img {
+    width: 100%;
+    height: auto;
+    display: block;
+    filter: brightness(0);
   }
 
   .balances-print-header > div:last-child {
     display: grid;
     justify-items: end;
-    gap: 4px;
+    gap: 7px;
   }
 
   .balances-print-header > div:last-child > span {
-    font-family: "Iowan Old Style", "Palatino Linotype", serif;
-    font-size: 18pt;
+    font-family: Didot, "Bodoni MT", "Bodoni 72", "Iowan Old Style", serif;
+    font-size: 21pt;
+    font-weight: 400;
+    letter-spacing: -0.02em;
   }
 
   .balances-print-header small,
   .balances-print-customer span,
   .balances-print-summary span,
   .balances-print-order header span {
-    color: #66645e;
-    font-size: 8pt;
+    color: var(--print-muted);
+    font-size: 7.5pt;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
   }
 
   .balances-print-customer {
-    margin: 17px 0;
-    padding: 13px 14px;
-    border: 1px solid #d7d3ca;
-    border-radius: 7px;
+    margin: 20px 0 18px;
+    padding: 15px 16px;
+    border: 1px solid var(--print-line);
+    border-radius: 0;
+    background: var(--print-soft);
     display: grid;
     grid-template-columns: 1.4fr 1fr 1.4fr 1fr;
     gap: 14px;
@@ -1386,7 +1395,8 @@
   }
 
   .balances-print-customer strong {
-    font-size: 9pt;
+    font-size: 9.2pt;
+    font-weight: 600;
   }
 
   .balances-print-summary {
@@ -1397,26 +1407,29 @@
   }
 
   .balances-print-summary > div {
-    padding: 12px 14px;
-    border: 1px solid #d7d3ca;
-    border-radius: 7px;
+    min-height: 68px;
+    padding: 13px 15px;
+    border: 1px solid var(--print-line);
+    border-radius: 0;
+    justify-content: space-between;
   }
 
   .balances-print-summary strong {
-    font-family: "Iowan Old Style", "Palatino Linotype", serif;
-    font-size: 16pt;
-    font-weight: 500;
+    font-family: Didot, "Bodoni MT", "Bodoni 72", "Iowan Old Style", serif;
+    font-size: 17.5pt;
+    font-weight: 400;
+    letter-spacing: -0.02em;
   }
 
   .balances-print-summary .is-pending {
-    border-color: #b6975f;
-    background: #f7f1e5;
+    border-color: #cfd0dd;
+    background: var(--print-lavender);
   }
 
   .balances-print-summary .is-pending strong,
   .balances-print-order footer .is-pending,
   .balances-print-footer > div strong {
-    color: #6d4a16;
+    color: var(--print-ink);
   }
 
   .balances-print-orders {
@@ -1425,15 +1438,15 @@
   }
 
   .balances-print-order {
-    border: 1px solid #cfcac0;
-    border-radius: 7px;
+    border: 1px solid var(--print-line);
+    border-radius: 0;
     break-inside: avoid;
     overflow: hidden;
   }
 
   .balances-print-order > header {
-    padding: 10px 12px;
-    background: #f3f1eb;
+    padding: 11px 13px;
+    background: var(--print-lavender);
     display: grid;
     grid-template-columns: 0.8fr 1fr 1.5fr;
     gap: 14px;
@@ -1446,13 +1459,13 @@
 
   .balances-print-order th,
   .balances-print-order td {
-    padding: 8px 12px;
-    border-bottom: 1px solid #e3dfd7;
+    padding: 9px 13px;
+    border-bottom: 1px solid var(--print-line);
     text-align: left;
   }
 
   .balances-print-order th {
-    color: #66645e;
+    color: var(--print-muted);
     font-size: 7pt;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -1464,9 +1477,10 @@
   }
 
   .balances-print-payments {
-    padding: 8px 12px;
-    border-bottom: 1px solid #e3dfd7;
-    color: #66645e;
+    padding: 9px 13px;
+    border-bottom: 1px solid var(--print-line);
+    background: var(--print-soft);
+    color: var(--print-muted);
     display: flex;
     flex-wrap: wrap;
     gap: 7px 14px;
@@ -1474,7 +1488,7 @@
   }
 
   .balances-print-order > footer {
-    padding: 9px 12px;
+    padding: 10px 13px;
     display: flex;
     justify-content: flex-end;
     gap: 20px;
@@ -1482,9 +1496,9 @@
   }
 
   .balances-print-footer {
-    margin-top: 18px;
-    padding-top: 14px;
-    border-top: 2px solid #1c1c1a;
+    margin-top: 22px;
+    padding-top: 16px;
+    border-top: 1px solid var(--print-ink);
   }
 
   .balances-print-footer > div {
@@ -1495,15 +1509,16 @@
   }
 
   .balances-print-footer > div strong {
-    font-family: "Iowan Old Style", "Palatino Linotype", serif;
-    font-size: 20pt;
-    font-weight: 500;
+    font-family: Didot, "Bodoni MT", "Bodoni 72", "Iowan Old Style", serif;
+    font-size: 22pt;
+    font-weight: 400;
+    letter-spacing: -0.02em;
   }
 
   .balances-print-footer p {
     max-width: 560px;
     margin: 18px auto 0;
-    color: #66645e;
+    color: var(--print-muted);
     font-size: 8pt;
     line-height: 1.5;
     text-align: center;

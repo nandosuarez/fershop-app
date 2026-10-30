@@ -140,8 +140,7 @@ function PrintableBalanceReport({ customer }: { customer: PendingCustomer }) {
     <section className="balances-print-report" aria-label={`Estado de cuenta de ${customer.name}`}>
       <header className="balances-print-header">
         <div className="balances-print-brand">
-          <strong>Fer&apos;shop</strong>
-          <span>USA</span>
+          <img src="/brand/fershop-logo-light.png" alt="FerShop USA" />
         </div>
         <div>
           <span>Estado de cuenta</span>
