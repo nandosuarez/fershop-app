@@ -1329,7 +1329,7 @@
   }
 
   .balances-print-header {
-    min-height: 86px;
+    min-height: 112px;
     padding-bottom: 18px;
     border-bottom: 1px solid var(--print-ink);
     display: flex;
@@ -1339,8 +1339,8 @@
   }
 
   .balances-print-brand {
-    width: 218px;
-    height: 70px;
+    width: 280px;
+    height: 98px;
     position: relative;
     display: flex;
     align-items: center;
@@ -1349,9 +1349,9 @@
 
   .balances-print-brand img {
     position: absolute;
-    top: -96px;
-    left: -16px;
-    width: 340px;
+    top: -127px;
+    left: -36px;
+    width: 351px;
     max-width: none;
     height: auto;
     display: block;
