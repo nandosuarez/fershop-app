@@ -1324,6 +1324,7 @@
     display: block !important;
     font-family: "Aptos", "Helvetica Neue", "Segoe UI", sans-serif;
     font-size: 10pt;
+    overflow: visible;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
@@ -1438,15 +1439,19 @@
   }
 
   .balances-print-orders {
-    display: grid;
-    gap: 14px;
+    display: block;
+  }
+
+  .balances-print-order + .balances-print-order {
+    margin-top: 14px;
   }
 
   .balances-print-order {
     border: 1px solid var(--print-line);
     border-radius: 0;
-    break-inside: avoid;
-    overflow: hidden;
+    break-inside: auto;
+    page-break-inside: auto;
+    overflow: visible;
   }
 
   .balances-print-order > header {
@@ -1455,11 +1460,24 @@
     display: grid;
     grid-template-columns: 0.8fr 1fr 1.5fr;
     gap: 14px;
+    break-after: avoid;
+    page-break-after: avoid;
   }
 
   .balances-print-order table {
     width: 100%;
     border-collapse: collapse;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .balances-print-order thead {
+    display: table-header-group;
+  }
+
+  .balances-print-order tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .balances-print-order th,
@@ -1490,6 +1508,8 @@
     flex-wrap: wrap;
     gap: 7px 14px;
     font-size: 8pt;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .balances-print-order > footer {
@@ -1498,12 +1518,16 @@
     justify-content: flex-end;
     gap: 20px;
     font-size: 8.5pt;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .balances-print-footer {
     margin-top: 22px;
     padding-top: 16px;
     border-top: 1px solid var(--print-ink);
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .balances-print-footer > div {

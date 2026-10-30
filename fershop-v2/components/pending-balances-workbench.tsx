@@ -52,6 +52,20 @@ function waitForImageDecode(image: HTMLImageElement) {
   });
 }
 
+async function fetchLatestOrders() {
+  try {
+    const response = await fetch("/api/orders", { cache: "no-store" });
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as OrdersApiPayload;
+    return Array.isArray(payload.orders) ? payload.orders : null;
+  } catch {
+    return null;
+  }
+}
+
 function getCustomerKey(order: DashboardOrder) {
   const phone = order.customerPhone.replace(/\D/g, "");
   if (phone) {
@@ -295,7 +309,8 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
   const [orders, setOrders] = useState(initialOrders);
   const [search, setSearch] = useState("");
   const [expandedCustomerKey, setExpandedCustomerKey] = useState<string | null>(null);
-  const [printCustomerKey, setPrintCustomerKey] = useState<string | null>(null);
+  const [printCustomer, setPrintCustomer] = useState<PendingCustomer | null>(null);
+  const [printingCustomerKey, setPrintingCustomerKey] = useState<string | null>(null);
 
   useEffect(() => {
     setOrders(initialOrders);
@@ -311,17 +326,9 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
     let isActive = true;
 
     async function refreshOrders() {
-      try {
-        const response = await fetch("/api/orders", { cache: "no-store" });
-        if (!response.ok) {
-          return;
-        }
-        const payload = (await response.json()) as OrdersApiPayload;
-        if (isActive && Array.isArray(payload.orders)) {
-          setOrders(payload.orders);
-        }
-      } catch {
-        // Keep the last valid balances visible if a background refresh fails.
+      const latestOrders = await fetchLatestOrders();
+      if (isActive && latestOrders) {
+        setOrders(latestOrders);
       }
     }
 
@@ -375,8 +382,6 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
       ),
     [customers]
   );
-  const printCustomer = customers.find((customer) => customer.key === printCustomerKey) ?? null;
-
   useEffect(() => {
     if (expandedCustomerKey && !customers.some((customer) => customer.key === expandedCustomerKey)) {
       setExpandedCustomerKey(null);
@@ -385,7 +390,7 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
 
   useEffect(() => {
     function clearPrintCustomer() {
-      setPrintCustomerKey(null);
+      setPrintCustomer(null);
     }
 
     window.addEventListener("afterprint", clearPrintCustomer);
@@ -393,16 +398,37 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
   }, []);
 
   async function printBalance(customerKey: string) {
-    setPrintCustomerKey(customerKey);
-    await waitForNextFrame();
-    await waitForNextFrame();
+    setPrintingCustomerKey(customerKey);
 
-    const logo = document.querySelector<HTMLImageElement>("#fershop-print-logo");
-    if (logo) {
-      await waitForImageDecode(logo);
+    try {
+      let customer = customers.find((candidate) => candidate.key === customerKey) ?? null;
+      const latestOrders = await fetchLatestOrders();
+
+      if (latestOrders) {
+        setOrders(latestOrders);
+        customer =
+          groupPendingCustomers(latestOrders).find((candidate) => candidate.key === customerKey) ??
+          null;
+      }
+
+      if (!customer) {
+        return;
+      }
+
+      setPrintCustomer(customer);
+      await waitForNextFrame();
+      await waitForNextFrame();
+      await document.fonts.ready;
+
+      const logo = document.querySelector<HTMLImageElement>("#fershop-print-logo");
+      if (logo) {
+        await waitForImageDecode(logo);
+      }
+
+      window.print();
+    } finally {
+      setPrintingCustomerKey(null);
     }
-
-    window.print();
   }
 
   return (
@@ -531,9 +557,12 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                                   <button
                                     type="button"
                                     className="ops-button ops-button--primary"
+                                    disabled={printingCustomerKey !== null}
                                     onClick={() => void printBalance(customer.key)}
                                   >
-                                    Imprimir / guardar PDF
+                                    {printingCustomerKey === customer.key
+                                      ? "Preparando PDF..."
+                                      : "Imprimir / guardar PDF"}
                                   </button>
                                 </div>
                               </header>
