@@ -113,6 +113,43 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.capital-report-sales-summary {
+  align-items: center;
+  background:
+    linear-gradient(110deg, rgba(225, 238, 229, 0.78), rgba(255, 255, 255, 0.94) 58%),
+    var(--capital-paper);
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 24px;
+}
+
+.capital-report-sales-summary > div {
+  display: grid;
+  gap: 5px;
+}
+
+.capital-report-sales-summary span {
+  color: var(--ops-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.capital-report-sales-summary strong {
+  color: var(--capital-ink);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.75rem, 2.6vw, 2.55rem);
+  font-weight: 500;
+}
+
+.capital-report-sales-summary small {
+  color: var(--ops-muted);
+  max-width: 360px;
+  text-align: right;
+}
+
 .capital-report-metric-card,
 .capital-report-source-card {
   padding: 18px 20px;
@@ -268,7 +305,7 @@
 }
 
 .capital-funding-table {
-  min-width: 1180px;
+  min-width: 1320px;
 }
 
 .capital-report-source-grid--three {
@@ -316,6 +353,16 @@
 
   .capital-report-example {
     grid-template-columns: 1fr;
+  }
+
+  .capital-report-sales-summary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .capital-report-sales-summary small {
+    text-align: left;
   }
 
   .capital-report-example > b {

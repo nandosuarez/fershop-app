@@ -12,6 +12,7 @@ export interface OrderFinancialBreakdown {
 }
 
 export interface OrderPurchaseFundingBreakdown {
+  saleTotalCop: number;
   productCostCop: number;
   shippingCostCop: number;
   totalPurchaseCostCop: number;
@@ -62,12 +63,14 @@ function summarizePurchaseCosts(items: OrderItem[]) {
   return items.reduce(
     (summary, item) => {
       const quantity = asNonNegativeInteger(item.quantity);
+      summary.saleTotalCop += asNonNegativeInteger(item.lineTotalCop);
       summary.productCostCop += asNonNegativeInteger(item.unitCostCop) * quantity;
       summary.shippingCostCop += asNonNegativeInteger(item.unitShippingCostCop) * quantity;
       summary.hasCompleteCosts &&= typeof item.unitCostCop === "number";
       return summary;
     },
     {
+      saleTotalCop: 0,
       productCostCop: 0,
       shippingCostCop: 0,
       hasCompleteCosts: items.length > 0,
@@ -110,6 +113,7 @@ export function getOrderPurchaseFundingBreakdown(
   const totalPaidCop = getReceivedPaymentsCop(order);
 
   return {
+    saleTotalCop: selectedCosts.saleTotalCop,
     productCostCop: selectedCosts.productCostCop,
     shippingCostCop: selectedCosts.shippingCostCop,
     totalPurchaseCostCop,

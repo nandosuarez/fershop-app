@@ -90,6 +90,7 @@ test("calcula producto mas envio menos anticipo como dinero propio", () => {
   });
   const breakdown = getOrderPurchaseFundingBreakdown(order);
 
+  assert.equal(breakdown.saleTotalCop, 500_000);
   assert.equal(breakdown.totalPurchaseCostCop, 320_000);
   assert.equal(breakdown.customerContributionCop, 200_000);
   assert.equal(breakdown.ownCapitalCop, 120_000);

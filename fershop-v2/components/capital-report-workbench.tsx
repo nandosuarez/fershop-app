@@ -105,6 +105,7 @@ export function CapitalReportWorkbench({
 
     const directTotals = rows.reduce(
       (totals, row) => {
+        totals.saleTotalCop += row.funding.saleTotalCop;
         totals.productCostCop += row.funding.productCostCop;
         totals.shippingCostCop += row.funding.shippingCostCop;
         totals.totalPurchaseCostCop += row.funding.totalPurchaseCostCop;
@@ -118,6 +119,7 @@ export function CapitalReportWorkbench({
         return totals;
       },
       {
+        saleTotalCop: 0,
         productCostCop: 0,
         shippingCostCop: 0,
         totalPurchaseCostCop: 0,
@@ -157,6 +159,7 @@ export function CapitalReportWorkbench({
 
     return {
       rows,
+      customerPurchasesTotalCop: directTotals.saleTotalCop,
       productCostCop: directTotals.productCostCop + inventoryTotals.productCostCop,
       shippingCostCop:
         directTotals.shippingCostCop + inventoryTotals.shippingCostCop,
@@ -212,6 +215,14 @@ export function CapitalReportWorkbench({
         <p className="order-form-error" role="alert">La fecha inicial debe ser anterior o igual a la fecha final.</p>
       ) : (
         <>
+          <article className="ops-card capital-report-sales-summary">
+            <div>
+              <span>Total de las compras</span>
+              <strong>{formatCop(report.customerPurchasesTotalCop)}</strong>
+            </div>
+            <small>Valor total vendido a los clientes en los pedidos del periodo</small>
+          </article>
+
           <section className="capital-report-hero-grid" aria-label="Resumen del capital">
             <article className="ops-card capital-report-hero-card capital-report-hero-card--capital">
               <span>Dinero propio invertido</span>
@@ -276,12 +287,13 @@ export function CapitalReportWorkbench({
             {report.rows.length ? (
               <div className="ops-table-scroll">
                 <table className="ops-table capital-report-table capital-funding-table">
-                  <thead><tr><th>Pedido y cliente</th><th>Productos</th><th>Costo producto</th><th>Envio</th><th>Costo total</th><th>Cliente aporto</th><th>Dinero propio</th><th>% propio</th></tr></thead>
+                  <thead><tr><th>Pedido y cliente</th><th>Productos</th><th>Total compra</th><th>Costo producto</th><th>Envio</th><th>Costo total</th><th>Cliente aporto</th><th>Dinero propio</th><th>% propio</th></tr></thead>
                   <tbody>
                     {report.rows.map(({ order, funding }) => (
                       <tr key={order.id}>
                         <td><Link href={`/admin/seguimiento?order=${order.id}`} className="ops-order-link">{order.id}</Link><strong>{order.customerName}</strong><small>{formatDate(getDateKey(order.createdAtIso))}</small></td>
                         <td>{order.productName}</td>
+                        <td><strong>{formatCop(funding.saleTotalCop)}</strong></td>
                         <td>{funding.hasCompleteCosts ? formatCop(funding.productCostCop) : "Costo incompleto"}</td>
                         <td>{formatCop(funding.shippingCostCop)}</td>
                         <td><strong>{formatCop(funding.totalPurchaseCostCop)}</strong></td>
