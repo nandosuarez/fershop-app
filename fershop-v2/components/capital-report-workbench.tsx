@@ -3,13 +3,12 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { getOrderFinancialBreakdown } from "@/lib/capital-report";
+import { getOrderPurchaseFundingBreakdown } from "@/lib/capital-report";
 import { formatCop } from "@/lib/commerce";
 import type {
   DashboardOrder,
-  Expense,
   InventorySnapshot,
-  PaymentLogEntry,
+  OrderItem,
   PurchaseOrder,
 } from "@/lib/types";
 
@@ -17,11 +16,14 @@ interface CapitalReportWorkbenchProps {
   orders: DashboardOrder[];
   inventory: InventorySnapshot;
   purchaseOrders: PurchaseOrder[];
-  expenses: Expense[];
 }
 
 const timeZone = "America/Bogota";
 const numberFormatter = new Intl.NumberFormat("es-CO");
+const percentFormatter = new Intl.NumberFormat("es-CO", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
 
 function getDateKey(iso: string) {
   const parts = Object.fromEntries(
@@ -38,34 +40,6 @@ function getDateKey(iso: string) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-function getPaymentDateKey(payment: PaymentLogEntry, order: DashboardOrder) {
-  return getDateKey(payment.recordedAtIso ?? order.createdAtIso);
-}
-
-function getReceivedThrough(order: DashboardOrder, dateKey: string) {
-  return order.payments
-    .filter(
-      (payment) =>
-        payment.statusCode === "received" && getPaymentDateKey(payment, order) <= dateKey
-    )
-    .reduce((sum, payment) => sum + Math.max(Math.round(payment.amountCop), 0), 0);
-}
-
-function getReceivedInRange(order: DashboardOrder, fromDate: string, toDate: string) {
-  return order.payments
-    .filter((payment) => {
-      const paymentDate = getPaymentDateKey(payment, order);
-      return payment.statusCode === "received" && paymentDate >= fromDate && paymentDate <= toDate;
-    })
-    .reduce((sum, payment) => sum + Math.max(Math.round(payment.amountCop), 0), 0);
-}
-
-function previousDateKey(dateKey: string) {
-  const date = new Date(`${dateKey}T12:00:00-05:00`);
-  date.setDate(date.getDate() - 1);
-  return getDateKey(date.toISOString());
-}
-
 function formatDate(dateKey: string) {
   return new Intl.DateTimeFormat("es-CO", {
     day: "numeric",
@@ -79,30 +53,27 @@ function getPurchaseOrderDate(order: PurchaseOrder) {
   return getDateKey(order.receivedAtIso ?? order.createdAtIso);
 }
 
-function getDirectOrderCapitalCop(order: DashboardOrder) {
-  return (order.items ?? []).reduce((sum, item) => {
-    const suppliedFromInventory = order.inventoryReserved && item.saleMode === "immediate";
-    return suppliedFromInventory
-      ? sum
-      : sum + Math.max(Math.round(item.unitCostCop ?? 0), 0) * item.quantity;
-  }, 0);
+function getDirectPurchaseItems(order: DashboardOrder): OrderItem[] {
+  const items = order.items ?? [];
+  if (!order.inventoryReserved) {
+    return items;
+  }
+  return items.filter((item) => item.saleMode !== "immediate");
 }
 
 export function CapitalReportWorkbench({
   orders,
   inventory,
   purchaseOrders,
-  expenses,
 }: CapitalReportWorkbenchProps) {
   const today = getDateKey(new Date().toISOString());
   const earliestDate = useMemo(() => {
     const dates = [
       ...orders.map((order) => getDateKey(order.createdAtIso)),
       ...purchaseOrders.map(getPurchaseOrderDate),
-      ...expenses.map((expense) => expense.expenseDate),
     ].sort();
     return dates[0] ?? `${today.slice(0, 4)}-01-01`;
-  }, [expenses, orders, purchaseOrders, today]);
+  }, [orders, purchaseOrders, today]);
   const [fromDate, setFromDate] = useState(earliestDate);
   const [toDate, setToDate] = useState(today);
   const hasValidRange = Boolean(fromDate && toDate && fromDate <= toDate);
@@ -112,137 +83,118 @@ export function CapitalReportWorkbench({
       return null;
     }
 
-    const beforeFromDate = previousDateKey(fromDate);
-    let receivedInRangeCop = 0;
-    let shippingCollectedInRangeCop = 0;
-    let shippingCollectedThroughCutoffCop = 0;
-    let shippingPlannedThroughCutoffCop = 0;
-    let capitalFinancedAtCutoffCop = 0;
-    let ordersWithIncompleteCosts = 0;
-
     const rows = orders
-      .filter((order) => getDateKey(order.createdAtIso) <= toDate)
+      .filter((order) => {
+        const orderDate = getDateKey(order.createdAtIso);
+        return orderDate >= fromDate && orderDate <= toDate;
+      })
       .map((order) => {
-        const paidBeforeRange = getReceivedThrough(order, beforeFromDate);
-        const paidThroughCutoff = getReceivedThrough(order, toDate);
-        const paidInRange = getReceivedInRange(order, fromDate, toDate);
-        const beforeBreakdown = getOrderFinancialBreakdown(order, paidBeforeRange);
-        const cutoffBreakdown = getOrderFinancialBreakdown(order, paidThroughCutoff);
-        const shippingCollectedInRange = Math.max(
-          cutoffBreakdown.shippingCollectedCop - beforeBreakdown.shippingCollectedCop,
-          0
-        );
-        const receivedForMerchandiseInRange = Math.max(
-          paidInRange - shippingCollectedInRange,
-          0
-        );
-        const capitalFinanced = Math.max(
-          cutoffBreakdown.productCostCop - cutoffBreakdown.receivedForMerchandiseCop,
-          0
-        );
-
-        receivedInRangeCop += paidInRange;
-        shippingCollectedInRangeCop += shippingCollectedInRange;
-        shippingCollectedThroughCutoffCop += cutoffBreakdown.shippingCollectedCop;
-        shippingPlannedThroughCutoffCop += cutoffBreakdown.plannedShippingCop;
-        capitalFinancedAtCutoffCop += capitalFinanced;
-        if (!cutoffBreakdown.hasCompleteCosts) {
-          ordersWithIncompleteCosts += 1;
-        }
-
-        const hasActivityInRange =
-          (getDateKey(order.createdAtIso) >= fromDate && getDateKey(order.createdAtIso) <= toDate) ||
-          paidInRange > 0;
-
+        const directItems = getDirectPurchaseItems(order);
         return {
           order,
-          paidInRange,
-          shippingCollectedInRange,
-          receivedForMerchandiseInRange,
-          capitalFinanced,
-          cutoffBreakdown,
-          hasActivityInRange,
+          directItemCount: directItems.length,
+          funding: getOrderPurchaseFundingBreakdown(order, directItems),
         };
       })
-      .filter((row) => row.hasActivityInRange)
-      .sort((left, right) => {
-        const financeComparison = right.capitalFinanced - left.capitalFinanced;
-        return financeComparison || right.order.createdAtIso.localeCompare(left.order.createdAtIso);
-      });
-
-    const directPurchaseCapitalCop = orders.reduce((sum, order) => {
-      const orderDate = getDateKey(order.createdAtIso);
-      if (orderDate < fromDate || orderDate > toDate) {
-        return sum;
-      }
-      return sum + getDirectOrderCapitalCop(order);
-    }, 0);
-
-    const inventoryPurchaseCapitalCop = purchaseOrders
-      .filter((order) => {
-        const purchaseDate = getPurchaseOrderDate(order);
-        return order.statusCode === "received" && purchaseDate >= fromDate && purchaseDate <= toDate;
-      })
-      .reduce(
-        (sum, order) =>
-          sum +
-          order.items.reduce(
-            (itemSum, item) => itemSum + item.unitCostCop * item.quantity,
-            0
-          ),
-        0
+      .filter((row) => row.directItemCount > 0)
+      .sort(
+        (left, right) =>
+          right.funding.ownCapitalCop - left.funding.ownCapitalCop ||
+          right.order.createdAtIso.localeCompare(left.order.createdAtIso)
       );
 
-    const shippingSpentThroughCutoffCop = expenses
-      .filter(
-        (expense) =>
-          expense.paymentSource === "shipping_fund" && expense.expenseDate <= toDate
-      )
-      .reduce((sum, expense) => sum + expense.amountCop, 0);
-
-    const currentInventoryProductCapitalCop = inventory.items.reduce(
-      (sum, item) =>
-        sum + item.availableQuantity * Math.max(Math.round(item.product.costCop ?? 0), 0),
-      0
+    const directTotals = rows.reduce(
+      (totals, row) => {
+        totals.productCostCop += row.funding.productCostCop;
+        totals.shippingCostCop += row.funding.shippingCostCop;
+        totals.totalPurchaseCostCop += row.funding.totalPurchaseCostCop;
+        totals.customerContributionCop += row.funding.customerContributionCop;
+        totals.ownCapitalCop += row.funding.ownCapitalCop;
+        totals.totalPaidCop += row.funding.totalPaidCop;
+        totals.paidAfterPurchaseCop += row.funding.paidAfterPurchaseCop;
+        if (!row.funding.hasCompleteCosts) {
+          totals.ordersWithIncompleteCosts += 1;
+        }
+        return totals;
+      },
+      {
+        productCostCop: 0,
+        shippingCostCop: 0,
+        totalPurchaseCostCop: 0,
+        customerContributionCop: 0,
+        ownCapitalCop: 0,
+        totalPaidCop: 0,
+        paidAfterPurchaseCop: 0,
+        ordersWithIncompleteCosts: 0,
+      }
     );
+
+    const inventoryTotals = purchaseOrders
+      .filter((order) => {
+        const purchaseDate = getPurchaseOrderDate(order);
+        return (
+          order.statusCode === "received" &&
+          purchaseDate >= fromDate &&
+          purchaseDate <= toDate
+        );
+      })
+      .reduce(
+        (totals, order) => {
+          order.items.forEach((item) => {
+            totals.productCostCop += item.unitCostCop * item.quantity;
+            totals.shippingCostCop += item.unitShippingCostCop * item.quantity;
+          });
+          return totals;
+        },
+        { productCostCop: 0, shippingCostCop: 0 }
+      );
+    const inventoryPurchaseCostCop =
+      inventoryTotals.productCostCop + inventoryTotals.shippingCostCop;
+    const totalPurchaseCostCop =
+      directTotals.totalPurchaseCostCop + inventoryPurchaseCostCop;
+    const ownCapitalCop = directTotals.ownCapitalCop + inventoryPurchaseCostCop;
+    const customerContributionCop = directTotals.customerContributionCop;
 
     return {
       rows,
-      receivedInRangeCop,
-      shippingCollectedInRangeCop,
-      receivedForMerchandiseInRangeCop:
-        receivedInRangeCop - shippingCollectedInRangeCop,
-      capitalInvestedInRangeCop: directPurchaseCapitalCop + inventoryPurchaseCapitalCop,
-      directPurchaseCapitalCop,
-      inventoryPurchaseCapitalCop,
-      capitalFinancedAtCutoffCop,
-      ordersWithIncompleteCosts,
-      currentInventoryProductCapitalCop,
-      shippingPendingAtCutoffCop: Math.max(
-        shippingPlannedThroughCutoffCop - shippingCollectedThroughCutoffCop,
-        0
-      ),
-      shippingFundBalanceAtCutoffCop:
-        shippingCollectedThroughCutoffCop - shippingSpentThroughCutoffCop,
+      productCostCop: directTotals.productCostCop + inventoryTotals.productCostCop,
+      shippingCostCop:
+        directTotals.shippingCostCop + inventoryTotals.shippingCostCop,
+      totalPurchaseCostCop,
+      customerContributionCop,
+      customerContributionPercent:
+        totalPurchaseCostCop > 0
+          ? Math.round((customerContributionCop / totalPurchaseCostCop) * 10_000) / 100
+          : 0,
+      ownCapitalCop,
+      ownCapitalPercent:
+        totalPurchaseCostCop > 0
+          ? Math.round((ownCapitalCop / totalPurchaseCostCop) * 10_000) / 100
+          : 0,
+      totalPaidCop: directTotals.totalPaidCop,
+      paidAfterPurchaseCop: directTotals.paidAfterPurchaseCop,
+      directOwnCapitalCop: directTotals.ownCapitalCop,
+      inventoryPurchaseCostCop,
+      ordersWithIncompleteCosts: directTotals.ordersWithIncompleteCosts,
     };
-  }, [expenses, fromDate, hasValidRange, inventory.items, orders, purchaseOrders, toDate]);
+  }, [fromDate, hasValidRange, orders, purchaseOrders, toDate]);
 
   return (
     <main className="ops-page capital-report-page">
       <div className="ops-page-header">
         <div>
           <p className="ops-kicker">Informes</p>
-          <h1>Capital y recaudo</h1>
+          <h1>Capital invertido</h1>
           <p className="capital-report-intro">
-            Separa el dinero invertido, lo recibido del cliente y la parte realmente recaudada para envios.
+            Cuanto costo comprar la mercancia y cuanto salio realmente del dinero de FerShop.
           </p>
         </div>
       </div>
 
       <section className="ops-card reports-filter-card">
         <div>
-          <strong>Periodo analizado</strong>
-          <span>Incluye pedidos creados y compras de inventario recibidas en estas fechas.</span>
+          <strong>Periodo de las compras</strong>
+          <span>Pedidos creados y ordenes de inventario recibidas en estas fechas.</span>
         </div>
         <div className="reports-date-fields">
           <label>
@@ -257,143 +209,97 @@ export function CapitalReportWorkbench({
       </section>
 
       {!hasValidRange || !report ? (
-        <p className="order-form-error" role="alert">
-          La fecha inicial debe ser anterior o igual a la fecha final.
-        </p>
+        <p className="order-form-error" role="alert">La fecha inicial debe ser anterior o igual a la fecha final.</p>
       ) : (
         <>
-          <section className="capital-report-hero-grid" aria-label="Resumen de capital y recaudo">
+          <section className="capital-report-hero-grid" aria-label="Resumen del capital">
             <article className="ops-card capital-report-hero-card capital-report-hero-card--capital">
-              <span>Capital invertido en el periodo</span>
-              <strong>{formatCop(report.capitalInvestedInRangeCop)}</strong>
-              <small>Costo de todos los pedidos, incluso cuando el cliente no dio anticipo</small>
+              <span>Dinero propio invertido</span>
+              <strong>{formatCop(report.ownCapitalCop)}</strong>
+              <small>Lo que FerShop tuvo que completar para poder comprar</small>
             </article>
             <article className="ops-card capital-report-hero-card">
-              <span>Recibido de clientes</span>
-              <strong>{formatCop(report.receivedInRangeCop)}</strong>
-              <small>Pagos registrados entre {formatDate(fromDate)} y {formatDate(toDate)}</small>
+              <span>Costo total de las compras</span>
+              <strong>{formatCop(report.totalPurchaseCostCop)}</strong>
+              <small>Producto mas envio de todos los articulos comprados</small>
             </article>
             <article className="ops-card capital-report-hero-card capital-report-hero-card--shipping">
-              <span>De esos pagos, envio</span>
-              <strong>{formatCop(report.shippingCollectedInRangeCop)}</strong>
-              <small>Calculado proporcionalmente sobre cada pedido</small>
+              <span>Dinero aportado por clientes</span>
+              <strong>{formatCop(report.customerContributionCop)}</strong>
+              <small>Anticipos disponibles al momento de comprar</small>
             </article>
             <article className="ops-card capital-report-hero-card capital-report-hero-card--risk">
-              <span>Capital financiado al corte</span>
-              <strong>{formatCop(report.capitalFinancedAtCutoffCop)}</strong>
-              <small>Mercancia comprada que aun no cubre el cliente</small>
+              <span>Porcentaje de dinero propio</span>
+              <strong>{percentFormatter.format(report.ownCapitalPercent)}%</strong>
+              <div className="capital-report-percentage" aria-label={`${report.ownCapitalPercent}% dinero propio`}>
+                <span style={{ width: `${Math.min(report.ownCapitalPercent, 100)}%` }} />
+              </div>
+              <small>Clientes aportaron {percentFormatter.format(report.customerContributionPercent)}%</small>
             </article>
+          </section>
+
+          <section className="ops-card capital-report-example">
+            <div><span>Ejemplo de la formula</span><strong>{formatCop(300_000)} producto</strong></div>
+            <b aria-hidden="true">+</b>
+            <div><span>Envio</span><strong>{formatCop(20_000)}</strong></div>
+            <b aria-hidden="true">-</b>
+            <div><span>Abono cliente</span><strong>{formatCop(200_000)}</strong></div>
+            <b aria-hidden="true">=</b>
+            <div className="capital-report-example__result"><span>Dinero propio</span><strong>{formatCop(120_000)} · 37,5%</strong></div>
           </section>
 
           <section className="capital-report-secondary-grid">
-            <article className="ops-card capital-report-metric-card">
-              <span>Recibido para mercancia</span>
-              <strong>{formatCop(report.receivedForMerchandiseInRangeCop)}</strong>
-            </article>
-            <article className="ops-card capital-report-metric-card">
-              <span>Capital actual en inventario</span>
-              <strong>{formatCop(report.currentInventoryProductCapitalCop)}</strong>
-              <small>Valor estimado con los costos vigentes</small>
-            </article>
-            <article className="ops-card capital-report-metric-card">
-              <span>Envio pendiente por recaudar</span>
-              <strong>{formatCop(report.shippingPendingAtCutoffCop)}</strong>
-            </article>
-            <article className={`ops-card capital-report-metric-card ${report.shippingFundBalanceAtCutoffCop < 0 ? "is-negative" : ""}`}>
-              <span>Saldo fondo de envios al corte</span>
-              <strong>{formatCop(report.shippingFundBalanceAtCutoffCop)}</strong>
-            </article>
+            <article className="ops-card capital-report-metric-card"><span>Costo de productos</span><strong>{formatCop(report.productCostCop)}</strong></article>
+            <article className="ops-card capital-report-metric-card"><span>Costo de envio incluido</span><strong>{formatCop(report.shippingCostCop)}</strong></article>
+            <article className="ops-card capital-report-metric-card"><span>Total pagado en pedidos directos</span><strong>{formatCop(report.totalPaidCop)}</strong><small>Incluye pagos posteriores a la compra</small></article>
+            <article className="ops-card capital-report-metric-card"><span>Recuperado despues de comprar</span><strong>{formatCop(report.paidAfterPurchaseCop)}</strong><small>No cambia la inversion inicial</small></article>
           </section>
 
-          <section className="ops-card capital-report-explanation">
-            <div>
-              <span className="capital-report-formula-number">1</span>
-              <p><strong>Pago del cliente</strong><small>Solo pagos recibidos</small></p>
-            </div>
+          <section className="ops-card capital-report-explanation capital-report-explanation--funding">
+            <div><span className="capital-report-formula-number">1</span><p><strong>Producto + envio</strong><small>Costo real para comprar</small></p></div>
             <span aria-hidden="true">-</span>
-            <div>
-              <span className="capital-report-formula-number">2</span>
-              <p><strong>Envio proporcional</strong><small>Segun el porcentaje pagado</small></p>
-            </div>
+            <div><span className="capital-report-formula-number">2</span><p><strong>Anticipo del cliente</strong><small>Dinero disponible al comprar</small></p></div>
             <span aria-hidden="true">=</span>
-            <div>
-              <span className="capital-report-formula-number">3</span>
-              <p><strong>Dinero para mercancia</strong><small>Base para recuperar capital</small></p>
-            </div>
+            <div><span className="capital-report-formula-number">3</span><p><strong>Dinero propio</strong><small>Capital puesto por FerShop</small></p></div>
           </section>
+
+          <p className="capital-report-method-note">
+            Si un pedido no tiene fecha de compra registrada, el informe toma como aporte del cliente los pagos marcados como anticipo. Las compras de inventario se consideran financiadas completamente con dinero propio y no se vuelven a sumar cuando se vende la existencia.
+          </p>
 
           {report.ordersWithIncompleteCosts > 0 ? (
-            <p className="capital-report-warning" role="status">
-              Hay {numberFormatter.format(report.ordersWithIncompleteCosts)} pedido(s) con uno o mas productos sin costo registrado. Esos valores no se pueden sumar completos al capital hasta corregir el costo del pedido.
-            </p>
+            <p className="capital-report-warning" role="status">Hay {numberFormatter.format(report.ordersWithIncompleteCosts)} pedido(s) con productos sin costo registrado. El capital real sera mayor cuando se completen esos costos.</p>
           ) : null}
 
           <section className="ops-card ops-table-card capital-report-detail">
-            <div className="ops-card__header">
-              <div>
-                <h2>Detalle por pedido</h2>
-                <span>{numberFormatter.format(report.rows.length)} pedido(s) con movimientos</span>
-              </div>
-            </div>
+            <div className="ops-card__header"><div><h2>Dinero propio por pedido</h2><span>{numberFormatter.format(report.rows.length)} compra(s) directas</span></div></div>
             {report.rows.length ? (
               <div className="ops-table-scroll">
-                <table className="ops-table capital-report-table">
-                  <thead>
-                    <tr>
-                      <th>Pedido y cliente</th>
-                      <th>Productos</th>
-                      <th>Costo mercancia</th>
-                      <th>Recibido</th>
-                      <th>De ese pago, envio</th>
-                      <th>Para mercancia</th>
-                      <th>Financiado al corte</th>
-                    </tr>
-                  </thead>
+                <table className="ops-table capital-report-table capital-funding-table">
+                  <thead><tr><th>Pedido y cliente</th><th>Productos</th><th>Costo producto</th><th>Envio</th><th>Costo total</th><th>Cliente aporto</th><th>Dinero propio</th><th>% propio</th></tr></thead>
                   <tbody>
-                    {report.rows.map((row) => (
-                      <tr key={row.order.id}>
-                        <td>
-                          <Link href={`/admin/seguimiento?order=${row.order.id}`} className="ops-order-link">
-                            {row.order.id}
-                          </Link>
-                          <strong>{row.order.customerName}</strong>
-                          <small>{formatDate(getDateKey(row.order.createdAtIso))}</small>
-                        </td>
-                        <td>{row.order.productName}</td>
-                        <td>
-                          {row.cutoffBreakdown.hasCompleteCosts
-                            ? formatCop(row.cutoffBreakdown.productCostCop)
-                            : "Costo incompleto"}
-                        </td>
-                        <td><strong>{formatCop(row.paidInRange)}</strong></td>
-                        <td className="capital-report-shipping-value">{formatCop(row.shippingCollectedInRange)}</td>
-                        <td>{formatCop(row.receivedForMerchandiseInRange)}</td>
-                        <td className={row.capitalFinanced > 0 ? "capital-report-financed-value" : ""}>
-                          <strong>{formatCop(row.capitalFinanced)}</strong>
-                        </td>
+                    {report.rows.map(({ order, funding }) => (
+                      <tr key={order.id}>
+                        <td><Link href={`/admin/seguimiento?order=${order.id}`} className="ops-order-link">{order.id}</Link><strong>{order.customerName}</strong><small>{formatDate(getDateKey(order.createdAtIso))}</small></td>
+                        <td>{order.productName}</td>
+                        <td>{funding.hasCompleteCosts ? formatCop(funding.productCostCop) : "Costo incompleto"}</td>
+                        <td>{formatCop(funding.shippingCostCop)}</td>
+                        <td><strong>{formatCop(funding.totalPurchaseCostCop)}</strong></td>
+                        <td className="capital-report-client-value">{formatCop(funding.customerContributionCop)}</td>
+                        <td className="capital-report-financed-value"><strong>{formatCop(funding.ownCapitalCop)}</strong></td>
+                        <td><strong>{percentFormatter.format(funding.ownCapitalPercent)}%</strong></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            ) : (
-              <div className="ops-empty-state reports-empty-state">
-                <h2>No hay movimientos en este periodo</h2>
-              </div>
-            )}
+            ) : <div className="ops-empty-state reports-empty-state"><h2>No hay compras directas en este periodo</h2></div>}
           </section>
 
-          <section className="capital-report-source-grid">
-            <article className="ops-card capital-report-source-card">
-              <span>Capital en pedidos directos</span>
-              <strong>{formatCop(report.directPurchaseCapitalCop)}</strong>
-              <small>Costo de mercancia de pedidos creados en el periodo, con o sin anticipo</small>
-            </article>
-            <article className="ops-card capital-report-source-card">
-              <span>Compras para inventario</span>
-              <strong>{formatCop(report.inventoryPurchaseCapitalCop)}</strong>
-              <small>Ordenes de compra recibidas en el periodo</small>
-            </article>
+          <section className="capital-report-source-grid capital-report-source-grid--three">
+            <article className="ops-card capital-report-source-card"><span>Dinero propio en pedidos</span><strong>{formatCop(report.directOwnCapitalCop)}</strong><small>Capital completado para compras de clientes</small></article>
+            <article className="ops-card capital-report-source-card"><span>Dinero propio en inventario</span><strong>{formatCop(report.inventoryPurchaseCostCop)}</strong><small>Ordenes de inventario recibidas en el periodo</small></article>
+            <article className="ops-card capital-report-source-card"><span>Capital que sigue en existencias</span><strong>{formatCop(inventory.totalInventoryValueCop)}</strong><small>Valor actual de las unidades disponibles</small></article>
           </section>
         </>
       )}

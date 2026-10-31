@@ -164,7 +164,7 @@ export function AdminLayoutShell({
                   : item.href === "/admin/informes"
                     ? [
                         { href: "/admin/informes/saldos", label: "Saldos pendientes" },
-                        { href: "/admin/informes/capital", label: "Capital y recaudo" },
+                        { href: "/admin/informes/capital", label: "Capital invertido" },
                         { href: "/admin/informes/ventas", label: "Ventas por fechas" },
                         { href: "/admin/informes/mensual", label: "Resumen mensual" },
                       ]

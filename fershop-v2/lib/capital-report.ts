@@ -1,4 +1,4 @@
-import type { DashboardOrder } from "@/lib/types";
+import type { DashboardOrder, OrderItem } from "@/lib/types";
 
 export interface OrderFinancialBreakdown {
   productCostCop: number;
@@ -8,9 +8,20 @@ export interface OrderFinancialBreakdown {
   shippingCollectedCop: number;
   shippingPendingCop: number;
   receivedForMerchandiseCop: number;
-  capitalInvestedCop: number;
-  capitalRecoveredCop: number;
-  capitalFinancedCop: number;
+  hasCompleteCosts: boolean;
+}
+
+export interface OrderPurchaseFundingBreakdown {
+  productCostCop: number;
+  shippingCostCop: number;
+  totalPurchaseCostCop: number;
+  customerPaidBeforePurchaseCop: number;
+  customerContributionCop: number;
+  customerContributionPercent: number;
+  ownCapitalCop: number;
+  ownCapitalPercent: number;
+  totalPaidCop: number;
+  paidAfterPurchaseCop: number;
   hasCompleteCosts: boolean;
 }
 
@@ -29,6 +40,94 @@ export function getReceivedPaymentsCop(order: Pick<DashboardOrder, "payments">) 
   return order.payments
     .filter((payment) => payment.statusCode === "received")
     .reduce((sum, payment) => sum + asNonNegativeInteger(payment.amountCop), 0);
+}
+
+function getCustomerPaidBeforePurchaseCop(
+  order: Pick<DashboardOrder, "payments" | "purchaseRecordedAtIso">
+) {
+  return order.payments
+    .filter((payment) => {
+      if (payment.statusCode !== "received") {
+        return false;
+      }
+      if (order.purchaseRecordedAtIso && payment.recordedAtIso) {
+        return payment.recordedAtIso <= order.purchaseRecordedAtIso;
+      }
+      return payment.kind === "advance";
+    })
+    .reduce((sum, payment) => sum + asNonNegativeInteger(payment.amountCop), 0);
+}
+
+function summarizePurchaseCosts(items: OrderItem[]) {
+  return items.reduce(
+    (summary, item) => {
+      const quantity = asNonNegativeInteger(item.quantity);
+      summary.productCostCop += asNonNegativeInteger(item.unitCostCop) * quantity;
+      summary.shippingCostCop += asNonNegativeInteger(item.unitShippingCostCop) * quantity;
+      summary.hasCompleteCosts &&= typeof item.unitCostCop === "number";
+      return summary;
+    },
+    {
+      productCostCop: 0,
+      shippingCostCop: 0,
+      hasCompleteCosts: items.length > 0,
+    }
+  );
+}
+
+export function getOrderPurchaseFundingBreakdown(
+  order: Pick<
+    DashboardOrder,
+    "items" | "payments" | "purchaseRecordedAtIso"
+  >,
+  includedItems?: OrderItem[]
+): OrderPurchaseFundingBreakdown {
+  const allItems = order.items ?? [];
+  const selectedItems = includedItems ?? allItems;
+  const allCosts = summarizePurchaseCosts(allItems);
+  const selectedCosts = summarizePurchaseCosts(selectedItems);
+  const allPurchaseCostCop = allCosts.productCostCop + allCosts.shippingCostCop;
+  const totalPurchaseCostCop =
+    selectedCosts.productCostCop + selectedCosts.shippingCostCop;
+  const customerPaidBeforePurchaseCop = getCustomerPaidBeforePurchaseCop(order);
+  const totalCustomerContributionCop = Math.min(
+    customerPaidBeforePurchaseCop,
+    allPurchaseCostCop
+  );
+  const customerContributionCop =
+    allPurchaseCostCop > 0
+      ? Math.min(
+          Math.round(
+            totalCustomerContributionCop * (totalPurchaseCostCop / allPurchaseCostCop)
+          ),
+          totalPurchaseCostCop
+        )
+      : 0;
+  const ownCapitalCop = Math.max(
+    totalPurchaseCostCop - customerContributionCop,
+    0
+  );
+  const totalPaidCop = getReceivedPaymentsCop(order);
+
+  return {
+    productCostCop: selectedCosts.productCostCop,
+    shippingCostCop: selectedCosts.shippingCostCop,
+    totalPurchaseCostCop,
+    customerPaidBeforePurchaseCop,
+    customerContributionCop,
+    customerContributionPercent:
+      totalPurchaseCostCop > 0
+        ? Math.round((customerContributionCop / totalPurchaseCostCop) * 10_000) / 100
+        : 0,
+    ownCapitalCop,
+    ownCapitalPercent:
+      totalPurchaseCostCop > 0
+        ? Math.round((ownCapitalCop / totalPurchaseCostCop) * 10_000) / 100
+        : 0,
+    totalPaidCop,
+    paidAfterPurchaseCop: Math.max(totalPaidCop - customerPaidBeforePurchaseCop, 0),
+    hasCompleteCosts: selectedCosts.hasCompleteCosts,
+  };
 }
 
 export function getOrderFinancialBreakdown(
@@ -62,7 +161,6 @@ export function getOrderFinancialBreakdown(
     Math.round(plannedShippingCop * paymentRatio)
   );
   const receivedForMerchandiseCop = Math.max(paidCop - shippingCollectedCop, 0);
-  const capitalInvestedCop = productCostCop;
 
   return {
     productCostCop,
@@ -72,9 +170,6 @@ export function getOrderFinancialBreakdown(
     shippingCollectedCop,
     shippingPendingCop: Math.max(plannedShippingCop - shippingCollectedCop, 0),
     receivedForMerchandiseCop,
-    capitalInvestedCop,
-    capitalRecoveredCop: Math.min(capitalInvestedCop, receivedForMerchandiseCop),
-    capitalFinancedCop: Math.max(capitalInvestedCop - receivedForMerchandiseCop, 0),
     hasCompleteCosts,
   };
 }
