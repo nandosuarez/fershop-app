@@ -69,15 +69,24 @@ test("un pedido sin pagos no alimenta el fondo de envios", () => {
   assert.equal(breakdown.shippingPendingCop, 64_000);
 });
 
-test("calcula el capital financiado solo despues de registrar la compra", () => {
+test("reconoce el capital aunque el cliente no haya dado anticipo ni se marque la compra", () => {
   const beforePurchase = getOrderFinancialBreakdown(makeOrder({ paidCop: 300_000 }));
   const afterPurchase = getOrderFinancialBreakdown(
     makeOrder({ paidCop: 300_000, purchased: true })
   );
 
-  assert.equal(beforePurchase.capitalFinancedCop, 0);
+  assert.equal(beforePurchase.capitalInvestedCop, 500_000);
+  assert.equal(beforePurchase.capitalFinancedCop, 226_374);
   assert.equal(afterPurchase.capitalInvestedCop, 500_000);
   assert.equal(afterPurchase.capitalFinancedCop, 226_374);
+});
+
+test("un pedido sin ningun pago deja todo el costo como capital financiado", () => {
+  const breakdown = getOrderFinancialBreakdown(makeOrder());
+
+  assert.equal(breakdown.capitalInvestedCop, 500_000);
+  assert.equal(breakdown.capitalRecoveredCop, 0);
+  assert.equal(breakdown.capitalFinancedCop, 500_000);
 });
 
 test("el reparto por producto coincide exactamente con el total recaudado", () => {

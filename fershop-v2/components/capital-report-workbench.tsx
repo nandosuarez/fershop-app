@@ -79,20 +79,13 @@ function getPurchaseOrderDate(order: PurchaseOrder) {
   return getDateKey(order.receivedAtIso ?? order.createdAtIso);
 }
 
-function getOrderInvestmentDate(order: DashboardOrder) {
-  if (order.purchaseRecordedAtIso) {
-    return getDateKey(order.purchaseRecordedAtIso);
-  }
-  if (order.inventoryReserved) {
-    return getDateKey(order.createdAtIso);
-  }
-  if (order.arrivalRecordedAtIso) {
-    return getDateKey(order.arrivalRecordedAtIso);
-  }
-  if (order.deliveredAtIso) {
-    return getDateKey(order.deliveredAtIso);
-  }
-  return null;
+function getDirectOrderCapitalCop(order: DashboardOrder) {
+  return (order.items ?? []).reduce((sum, item) => {
+    const suppliedFromInventory = order.inventoryReserved && item.saleMode === "immediate";
+    return suppliedFromInventory
+      ? sum
+      : sum + Math.max(Math.round(item.unitCostCop ?? 0), 0) * item.quantity;
+  }, 0);
 }
 
 export function CapitalReportWorkbench({
@@ -114,11 +107,6 @@ export function CapitalReportWorkbench({
   const [toDate, setToDate] = useState(today);
   const hasValidRange = Boolean(fromDate && toDate && fromDate <= toDate);
 
-  const inventoryProductIds = useMemo(
-    () => new Set(inventory.items.map((item) => item.product.id)),
-    [inventory.items]
-  );
-
   const report = useMemo(() => {
     if (!hasValidRange) {
       return null;
@@ -130,6 +118,7 @@ export function CapitalReportWorkbench({
     let shippingCollectedThroughCutoffCop = 0;
     let shippingPlannedThroughCutoffCop = 0;
     let capitalFinancedAtCutoffCop = 0;
+    let ordersWithIncompleteCosts = 0;
 
     const rows = orders
       .filter((order) => getDateKey(order.createdAtIso) <= toDate)
@@ -147,22 +136,23 @@ export function CapitalReportWorkbench({
           paidInRange - shippingCollectedInRange,
           0
         );
-        const investmentDate = getOrderInvestmentDate(order);
-        const hasInvestmentAtCutoff = Boolean(investmentDate && investmentDate <= toDate);
-        const capitalFinanced = hasInvestmentAtCutoff
-          ? Math.max(cutoffBreakdown.productCostCop - cutoffBreakdown.receivedForMerchandiseCop, 0)
-          : 0;
+        const capitalFinanced = Math.max(
+          cutoffBreakdown.productCostCop - cutoffBreakdown.receivedForMerchandiseCop,
+          0
+        );
 
         receivedInRangeCop += paidInRange;
         shippingCollectedInRangeCop += shippingCollectedInRange;
         shippingCollectedThroughCutoffCop += cutoffBreakdown.shippingCollectedCop;
         shippingPlannedThroughCutoffCop += cutoffBreakdown.plannedShippingCop;
         capitalFinancedAtCutoffCop += capitalFinanced;
+        if (!cutoffBreakdown.hasCompleteCosts) {
+          ordersWithIncompleteCosts += 1;
+        }
 
         const hasActivityInRange =
           (getDateKey(order.createdAtIso) >= fromDate && getDateKey(order.createdAtIso) <= toDate) ||
-          paidInRange > 0 ||
-          Boolean(investmentDate && investmentDate >= fromDate && investmentDate <= toDate);
+          paidInRange > 0;
 
         return {
           order,
@@ -170,7 +160,6 @@ export function CapitalReportWorkbench({
           shippingCollectedInRange,
           receivedForMerchandiseInRange,
           capitalFinanced,
-          hasInvestmentAtCutoff,
           cutoffBreakdown,
           hasActivityInRange,
         };
@@ -182,23 +171,11 @@ export function CapitalReportWorkbench({
       });
 
     const directPurchaseCapitalCop = orders.reduce((sum, order) => {
-      if (!order.purchaseRecordedAtIso) {
+      const orderDate = getDateKey(order.createdAtIso);
+      if (orderDate < fromDate || orderDate > toDate) {
         return sum;
       }
-      const purchaseDate = getDateKey(order.purchaseRecordedAtIso);
-      if (purchaseDate < fromDate || purchaseDate > toDate) {
-        return sum;
-      }
-      return (
-        sum +
-        (order.items ?? []).reduce(
-          (itemSum, item) =>
-            inventoryProductIds.has(item.productId)
-              ? itemSum
-              : itemSum + (item.unitCostCop ?? 0) * item.quantity,
-          0
-        )
-      );
+      return sum + getDirectOrderCapitalCop(order);
     }, 0);
 
     const inventoryPurchaseCapitalCop = purchaseOrders
@@ -239,6 +216,7 @@ export function CapitalReportWorkbench({
       directPurchaseCapitalCop,
       inventoryPurchaseCapitalCop,
       capitalFinancedAtCutoffCop,
+      ordersWithIncompleteCosts,
       currentInventoryProductCapitalCop,
       shippingPendingAtCutoffCop: Math.max(
         shippingPlannedThroughCutoffCop - shippingCollectedThroughCutoffCop,
@@ -247,7 +225,7 @@ export function CapitalReportWorkbench({
       shippingFundBalanceAtCutoffCop:
         shippingCollectedThroughCutoffCop - shippingSpentThroughCutoffCop,
     };
-  }, [expenses, fromDate, hasValidRange, inventory.items, inventoryProductIds, orders, purchaseOrders, toDate]);
+  }, [expenses, fromDate, hasValidRange, inventory.items, orders, purchaseOrders, toDate]);
 
   return (
     <main className="ops-page capital-report-page">
@@ -263,8 +241,8 @@ export function CapitalReportWorkbench({
 
       <section className="ops-card reports-filter-card">
         <div>
-          <strong>Periodo de movimientos</strong>
-          <span>Los saldos se calculan al cierre de la fecha final.</span>
+          <strong>Periodo analizado</strong>
+          <span>Incluye pedidos creados y compras de inventario recibidas en estas fechas.</span>
         </div>
         <div className="reports-date-fields">
           <label>
@@ -288,7 +266,7 @@ export function CapitalReportWorkbench({
             <article className="ops-card capital-report-hero-card capital-report-hero-card--capital">
               <span>Capital invertido en el periodo</span>
               <strong>{formatCop(report.capitalInvestedInRangeCop)}</strong>
-              <small>Mercancia comprada, sin mezclar el fondo de envio</small>
+              <small>Costo de todos los pedidos, incluso cuando el cliente no dio anticipo</small>
             </article>
             <article className="ops-card capital-report-hero-card">
               <span>Recibido de clientes</span>
@@ -344,6 +322,12 @@ export function CapitalReportWorkbench({
             </div>
           </section>
 
+          {report.ordersWithIncompleteCosts > 0 ? (
+            <p className="capital-report-warning" role="status">
+              Hay {numberFormatter.format(report.ordersWithIncompleteCosts)} pedido(s) con uno o mas productos sin costo registrado. Esos valores no se pueden sumar completos al capital hasta corregir el costo del pedido.
+            </p>
+          ) : null}
+
           <section className="ops-card ops-table-card capital-report-detail">
             <div className="ops-card__header">
               <div>
@@ -385,11 +369,7 @@ export function CapitalReportWorkbench({
                         <td className="capital-report-shipping-value">{formatCop(row.shippingCollectedInRange)}</td>
                         <td>{formatCop(row.receivedForMerchandiseInRange)}</td>
                         <td className={row.capitalFinanced > 0 ? "capital-report-financed-value" : ""}>
-                          <strong>
-                            {row.hasInvestmentAtCutoff
-                              ? formatCop(row.capitalFinanced)
-                              : "Aun no invertido"}
-                          </strong>
+                          <strong>{formatCop(row.capitalFinanced)}</strong>
                         </td>
                       </tr>
                     ))}
@@ -405,9 +385,9 @@ export function CapitalReportWorkbench({
 
           <section className="capital-report-source-grid">
             <article className="ops-card capital-report-source-card">
-              <span>Compras para pedidos</span>
+              <span>Capital en pedidos directos</span>
               <strong>{formatCop(report.directPurchaseCapitalCop)}</strong>
-              <small>Referencias sin inventario compradas en el periodo</small>
+              <small>Costo de mercancia de pedidos creados en el periodo, con o sin anticipo</small>
             </article>
             <article className="ops-card capital-report-source-card">
               <span>Compras para inventario</span>

@@ -12,7 +12,6 @@ export interface OrderFinancialBreakdown {
   capitalRecoveredCop: number;
   capitalFinancedCop: number;
   hasCompleteCosts: boolean;
-  hasCapitalInvestment: boolean;
 }
 
 export interface ItemShippingAllocation {
@@ -32,30 +31,10 @@ export function getReceivedPaymentsCop(order: Pick<DashboardOrder, "payments">) 
     .reduce((sum, payment) => sum + asNonNegativeInteger(payment.amountCop), 0);
 }
 
-export function hasOrderCapitalInvestment(
-  order: Pick<
-    DashboardOrder,
-    "inventoryReserved" | "purchaseRecordedAtIso" | "arrivalRecordedAtIso" | "deliveredAtIso"
-  >
-) {
-  return Boolean(
-    order.inventoryReserved ||
-      order.purchaseRecordedAtIso ||
-      order.arrivalRecordedAtIso ||
-      order.deliveredAtIso
-  );
-}
-
 export function getOrderFinancialBreakdown(
   order: Pick<
     DashboardOrder,
-    | "items"
-    | "payments"
-    | "totalCop"
-    | "inventoryReserved"
-    | "purchaseRecordedAtIso"
-    | "arrivalRecordedAtIso"
-    | "deliveredAtIso"
+    "items" | "payments" | "totalCop"
   >,
   paidCopOverride?: number
 ): OrderFinancialBreakdown {
@@ -83,8 +62,7 @@ export function getOrderFinancialBreakdown(
     Math.round(plannedShippingCop * paymentRatio)
   );
   const receivedForMerchandiseCop = Math.max(paidCop - shippingCollectedCop, 0);
-  const hasCapitalInvestment = hasOrderCapitalInvestment(order);
-  const capitalInvestedCop = hasCapitalInvestment ? productCostCop : 0;
+  const capitalInvestedCop = productCostCop;
 
   return {
     productCostCop,
@@ -98,7 +76,6 @@ export function getOrderFinancialBreakdown(
     capitalRecoveredCop: Math.min(capitalInvestedCop, receivedForMerchandiseCop),
     capitalFinancedCop: Math.max(capitalInvestedCop - receivedForMerchandiseCop, 0),
     hasCompleteCosts,
-    hasCapitalInvestment,
   };
 }
 

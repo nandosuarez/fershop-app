@@ -199,6 +199,17 @@
   color: var(--capital-amber);
 }
 
+.capital-report-warning {
+  margin: 0;
+  padding: 13px 16px;
+  border: 1px solid #e2c18c;
+  border-radius: 12px;
+  background: #fff6e7;
+  color: #6f4c17;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .capital-report-source-grid {
   display: grid;
   gap: 12px;
