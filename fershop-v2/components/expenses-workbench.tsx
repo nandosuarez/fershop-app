@@ -205,9 +205,9 @@ export function ExpensesWorkbench({ initialSnapshot }: ExpensesWorkbenchProps) {
 
         <section className="expense-summary-grid" aria-label="Resumen de gastos">
           <article className="ops-card expense-summary-card">
-            <span>Fondo acumulado</span>
+            <span>Envio recaudado</span>
             <strong>{formatCop(snapshot.metrics.shippingFundAccruedCop)}</strong>
-            <small>Costo de envio reservado en ventas</small>
+            <small>Proporcion de los pagos recibidos</small>
           </article>
           <article className="ops-card expense-summary-card">
             <span>Envios pagados</span>
@@ -304,8 +304,16 @@ export function ExpensesWorkbench({ initialSnapshot }: ExpensesWorkbenchProps) {
             </div>
             <div className="shipping-reconciliation__totals">
               <div>
-                <span>Aportes de productos</span>
+                <span>Envio asignado</span>
+                <strong>{formatCop(snapshot.metrics.shippingFundPlannedCop)}</strong>
+              </div>
+              <div>
+                <span>Envio recaudado</span>
                 <strong>{formatCop(snapshot.metrics.shippingFundAccruedCop)}</strong>
+              </div>
+              <div>
+                <span>Pendiente por recaudar</span>
+                <strong>{formatCop(snapshot.metrics.shippingFundPendingCop)}</strong>
               </div>
               <div>
                 <span>Pagos de cajas</span>
@@ -328,9 +336,9 @@ export function ExpensesWorkbench({ initialSnapshot }: ExpensesWorkbenchProps) {
                     <div>
                       <strong>{contribution.orderId}</strong>
                       <span>{contribution.productName}</span>
-                      <small>{formatOrderDate(contribution.orderCreatedAtIso)} · {contribution.quantity} unidad(es)</small>
+                      <small>{formatOrderDate(contribution.orderCreatedAtIso)} · {contribution.quantity} unidad(es) · {contribution.collectionPercent}% cobrado</small>
                     </div>
-                    <strong>+ {formatCop(contribution.amountCop)}</strong>
+                    <strong>+ {formatCop(contribution.collectedAmountCop)} / {formatCop(contribution.plannedAmountCop)}</strong>
                   </div>
                 ))
               ) : (

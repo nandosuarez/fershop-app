@@ -204,11 +204,17 @@ export interface ShippingFundContribution {
   productName: string;
   quantity: number;
   unitShippingCostCop: number;
+  plannedAmountCop: number;
+  collectedAmountCop: number;
+  pendingAmountCop: number;
+  collectionPercent: number;
   amountCop: number;
 }
 
 export interface ExpenseMetrics {
+  shippingFundPlannedCop: number;
   shippingFundAccruedCop: number;
+  shippingFundPendingCop: number;
   shippingFundSpentCop: number;
   shippingFundBalanceCop: number;
   generalExpensesCop: number;

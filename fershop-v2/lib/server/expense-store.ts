@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { getItemShippingAllocations, getOrderFinancialBreakdown } from "@/lib/capital-report";
 import { readAppDocument, writeAppDocument } from "@/lib/server/document-store";
 import { getOperationsSnapshot } from "@/lib/server/operations-store";
 import type {
@@ -143,10 +144,13 @@ function normalizeExpense(input: CreateExpenseInput) {
 
 async function getShippingContributions(): Promise<ShippingFundContribution[]> {
   const operations = await getOperationsSnapshot();
-  const contributions = operations.orders.flatMap((order) =>
-    (order.items ?? []).flatMap((item, itemIndex) => {
+  const contributions = operations.orders.flatMap((order) => {
+    const breakdown = getOrderFinancialBreakdown(order);
+    const allocations = getItemShippingAllocations(order);
+    return (order.items ?? []).flatMap((item, itemIndex) => {
       const quantity = Math.max(Math.round(item.quantity), 0);
       const unitShippingCostCop = Math.max(Math.round(item.unitShippingCostCop ?? 0), 0);
+      const allocation = allocations[itemIndex];
       if (!quantity || !unitShippingCostCop) {
         return [];
       }
@@ -160,11 +164,15 @@ async function getShippingContributions(): Promise<ShippingFundContribution[]> {
           productName: item.productName,
           quantity,
           unitShippingCostCop,
-          amountCop: quantity * unitShippingCostCop,
+          plannedAmountCop: allocation.plannedAmountCop,
+          collectedAmountCop: allocation.collectedAmountCop,
+          pendingAmountCop: allocation.pendingAmountCop,
+          collectionPercent: Math.round(breakdown.paymentRatio * 100),
+          amountCop: allocation.collectedAmountCop,
         },
       ];
-    })
-  );
+    });
+  });
 
   return contributions.sort((left, right) =>
     right.orderCreatedAtIso.localeCompare(left.orderCreatedAtIso)
@@ -184,6 +192,10 @@ export async function getExpenseSnapshot(): Promise<ExpenseSnapshot> {
     (sum, contribution) => sum + contribution.amountCop,
     0
   );
+  const shippingFundPlannedCop = shippingContributions.reduce(
+    (sum, contribution) => sum + contribution.plannedAmountCop,
+    0
+  );
   const shippingFundSpentCop = expenses
     .filter((expense) => expense.paymentSource === "shipping_fund")
     .reduce((sum, expense) => sum + expense.amountCop, 0);
@@ -195,7 +207,9 @@ export async function getExpenseSnapshot(): Promise<ExpenseSnapshot> {
     expenses,
     shippingContributions,
     metrics: {
+      shippingFundPlannedCop,
       shippingFundAccruedCop,
+      shippingFundPendingCop: shippingFundPlannedCop - shippingFundAccruedCop,
       shippingFundSpentCop,
       shippingFundBalanceCop: shippingFundAccruedCop - shippingFundSpentCop,
       generalExpensesCop,

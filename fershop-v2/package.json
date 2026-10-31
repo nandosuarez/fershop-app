@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "test:calculator": "node tests/price-calculation.test.mjs",
+    "test:capital": "node --experimental-strip-types tests/capital-report.test.mjs",
     "start:render": "next start -p $PORT",
     "db:setup": "node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/setup-db.mjs",
     "db:setup:render": "node scripts/setup-db.mjs",

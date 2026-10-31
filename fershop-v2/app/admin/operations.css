@@ -14,6 +14,225 @@
   font-family: "Aptos", "Segoe UI", sans-serif;
 }
 
+/* Capital and collections report */
+.capital-report-page {
+  --capital-ink: #23231f;
+  --capital-paper: #f6f3ed;
+  --capital-sand: #e9dfcf;
+  --capital-green: #2f674d;
+  --capital-blue: #315d72;
+  --capital-amber: #9b6616;
+}
+
+.capital-report-intro {
+  color: var(--ops-muted);
+  margin: 8px 0 0;
+  max-width: 680px;
+}
+
+.capital-report-page .reports-filter-card > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.capital-report-page .reports-filter-card > div:first-child span {
+  color: var(--ops-muted);
+  font-size: 0.82rem;
+}
+
+.capital-report-hero-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.capital-report-hero-card {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(247, 244, 238, 0.94));
+  min-height: 164px;
+  overflow: hidden;
+  padding: 22px;
+  position: relative;
+}
+
+.capital-report-hero-card::after {
+  background: var(--capital-sand);
+  border-radius: 999px;
+  content: "";
+  height: 82px;
+  opacity: 0.58;
+  position: absolute;
+  right: -25px;
+  top: -28px;
+  width: 82px;
+}
+
+.capital-report-hero-card--capital::after {
+  background: #cbd9cd;
+}
+
+.capital-report-hero-card--shipping::after {
+  background: #c7dae2;
+}
+
+.capital-report-hero-card--risk::after {
+  background: #edd6ad;
+}
+
+.capital-report-hero-card > span,
+.capital-report-metric-card > span,
+.capital-report-source-card > span {
+  color: var(--ops-muted);
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.capital-report-hero-card > strong {
+  color: var(--capital-ink);
+  display: block;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.65rem, 2.2vw, 2.35rem);
+  font-weight: 500;
+  margin: 18px 0 8px;
+}
+
+.capital-report-hero-card > small,
+.capital-report-metric-card > small,
+.capital-report-source-card > small {
+  color: var(--ops-muted);
+  display: block;
+  line-height: 1.45;
+}
+
+.capital-report-secondary-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.capital-report-metric-card,
+.capital-report-source-card {
+  padding: 18px 20px;
+}
+
+.capital-report-metric-card > strong,
+.capital-report-source-card > strong {
+  display: block;
+  font-size: 1.15rem;
+  margin: 9px 0 4px;
+}
+
+.capital-report-metric-card.is-negative strong {
+  color: #a4382f;
+}
+
+.capital-report-explanation {
+  align-items: center;
+  background: var(--capital-paper);
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  padding: 20px 24px;
+}
+
+.capital-report-explanation > div {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.capital-report-explanation > span {
+  color: #8a8378;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.6rem;
+}
+
+.capital-report-formula-number {
+  align-items: center;
+  background: var(--capital-ink);
+  border-radius: 50%;
+  color: white;
+  display: inline-flex;
+  flex: 0 0 34px;
+  font-family: Georgia, "Times New Roman", serif;
+  height: 34px;
+  justify-content: center;
+}
+
+.capital-report-explanation p {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+}
+
+.capital-report-explanation small {
+  color: var(--ops-muted);
+}
+
+.capital-report-detail {
+  overflow: hidden;
+}
+
+.capital-report-table td:first-child {
+  min-width: 160px;
+}
+
+.capital-report-table td:first-child strong,
+.capital-report-table td:first-child small {
+  display: block;
+  margin-top: 4px;
+}
+
+.capital-report-table td:first-child small {
+  color: var(--ops-muted);
+}
+
+.capital-report-shipping-value {
+  color: var(--capital-blue);
+  font-weight: 700;
+}
+
+.capital-report-financed-value {
+  color: var(--capital-amber);
+}
+
+.capital-report-source-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 1180px) {
+  .capital-report-hero-grid,
+  .capital-report-secondary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .capital-report-hero-grid,
+  .capital-report-secondary-grid,
+  .capital-report-source-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .capital-report-hero-card {
+    min-height: 142px;
+  }
+
+  .capital-report-explanation {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .capital-report-explanation > span {
+    display: none;
+  }
+}
+
 .ops-sidebar {
   position: sticky;
   top: 0;
