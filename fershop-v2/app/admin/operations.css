@@ -256,47 +256,6 @@
   background: var(--capital-amber);
 }
 
-.capital-report-example {
-  padding: 19px 22px;
-  display: grid;
-  grid-template-columns: minmax(170px, 1.2fr) auto minmax(120px, 0.8fr) auto minmax(140px, 0.9fr) auto minmax(190px, 1.2fr);
-  align-items: center;
-  gap: 16px;
-  background: var(--capital-paper);
-}
-
-.capital-report-example > div {
-  display: grid;
-  gap: 5px;
-}
-
-.capital-report-example span {
-  color: var(--ops-muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.capital-report-example strong {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 1.15rem;
-  font-weight: 500;
-}
-
-.capital-report-example > b {
-  color: #8a8378;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 1.5rem;
-  font-weight: 400;
-}
-
-.capital-report-example__result {
-  padding: 12px 14px;
-  border-radius: 11px;
-  background: #eee2c9;
-}
-
 .capital-report-method-note {
   margin: 0;
   color: var(--ops-muted);
@@ -335,23 +294,12 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .capital-report-example {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .capital-report-example > b {
-    display: none;
-  }
 }
 
 @media (max-width: 720px) {
   .capital-report-hero-grid,
   .capital-report-secondary-grid,
   .capital-report-source-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .capital-report-example {
     grid-template-columns: 1fr;
   }
 
@@ -363,10 +311,6 @@
 
   .capital-report-sales-summary small {
     text-align: left;
-  }
-
-  .capital-report-example > b {
-    display: none;
   }
 
   .capital-report-hero-card {

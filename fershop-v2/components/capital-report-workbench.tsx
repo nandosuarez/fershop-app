@@ -249,16 +249,6 @@ export function CapitalReportWorkbench({
             </article>
           </section>
 
-          <section className="ops-card capital-report-example">
-            <div><span>Ejemplo de la formula</span><strong>{formatCop(300_000)} producto</strong></div>
-            <b aria-hidden="true">+</b>
-            <div><span>Envio</span><strong>{formatCop(20_000)}</strong></div>
-            <b aria-hidden="true">-</b>
-            <div><span>Abono cliente</span><strong>{formatCop(200_000)}</strong></div>
-            <b aria-hidden="true">=</b>
-            <div className="capital-report-example__result"><span>Dinero propio</span><strong>{formatCop(120_000)} · 37,5%</strong></div>
-          </section>
-
           <section className="capital-report-secondary-grid">
             <article className="ops-card capital-report-metric-card"><span>Costo de productos</span><strong>{formatCop(report.productCostCop)}</strong></article>
             <article className="ops-card capital-report-metric-card"><span>Costo de envio incluido</span><strong>{formatCop(report.shippingCostCop)}</strong></article>
