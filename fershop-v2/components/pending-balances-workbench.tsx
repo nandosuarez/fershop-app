@@ -29,6 +29,20 @@ interface PendingCustomer {
   totalUnits: number;
 }
 
+interface PrintableOrder {
+  order: DashboardOrder;
+  items: OrderItem[];
+  totalCop: number;
+  paidCop: number;
+  pendingCop: number;
+  isPartial: boolean;
+}
+
+interface PrintableCustomer extends Omit<PendingCustomer, "orders"> {
+  orders: PrintableOrder[];
+  hasPartialOrders: boolean;
+}
+
 const numberFormatter = new Intl.NumberFormat("es-CO");
 const printLogoUrl = "/brand/fershop-logo-print.png";
 
@@ -103,6 +117,73 @@ function getOrderItems(order: DashboardOrder): OrderItem[] {
   ];
 }
 
+function getItemSelectionKey(orderId: string, index: number) {
+  return `${orderId}:${index}`;
+}
+
+function getCustomerItemKeys(customer: PendingCustomer) {
+  return customer.orders.flatMap((order) =>
+    getOrderItems(order).map((_, index) => getItemSelectionKey(order.id, index))
+  );
+}
+
+function getSelectedKeys(customer: PendingCustomer, selectedKeys?: string[]) {
+  return new Set(selectedKeys ?? getCustomerItemKeys(customer));
+}
+
+function buildPrintableCustomer(
+  customer: PendingCustomer,
+  selectedKeys?: string[]
+): PrintableCustomer | null {
+  const selection = getSelectedKeys(customer, selectedKeys);
+  const orders = customer.orders.flatMap<PrintableOrder>((order) => {
+    const allItems = getOrderItems(order);
+    const items = allItems.filter((_, index) =>
+      selection.has(getItemSelectionKey(order.id, index))
+    );
+
+    if (!items.length) {
+      return [];
+    }
+
+    const isPartial = items.length !== allItems.length;
+    const totalCop = isPartial
+      ? items.reduce((total, item) => total + item.lineTotalCop, 0)
+      : order.totalCop;
+    const orderPaidCop = getOrderPaidCop(order);
+    const paidCop = isPartial && order.totalCop > 0
+      ? Math.min(totalCop, Math.round((orderPaidCop * totalCop) / order.totalCop))
+      : Math.min(totalCop, orderPaidCop);
+
+    return [{
+      order,
+      items,
+      totalCop,
+      paidCop,
+      pendingCop: Math.max(totalCop - paidCop, 0),
+      isPartial,
+    }];
+  });
+
+  if (!orders.length) {
+    return null;
+  }
+
+  return {
+    ...customer,
+    orders,
+    totalCop: orders.reduce((total, order) => total + order.totalCop, 0),
+    paidCop: orders.reduce((total, order) => total + order.paidCop, 0),
+    pendingCop: orders.reduce((total, order) => total + order.pendingCop, 0),
+    totalUnits: orders.reduce(
+      (total, order) =>
+        total + order.items.reduce((orderTotal, item) => orderTotal + item.quantity, 0),
+      0
+    ),
+    hasPartialOrders: orders.some((order) => order.isPartial),
+  };
+}
+
 function formatOrderDate(iso: string) {
   return new Intl.DateTimeFormat("es-CO", {
     day: "numeric",
@@ -170,7 +251,7 @@ function groupPendingCustomers(orders: DashboardOrder[]) {
     .sort((left, right) => right.pendingCop - left.pendingCop);
 }
 
-function PrintableBalanceReport({ customer }: { customer: PendingCustomer }) {
+function PrintableBalanceReport({ customer }: { customer: PrintableCustomer }) {
   return (
     <section className="balances-print-report" aria-label={`Estado de cuenta de ${customer.name}`}>
       <header className="balances-print-header">
@@ -218,9 +299,7 @@ function PrintableBalanceReport({ customer }: { customer: PendingCustomer }) {
       </section>
 
       <div className="balances-print-orders">
-        {customer.orders.map((order) => {
-          const paidCop = getOrderPaidCop(order);
-          const pendingCop = getOrderOutstandingCop(order);
+        {customer.orders.map(({ order, items, totalCop, paidCop, pendingCop, isPartial }) => {
           const receivedPayments = order.payments.filter(
             (payment) => payment.statusCode === "received"
           );
@@ -252,7 +331,7 @@ function PrintableBalanceReport({ customer }: { customer: PendingCustomer }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {getOrderItems(order).map((item, index) => (
+                  {items.map((item, index) => (
                     <tr key={`${order.id}-print-${item.productId}-${index}`}>
                       <td>{item.productName}</td>
                       <td>{numberFormatter.format(item.quantity)}</td>
@@ -263,7 +342,14 @@ function PrintableBalanceReport({ customer }: { customer: PendingCustomer }) {
                 </tbody>
               </table>
 
-              {receivedPayments.length ? (
+              {isPartial ? (
+                <div className="balances-print-payments">
+                  <span>
+                    Seleccion parcial: el valor pagado se aplico proporcionalmente a los productos
+                    incluidos.
+                  </span>
+                </div>
+              ) : receivedPayments.length ? (
                 <div className="balances-print-payments">
                   <span>Pagos registrados:</span>
                   {receivedPayments.map((payment) => (
@@ -282,7 +368,7 @@ function PrintableBalanceReport({ customer }: { customer: PendingCustomer }) {
               )}
 
               <footer>
-                <span>Total: <strong>{formatCop(order.totalCop)}</strong></span>
+                <span>Total: <strong>{formatCop(totalCop)}</strong></span>
                 <span>Pagado: <strong>{formatCop(paidCop)}</strong></span>
                 <span className="is-pending">Pendiente: <strong>{formatCop(pendingCop)}</strong></span>
               </footer>
@@ -300,6 +386,12 @@ function PrintableBalanceReport({ customer }: { customer: PendingCustomer }) {
           Este estado de cuenta refleja los pagos registrados hasta la fecha de corte. Si tienes
           alguna inquietud, comunicate con FerShop USA al 304 575 0023.
         </p>
+        {customer.hasPartialOrders ? (
+          <p>
+            Los pagos de pedidos incluidos parcialmente se distribuyeron de forma proporcional al
+            valor de los productos seleccionados.
+          </p>
+        ) : null}
       </footer>
     </section>
   );
@@ -309,8 +401,11 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
   const [orders, setOrders] = useState(initialOrders);
   const [search, setSearch] = useState("");
   const [expandedCustomerKey, setExpandedCustomerKey] = useState<string | null>(null);
-  const [printCustomer, setPrintCustomer] = useState<PendingCustomer | null>(null);
+  const [printCustomer, setPrintCustomer] = useState<PrintableCustomer | null>(null);
   const [printingCustomerKey, setPrintingCustomerKey] = useState<string | null>(null);
+  const [selectedItemsByCustomer, setSelectedItemsByCustomer] = useState<Record<string, string[]>>(
+    {}
+  );
 
   useEffect(() => {
     setOrders(initialOrders);
@@ -388,6 +483,48 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
     }
   }, [customers, expandedCustomerKey]);
 
+  function updateCustomerSelection(customer: PendingCustomer, update: (keys: Set<string>) => void) {
+    setSelectedItemsByCustomer((current) => {
+      const keys = getSelectedKeys(customer, current[customer.key]);
+      update(keys);
+      return { ...current, [customer.key]: [...keys] };
+    });
+  }
+
+  function toggleCustomerSelection(customer: PendingCustomer) {
+    updateCustomerSelection(customer, (keys) => {
+      const allKeys = getCustomerItemKeys(customer);
+      if (allKeys.every((key) => keys.has(key))) {
+        keys.clear();
+      } else {
+        allKeys.forEach((key) => keys.add(key));
+      }
+    });
+  }
+
+  function toggleOrderSelection(customer: PendingCustomer, order: DashboardOrder) {
+    updateCustomerSelection(customer, (keys) => {
+      const orderKeys = getOrderItems(order).map((_, index) =>
+        getItemSelectionKey(order.id, index)
+      );
+      if (orderKeys.every((key) => keys.has(key))) {
+        orderKeys.forEach((key) => keys.delete(key));
+      } else {
+        orderKeys.forEach((key) => keys.add(key));
+      }
+    });
+  }
+
+  function toggleItemSelection(customer: PendingCustomer, itemKey: string) {
+    updateCustomerSelection(customer, (keys) => {
+      if (keys.has(itemKey)) {
+        keys.delete(itemKey);
+      } else {
+        keys.add(itemKey);
+      }
+    });
+  }
+
   useEffect(() => {
     function clearPrintCustomer() {
       setPrintCustomer(null);
@@ -415,7 +552,15 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
         return;
       }
 
-      setPrintCustomer(customer);
+      const printableCustomer = buildPrintableCustomer(
+        customer,
+        selectedItemsByCustomer[customerKey]
+      );
+      if (!printableCustomer) {
+        return;
+      }
+
+      setPrintCustomer(printableCustomer);
       await waitForNextFrame();
       await waitForNextFrame();
       await document.fonts.ready;
@@ -494,6 +639,17 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
               <tbody>
                 {filteredCustomers.map((customer) => {
                   const isExpanded = expandedCustomerKey === customer.key;
+                  const selectedKeys = getSelectedKeys(
+                    customer,
+                    selectedItemsByCustomer[customer.key]
+                  );
+                  const allItemKeys = getCustomerItemKeys(customer);
+                  const selectedItemCount = allItemKeys.filter((key) => selectedKeys.has(key)).length;
+                  const allItemsSelected = selectedItemCount === allItemKeys.length;
+                  const selectedReport = buildPrintableCustomer(
+                    customer,
+                    selectedItemsByCustomer[customer.key]
+                  );
                   return (
                     <Fragment key={customer.key}>
                       <tr className={isExpanded ? "is-selected" : undefined}>
@@ -548,22 +704,41 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                                       .filter(Boolean)
                                       .join(" · ")}
                                   </p>
+                                  <label className="balances-select-all">
+                                    <input
+                                      type="checkbox"
+                                      checked={allItemsSelected}
+                                      onChange={() => toggleCustomerSelection(customer)}
+                                    />
+                                    <span>
+                                      {allItemsSelected ? "Quitar seleccion" : "Seleccionar todo"}
+                                    </span>
+                                    <small>
+                                      {numberFormatter.format(selectedItemCount)} de{" "}
+                                      {numberFormatter.format(allItemKeys.length)} productos
+                                    </small>
+                                  </label>
                                 </div>
                                 <div className="balances-detail-actions">
                                   <div className="balances-detail-total">
-                                    <span>Saldo total</span>
-                                    <strong>{formatCop(customer.pendingCop)}</strong>
+                                    <span>Saldo seleccionado</span>
+                                    <strong>{formatCop(selectedReport?.pendingCop ?? 0)}</strong>
                                   </div>
                                   <button
                                     type="button"
                                     className="ops-button ops-button--primary"
-                                    disabled={printingCustomerKey !== null}
+                                    disabled={printingCustomerKey !== null || selectedItemCount === 0}
                                     onClick={() => void printBalance(customer.key)}
                                   >
                                     {printingCustomerKey === customer.key
                                       ? "Preparando PDF..."
                                       : "Imprimir / guardar PDF"}
                                   </button>
+                                  {selectedItemCount === 0 ? (
+                                    <small className="balances-selection-warning" role="status">
+                                      Selecciona al menos un producto.
+                                    </small>
+                                  ) : null}
                                 </div>
                               </header>
 
@@ -572,18 +747,37 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                                   const paidCop = getOrderPaidCop(order);
                                   const pendingCop = getOrderOutstandingCop(order);
                                   const items = getOrderItems(order);
+                                  const orderItemKeys = items.map((_, index) =>
+                                    getItemSelectionKey(order.id, index)
+                                  );
+                                  const selectedOrderItems = orderItemKeys.filter((key) =>
+                                    selectedKeys.has(key)
+                                  ).length;
+                                  const orderSelected = selectedOrderItems === orderItemKeys.length;
 
                                   return (
                                     <article key={order.id} className="balances-order-card">
                                       <div className="balances-order-header">
-                                        <div>
-                                          <Link
-                                            href={`/admin/seguimiento?order=${order.id}`}
-                                            className="ops-order-link"
-                                          >
-                                            {order.id}
-                                          </Link>
-                                          <span>{formatOrderDate(order.createdAtIso)}</span>
+                                        <div className="balances-order-select">
+                                          <input
+                                            type="checkbox"
+                                            aria-label={`Incluir todos los productos de ${order.id}`}
+                                            checked={orderSelected}
+                                            onChange={() => toggleOrderSelection(customer, order)}
+                                          />
+                                          <div>
+                                            <Link
+                                              href={`/admin/seguimiento?order=${order.id}`}
+                                              className="ops-order-link"
+                                            >
+                                              {order.id}
+                                            </Link>
+                                            <span>{formatOrderDate(order.createdAtIso)}</span>
+                                            <small>
+                                              {numberFormatter.format(selectedOrderItems)} de{" "}
+                                              {numberFormatter.format(orderItemKeys.length)} seleccionados
+                                            </small>
+                                          </div>
                                         </div>
                                         <span className={`ops-status ops-status--${order.statusCode}`}>
                                           {order.statusLabel}
@@ -606,11 +800,21 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                                       </div>
 
                                       <div className="balances-product-list">
-                                        {items.map((item, index) => (
+                                        {items.map((item, index) => {
+                                          const itemKey = getItemSelectionKey(order.id, index);
+                                          return (
                                           <div
                                             key={`${order.id}-${item.productId}-${index}`}
-                                            className="balances-product-row"
+                                            className={`balances-product-row${
+                                              selectedKeys.has(itemKey) ? " is-selected" : ""
+                                            }`}
                                           >
+                                            <input
+                                              type="checkbox"
+                                              aria-label={`Incluir ${item.productName} en el PDF`}
+                                              checked={selectedKeys.has(itemKey)}
+                                              onChange={() => toggleItemSelection(customer, itemKey)}
+                                            />
                                             <span className="ops-product-thumb">
                                               {item.imageUrl ? (
                                                 <img src={item.imageUrl} alt="" />
@@ -631,7 +835,8 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                                               <strong>{formatCop(item.lineTotalCop)}</strong>
                                             </div>
                                           </div>
-                                        ))}
+                                          );
+                                        })}
                                       </div>
                                     </article>
                                   );
