@@ -2168,14 +2168,14 @@
   border-radius: 9px;
   background: #f7f7f4;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 24px;
+  grid-template-columns: 52px minmax(0, 1fr) 24px;
   align-items: center;
   gap: 8px;
 }
 
 .order-attachment-chip__type {
-  width: 34px;
-  height: 34px;
+  width: 52px;
+  height: 52px;
   border-radius: 7px;
   background: #e6e7ed;
   display: grid;
@@ -2183,6 +2183,15 @@
   color: #4f5361;
   font-size: 0.62rem;
   font-weight: 800;
+}
+
+.order-attachment-chip__preview {
+  width: 52px;
+  height: 52px;
+  border-radius: 7px;
+  background: #e6e7ed;
+  display: block;
+  object-fit: cover;
 }
 
 .order-attachment-chip__name {

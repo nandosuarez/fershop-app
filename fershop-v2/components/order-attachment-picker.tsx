@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   getOrderAttachmentFileError,
@@ -36,18 +36,47 @@ export async function uploadOrderAttachments(files: File[]) {
   if (!files.length) {
     return [];
   }
-  const formData = new FormData();
-  files.forEach((file) => formData.append("files", file));
-  const response = await fetch("/api/orders/attachments", {
-    method: "POST",
-    body: formData,
-  });
-  if (!response.ok) {
-    const payload = (await response.json()) as ApiErrorPayload;
-    throw new Error(payload.message || "No pudimos guardar los archivos.");
+
+  const attachments: OrderAttachment[] = [];
+  for (const file of files) {
+    const formData = new FormData();
+    formData.append("files", file);
+    const response = await fetch("/api/orders/attachments", {
+      method: "POST",
+      body: formData,
+    });
+    if (!response.ok) {
+      const payload = (await response.json()) as ApiErrorPayload;
+      throw new Error(`${file.name}: ${payload.message || "no pudimos guardar el archivo."}`);
+    }
+    const payload = (await response.json()) as AttachmentUploadPayload;
+    attachments.push(...payload.attachments);
   }
-  const payload = (await response.json()) as AttachmentUploadPayload;
-  return payload.attachments;
+  return attachments;
+}
+
+function SelectedAttachmentThumbnail({ file }: { file: File }) {
+  const [previewUrl, setPreviewUrl] = useState("");
+
+  useEffect(() => {
+    if (!file.type.startsWith("image/")) {
+      setPreviewUrl("");
+      return;
+    }
+    const nextPreviewUrl = URL.createObjectURL(file);
+    setPreviewUrl(nextPreviewUrl);
+    return () => URL.revokeObjectURL(nextPreviewUrl);
+  }, [file]);
+
+  if (previewUrl) {
+    return <img src={previewUrl} alt="" className="order-attachment-chip__preview" />;
+  }
+
+  return (
+    <span className="order-attachment-chip__type">
+      {file.name.split(".").pop()?.toLocaleUpperCase("es") || "DOC"}
+    </span>
+  );
 }
 
 export function OrderAttachmentPicker({
@@ -130,9 +159,7 @@ export function OrderAttachmentPicker({
         <div className="order-attachment-selection" aria-label="Archivos seleccionados">
           {files.map((file, index) => (
             <div key={`${file.name}-${file.lastModified}-${index}`} className="order-attachment-chip">
-              <span className="order-attachment-chip__type">
-                {file.type.startsWith("image/") ? "IMG" : "DOC"}
-              </span>
+              <SelectedAttachmentThumbnail file={file} />
               <span className="order-attachment-chip__name">
                 <strong>{file.name}</strong>
                 <small>{formatFileSize(file.size)}</small>
