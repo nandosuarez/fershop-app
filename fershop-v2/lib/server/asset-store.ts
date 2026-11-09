@@ -6,11 +6,12 @@ interface AssetRow {
   mime_type: string;
 }
 
-export async function saveProductImage(input: {
-  data: Buffer;
-  fileName: string;
-  mimeType: string;
-}) {
+type AssetType = "PRODUCT_IMAGE" | "ORDER_ATTACHMENT";
+
+async function saveAsset(
+  assetType: AssetType,
+  input: { data: Buffer; fileName: string; mimeType: string }
+) {
   if (!hasDatabaseConfiguration()) {
     return null;
   }
@@ -18,15 +19,15 @@ export async function saveProductImage(input: {
     `
       INSERT INTO fershop_v2.app_asset
         (asset_type, file_name, mime_type, byte_length, data)
-      VALUES ('PRODUCT_IMAGE', $1, $2, $3, $4)
+      VALUES ($1, $2, $3, $4, $5)
       RETURNING id
     `,
-    [input.fileName, input.mimeType, input.data.byteLength, input.data]
+    [assetType, input.fileName, input.mimeType, input.data.byteLength, input.data]
   );
   return result.rows[0].id;
 }
 
-export async function getProductImage(imageId: string) {
+async function getAsset(assetType: AssetType, assetId: string) {
   if (!hasDatabaseConfiguration()) {
     return null;
   }
@@ -34,10 +35,34 @@ export async function getProductImage(imageId: string) {
     `
       SELECT file_name, mime_type, data
       FROM fershop_v2.app_asset
-      WHERE id = $1 AND asset_type = 'PRODUCT_IMAGE'
+      WHERE id = $1 AND asset_type = $2
       LIMIT 1
     `,
-    [imageId]
+    [assetId, assetType]
   );
   return result.rowCount ? result.rows[0] : null;
+}
+
+export async function saveProductImage(input: {
+  data: Buffer;
+  fileName: string;
+  mimeType: string;
+}) {
+  return saveAsset("PRODUCT_IMAGE", input);
+}
+
+export async function getProductImage(imageId: string) {
+  return getAsset("PRODUCT_IMAGE", imageId);
+}
+
+export async function saveOrderAttachment(input: {
+  data: Buffer;
+  fileName: string;
+  mimeType: string;
+}) {
+  return saveAsset("ORDER_ATTACHMENT", input);
+}
+
+export async function getOrderAttachment(attachmentId: string) {
+  return getAsset("ORDER_ATTACHMENT", attachmentId);
 }

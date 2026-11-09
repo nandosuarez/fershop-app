@@ -38,6 +38,8 @@ export async function POST(request: Request) {
       actualInitialPaymentCop: Number(payload.actualInitialPaymentCop ?? 0),
       purchaseWithoutAdvance: Boolean(payload.purchaseWithoutAdvance),
       assignedTo: payload.assignedTo,
+      initialComment: payload.initialComment,
+      attachments: payload.attachments,
     });
 
     return NextResponse.json(result, { status: 201 });

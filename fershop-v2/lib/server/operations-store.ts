@@ -9,6 +9,10 @@ import {
 } from "@/lib/commerce";
 import { customers as seedCustomers } from "@/lib/customers";
 import { deriveOrderStatusCode, getOrderStatusPresentation } from "@/lib/operations";
+import {
+  normalizeOrderAttachments,
+  ORDER_ATTACHMENT_MAX_FILES,
+} from "@/lib/order-attachments";
 import { getCustomers } from "@/lib/server/customer-store";
 import { readAppDocument, writeAppDocument } from "@/lib/server/document-store";
 import { adjustInventoryForOrder, InventoryStoreError } from "@/lib/server/inventory-store";
@@ -210,6 +214,12 @@ function normalizeOrderDetails(
   catalogProducts = seedProducts,
   catalogCustomers = seedCustomers
 ) {
+  order.timeline ??= [];
+  order.timeline.forEach((event) => {
+    const attachments = normalizeOrderAttachments(event.attachments);
+    event.attachments = attachments.length ? attachments : undefined;
+  });
+
   if (!order.items?.length) {
     const product = catalogProducts.find((candidate) => candidate.id === order.productId);
     order.items = [
@@ -490,9 +500,20 @@ export async function createOrder(input: CreateOrderInput): Promise<OperationMut
     const customerName = input.customerName.trim();
     const customerPhone = input.customerPhone.trim() || "Por confirmar";
     const customerCity = input.customerCity.trim() || "Por confirmar";
+    const initialComment = input.initialComment?.trim() || "";
+    const initialAttachments = normalizeOrderAttachments(input.attachments);
 
     if (!customerName) {
       throw new OperationsStoreError("Necesitamos al menos el nombre del cliente para crear el pedido.");
+    }
+    if (initialComment.length > 1000) {
+      throw new OperationsStoreError("El comentario no puede superar 1000 caracteres.");
+    }
+    if ((input.attachments?.length ?? 0) !== initialAttachments.length) {
+      throw new OperationsStoreError("Uno de los archivos adjuntos no es valido.");
+    }
+    if (initialAttachments.length > ORDER_ATTACHMENT_MAX_FILES) {
+      throw new OperationsStoreError(`Puedes adjuntar hasta ${ORDER_ATTACHMENT_MAX_FILES} archivos.`);
     }
 
     const normalizedItems = input.items.map((item) => ({
@@ -601,6 +622,19 @@ export async function createOrder(input: CreateOrderInput): Promise<OperationMut
         }),
       ],
     };
+
+    if (initialComment || initialAttachments.length) {
+      order.timeline.push(
+        makeTimelineEvent({
+          type: "comment",
+          title: "Jose FerShop",
+          detail: initialComment || "Se agregaron archivos al crear el pedido.",
+          atLabel: formatDateTimeLabel(orderDateIso),
+          completed: true,
+          attachments: initialAttachments.length ? initialAttachments : undefined,
+        })
+      );
+    }
 
     if (actualInitialPaymentCop > 0) {
       order.payments.push(
@@ -1250,12 +1284,19 @@ export async function addOrderComment(orderId: string, input: AddOrderCommentInp
     const order = getOrderByIdOrThrow(store, orderId);
     const comment = input.comment.trim();
     const author = input.author?.trim() || "Jose FerShop";
+    const attachments = normalizeOrderAttachments(input.attachments);
 
-    if (!comment) {
-      throw new OperationsStoreError("Escribe un comentario antes de publicarlo.");
+    if (!comment && !attachments.length) {
+      throw new OperationsStoreError("Escribe un comentario o adjunta un archivo antes de publicar.");
     }
     if (comment.length > 1000) {
       throw new OperationsStoreError("El comentario no puede superar 1000 caracteres.");
+    }
+    if ((input.attachments?.length ?? 0) !== attachments.length) {
+      throw new OperationsStoreError("Uno de los archivos adjuntos no es valido.");
+    }
+    if (attachments.length > ORDER_ATTACHMENT_MAX_FILES) {
+      throw new OperationsStoreError(`Puedes adjuntar hasta ${ORDER_ATTACHMENT_MAX_FILES} archivos.`);
     }
 
     const nowIso = new Date().toISOString();
@@ -1263,9 +1304,10 @@ export async function addOrderComment(orderId: string, input: AddOrderCommentInp
       makeTimelineEvent({
         type: "comment",
         title: author,
-        detail: comment,
+        detail: comment || "Se agregaron archivos al seguimiento.",
         atLabel: formatDateTimeLabel(nowIso),
         completed: true,
+        attachments: attachments.length ? attachments : undefined,
       })
     );
     order.updatedAtIso = nowIso;

@@ -6,6 +6,10 @@ import { useMemo, useState } from "react";
 
 import { ProductPriceCalculator } from "@/components/product-price-calculator";
 import { FormattedNumberInput } from "@/components/formatted-number-input";
+import {
+  OrderAttachmentPicker,
+  uploadOrderAttachments,
+} from "@/components/order-attachment-picker";
 import { formatCop } from "@/lib/commerce";
 import type {
   CartItem,
@@ -122,6 +126,8 @@ export function NewOrderWorkbench({
   const [isConfirmingWithoutAdvance, setIsConfirmingWithoutAdvance] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [calculatorProductId, setCalculatorProductId] = useState<string | null>(null);
+  const [initialComment, setInitialComment] = useState("");
+  const [initialFiles, setInitialFiles] = useState<File[]>([]);
 
   const inventoryByProduct = useMemo(
     () => new Map(inventoryItems.map((item) => [item.product.id, item.availableQuantity])),
@@ -288,6 +294,7 @@ export function NewOrderWorkbench({
     setError(null);
 
     try {
+      const attachments = isEditing ? [] : await uploadOrderAttachments(initialFiles);
       const response = await fetch(
         initialOrder ? `/api/orders/${encodeURIComponent(initialOrder.id)}` : "/api/orders",
         {
@@ -310,6 +317,8 @@ export function NewOrderWorkbench({
           customerCity: selectedCustomer.city,
           actualInitialPaymentCop: paymentReceivedCop,
           purchaseWithoutAdvance: hasSelectedProducts && purchaseWithoutAdvance,
+          initialComment,
+          attachments,
         }),
         }
       );
@@ -433,6 +442,35 @@ export function NewOrderWorkbench({
                   </button>
                 )}
               </section>
+
+              {!isEditing ? (
+                <section className="order-section order-notes-section">
+                  <div className="order-section__header">
+                    <div>
+                      <h2>Comentario y archivos</h2>
+                      <small>Se mostrara en la cronologia del pedido</small>
+                    </div>
+                  </div>
+                  <div className="order-notes-section__body">
+                    <textarea
+                      rows={4}
+                      maxLength={1000}
+                      value={initialComment}
+                      placeholder="Escribe tallas, colores, referencias u otra informacion importante..."
+                      onChange={(event) => setInitialComment(event.target.value)}
+                    />
+                    <OrderAttachmentPicker
+                      files={initialFiles}
+                      disabled={isSubmitting}
+                      onChange={setInitialFiles}
+                      onError={(message) => setError(message || null)}
+                    />
+                    <small className="order-attachment-help">
+                      Hasta 6 archivos. Cada archivo puede pesar maximo 12 MB.
+                    </small>
+                  </div>
+                </section>
+              ) : null}
 
               <section className="order-section payment-section">
                 <div className="order-section__header">

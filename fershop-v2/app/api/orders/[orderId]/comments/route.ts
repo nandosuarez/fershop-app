@@ -15,6 +15,7 @@ export async function POST(
     const result = await addOrderComment(orderId, {
       comment: payload.comment ?? "",
       author: payload.author,
+      attachments: payload.attachments,
     });
     return NextResponse.json(result);
   } catch (error) {

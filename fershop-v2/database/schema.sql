@@ -60,9 +60,16 @@ CREATE TABLE IF NOT EXISTS fershop_v2.app_asset (
   byte_length INTEGER NOT NULL,
   data BYTEA NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT app_asset_type_check CHECK (asset_type IN ('PRODUCT_IMAGE')),
+  CONSTRAINT app_asset_type_check CHECK (asset_type IN ('PRODUCT_IMAGE', 'ORDER_ATTACHMENT')),
   CONSTRAINT app_asset_size_check CHECK (byte_length > 0)
 );
+
+ALTER TABLE fershop_v2.app_asset
+  DROP CONSTRAINT IF EXISTS app_asset_type_check;
+
+ALTER TABLE fershop_v2.app_asset
+  ADD CONSTRAINT app_asset_type_check
+  CHECK (asset_type IN ('PRODUCT_IMAGE', 'ORDER_ATTACHMENT'));
 
 CREATE INDEX IF NOT EXISTS app_asset_created_idx
   ON fershop_v2.app_asset (created_at DESC);

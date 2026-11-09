@@ -5,9 +5,13 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { FormattedNumberInput } from "@/components/formatted-number-input";
+import {
+  OrderAttachmentPicker,
+  uploadOrderAttachments,
+} from "@/components/order-attachment-picker";
 import { formatCop } from "@/lib/commerce";
 import { getAvailableOperationalActions, getAvailablePaymentOptions } from "@/lib/operations";
-import type { DashboardOrder, PaymentLogEntry } from "@/lib/types";
+import type { DashboardOrder, OrderAttachment, PaymentLogEntry } from "@/lib/types";
 
 interface ApiErrorPayload {
   message?: string;
@@ -30,11 +34,55 @@ function formatOrderDate(iso: string) {
   }).format(new Date(iso));
 }
 
+function attachmentTypeLabel(attachment: OrderAttachment) {
+  if (attachment.kind === "image") {
+    return "Imagen";
+  }
+  return attachment.fileName.split(".").pop()?.toLocaleUpperCase("es") || "Archivo";
+}
+
+function TimelineAttachments({ attachments }: { attachments?: OrderAttachment[] }) {
+  if (!attachments?.length) {
+    return null;
+  }
+  return (
+    <div className="order-timeline-attachments">
+      {attachments.map((attachment) =>
+        attachment.kind === "image" ? (
+          <a
+            key={attachment.id}
+            href={attachment.url}
+            className="order-timeline-image"
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Abrir ${attachment.fileName}`}
+          >
+            <img src={attachment.url} alt={attachment.fileName} loading="lazy" />
+            <span>{attachment.fileName}</span>
+          </a>
+        ) : (
+          <a
+            key={attachment.id}
+            href={attachment.url}
+            className="order-timeline-document"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span>{attachmentTypeLabel(attachment)}</span>
+            <strong>{attachment.fileName}</strong>
+          </a>
+        )
+      )}
+    </div>
+  );
+}
+
 export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProps) {
   const router = useRouter();
   const [order, setOrder] = useState<DashboardOrder | null>(null);
   const [paymentAmountCop, setPaymentAmountCop] = useState(0);
   const [comment, setComment] = useState("");
+  const [commentFiles, setCommentFiles] = useState<File[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<
     | "payment"
@@ -113,7 +161,7 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
     successMessage: string
   ) {
     if (!order) {
-      return;
+      return false;
     }
     setBusyAction(action);
     setError(null);
@@ -131,8 +179,10 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
       const payload = (await response.json()) as OrderApiPayload;
       setOrder(payload.order);
       setFeedback(successMessage);
+      return true;
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "No pudimos guardar el cambio.");
+      return false;
     } finally {
       setBusyAction(null);
     }
@@ -237,16 +287,27 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
   }
 
   async function handleComment() {
-    if (!comment.trim()) {
+    if (!comment.trim() && !commentFiles.length) {
       return;
     }
-    await postOrderChange(
-      "comments",
-      { comment, author: "Jose FerShop" },
-      "comment",
-      "Comentario publicado."
-    );
-    setComment("");
+    setBusyAction("comment");
+    setError(null);
+    try {
+      const attachments = await uploadOrderAttachments(commentFiles);
+      const success = await postOrderChange(
+        "comments",
+        { comment, author: "Jose FerShop", attachments },
+        "comment",
+        "Comentario publicado."
+      );
+      if (success) {
+        setComment("");
+        setCommentFiles([]);
+      }
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "No pudimos guardar los archivos.");
+      setBusyAction(null);
+    }
   }
 
   async function handleNotification() {
@@ -471,17 +532,25 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
             <h2>Cronologia</h2>
             <div className="ops-card order-comment-box">
               <span className="ops-avatar">JF</span>
-              <textarea
-                rows={2}
-                maxLength={1000}
-                value={comment}
-                placeholder="Deja un comentario del seguimiento..."
-                onChange={(event) => setComment(event.target.value)}
-              />
+              <div className="order-comment-box__content">
+                <textarea
+                  rows={2}
+                  maxLength={1000}
+                  value={comment}
+                  placeholder="Deja un comentario del seguimiento..."
+                  onChange={(event) => setComment(event.target.value)}
+                />
+                <OrderAttachmentPicker
+                  files={commentFiles}
+                  disabled={busyAction !== null}
+                  onChange={setCommentFiles}
+                  onError={(message) => setError(message || null)}
+                />
+              </div>
               <button
                 type="button"
                 className="ops-button ops-button--primary"
-                disabled={!comment.trim() || busyAction !== null}
+                disabled={(!comment.trim() && !commentFiles.length) || busyAction !== null}
                 onClick={() => void handleComment()}
               >
                 {busyAction === "comment" ? "Publicando..." : "Publicar"}
@@ -498,6 +567,7 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
                       <small>{event.atLabel}</small>
                     </div>
                     <p>{event.detail}</p>
+                    <TimelineAttachments attachments={event.attachments} />
                   </div>
                 </article>
               ))}

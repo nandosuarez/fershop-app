@@ -272,6 +272,15 @@ export interface OrderTimelineEvent {
   detail: string;
   atLabel: string;
   completed: boolean;
+  attachments?: OrderAttachment[];
+}
+
+export interface OrderAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  url: string;
+  kind: "image" | "document";
 }
 
 export interface PaymentLogEntry {
@@ -392,6 +401,8 @@ export interface CreateOrderInput {
   actualInitialPaymentCop: number;
   purchaseWithoutAdvance?: boolean;
   assignedTo?: string;
+  initialComment?: string;
+  attachments?: OrderAttachment[];
 }
 
 export interface UpdateOrderItemInput extends CartItem {
@@ -431,6 +442,7 @@ export interface ApplyOperationalActionInput {
 export interface AddOrderCommentInput {
   comment: string;
   author?: string;
+  attachments?: OrderAttachment[];
 }
 
 export interface OperationMutationResult {
