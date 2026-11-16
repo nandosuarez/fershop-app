@@ -1710,6 +1710,11 @@
   color: var(--ops-muted);
 }
 
+.general-payment-allocation__list {
+  max-height: 310px;
+  overflow-y: auto;
+}
+
 .general-payment-row {
   min-height: 66px;
   padding: 10px 14px;
@@ -1722,6 +1727,16 @@
 
 .general-payment-row:last-child {
   border-bottom: 0;
+}
+
+.general-payment-row.is-unaffected {
+  background: #fafafa;
+  color: #6f6f72;
+}
+
+.general-payment-row.is-unaffected .general-payment-sequence {
+  background: #dedee2;
+  color: #68686e;
 }
 
 .general-payment-sequence {

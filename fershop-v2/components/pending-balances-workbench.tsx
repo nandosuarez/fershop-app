@@ -466,26 +466,42 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
       customers.find((customer) => customer.key === generalPaymentCustomerKey) ?? null,
     [customers, generalPaymentCustomerKey]
   );
-  const generalPaymentAllocations = useMemo(() => {
-    if (!generalPaymentCustomer || generalPaymentAmountCop <= 0) {
+  const generalPaymentPreview = useMemo(() => {
+    if (!generalPaymentCustomer) {
       return [];
     }
 
-    const ordersById = new Map(
-      generalPaymentCustomer.orders.map((order) => [order.id, order])
+    const allocationsByOrderId = new Map(
+      allocateGeneralPayment(
+        generalPaymentCustomer.orders.map((order) => ({
+          orderId: order.id,
+          createdAtIso: order.createdAtIso,
+          outstandingCop: getOrderOutstandingCop(order),
+        })),
+        generalPaymentAmountCop
+      ).map((allocation) => [allocation.orderId, allocation])
     );
-    return allocateGeneralPayment(
-      generalPaymentCustomer.orders.map((order) => ({
-        orderId: order.id,
-        createdAtIso: order.createdAtIso,
-        outstandingCop: getOrderOutstandingCop(order),
-      })),
-      generalPaymentAmountCop
-    ).map((allocation) => ({
-      ...allocation,
-      order: ordersById.get(allocation.orderId),
-    }));
+    return [...generalPaymentCustomer.orders]
+      .sort((left, right) => {
+        const dateComparison = left.createdAtIso.localeCompare(right.createdAtIso);
+        return dateComparison || left.id.localeCompare(right.id, undefined, { numeric: true });
+      })
+      .map((order) => {
+        const previousOutstandingCop = getOrderOutstandingCop(order);
+        const allocation = allocationsByOrderId.get(order.id);
+        const appliedCop = allocation?.appliedCop ?? 0;
+        return {
+          order,
+          orderId: order.id,
+          previousOutstandingCop,
+          appliedCop,
+          remainingOutstandingCop: previousOutstandingCop - appliedCop,
+        };
+      });
   }, [generalPaymentAmountCop, generalPaymentCustomer]);
+  const generalPaymentAffectedOrders = generalPaymentPreview.filter(
+    (preview) => preview.appliedCop > 0
+  ).length;
   const filteredCustomers = useMemo(
     () =>
       customers.filter((customer) =>
@@ -1070,31 +1086,43 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                 </span>
               </div>
 
-              {generalPaymentAllocations.length ? (
+              {generalPaymentPreview.length ? (
                 <div className="general-payment-allocation">
                   <div className="general-payment-allocation__header">
                     <strong>Vista previa</strong>
-                    <span>{numberFormatter.format(generalPaymentAllocations.length)} pedido(s)</span>
+                    <span>
+                      {numberFormatter.format(generalPaymentAffectedOrders)} reciben abono de{" "}
+                      {numberFormatter.format(generalPaymentPreview.length)} pendientes
+                    </span>
                   </div>
-                  {generalPaymentAllocations.map((allocation, index) => (
-                    <div className="general-payment-row" key={allocation.orderId}>
-                      <span className="general-payment-sequence">{index + 1}</span>
-                      <div>
-                        <strong>{allocation.orderId}</strong>
-                        <small>
-                          {allocation.order ? formatOrderDate(allocation.order.createdAtIso) : ""}
-                        </small>
+                  <div className="general-payment-allocation__list">
+                    {generalPaymentPreview.map((preview, index) => (
+                      <div
+                        className={`general-payment-row${
+                          preview.appliedCop > 0 ? "" : " is-unaffected"
+                        }`}
+                        key={preview.orderId}
+                      >
+                        <span className="general-payment-sequence">{index + 1}</span>
+                        <div>
+                          <strong>{preview.orderId}</strong>
+                          <small>{formatOrderDate(preview.order.createdAtIso)}</small>
+                        </div>
+                        <div>
+                          <span>Se aplica</span>
+                          <strong>
+                            {preview.appliedCop > 0
+                              ? formatCop(preview.appliedCop)
+                              : "Sin aplicar"}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>Queda</span>
+                          <strong>{formatCop(preview.remainingOutstandingCop)}</strong>
+                        </div>
                       </div>
-                      <div>
-                        <span>Se aplica</span>
-                        <strong>{formatCop(allocation.appliedCop)}</strong>
-                      </div>
-                      <div>
-                        <span>Queda</span>
-                        <strong>{formatCop(allocation.remainingOutstandingCop)}</strong>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               ) : null}
 
