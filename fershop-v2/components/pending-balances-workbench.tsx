@@ -51,6 +51,13 @@ interface PrintableCustomer extends Omit<PendingCustomer, "orders"> {
   hasPartialOrders: boolean;
 }
 
+interface MessageCopyStatus {
+  customerKey: string;
+  key: string;
+  message: string;
+  isError: boolean;
+}
+
 const numberFormatter = new Intl.NumberFormat("es-CO");
 const printLogoUrl = "/brand/fershop-logo-print.png";
 
@@ -72,6 +79,30 @@ function waitForImageDecode(image: HTMLImageElement) {
       }
     );
   });
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Use the browser fallback when clipboard permissions are unavailable.
+    }
+  }
+
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.style.position = "fixed";
+  textArea.style.opacity = "0";
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  const copied = document.execCommand("copy");
+  textArea.remove();
+  if (!copied) {
+    throw new Error("Clipboard unavailable");
+  }
 }
 
 async function fetchLatestOrders() {
@@ -190,6 +221,56 @@ function buildPrintableCustomer(
     ),
     hasPartialOrders: orders.some((order) => order.isPartial),
   };
+}
+
+function buildArrivalWhatsAppMessage(
+  customer: PrintableCustomer,
+  includesAllProducts: boolean
+) {
+  const products = customer.orders.flatMap(({ order, items }) =>
+    items.map((item) => ({ orderId: order.id, item }))
+  );
+  const greeting = `Hola ${customer.name}, tenemos una buena noticia.`;
+
+  if (products.length === 1) {
+    const [{ orderId, item }] = products;
+    return [
+      greeting,
+      "",
+      `Tu producto *${item.productName}* del pedido *${orderId}* ya llego a Colombia.`,
+      `Cantidad: ${numberFormatter.format(item.quantity)}`,
+      `Saldo pendiente: *${formatCop(customer.pendingCop)}*`,
+      "Metodo de pago: *Nequi o llave - 3045720023*",
+      "",
+      "Cuando realices el pago, envianos el comprobante para coordinar la entrega.",
+      "",
+      "Gracias por comprar en *FerShop USA*.",
+    ].join("\n");
+  }
+
+  const heading = includesAllProducts
+    ? "Todos tus productos ya llegaron a Colombia:"
+    : "Los siguientes productos ya llegaron a Colombia:";
+  const productLines = products.map(
+    ({ orderId, item }) =>
+      `- ${item.productName} (${numberFormatter.format(item.quantity)} unidad(es)) - ${orderId}`
+  );
+
+  return [
+    greeting,
+    "",
+    heading,
+    ...productLines,
+    "",
+    `Saldo pendiente: *${formatCop(customer.pendingCop)}*`,
+    "Metodo de pago: *Nequi o llave - 3045720023*",
+    ...(includesAllProducts
+      ? ["Te adjuntamos tu estado de cuenta con el detalle completo de la compra."]
+      : []),
+    "Cuando realices el pago, envianos el comprobante para coordinar la entrega.",
+    "",
+    "Gracias por comprar en *FerShop USA*.",
+  ].join("\n");
 }
 
 function formatOrderDate(iso: string) {
@@ -417,6 +498,7 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
   const [generalPaymentError, setGeneralPaymentError] = useState("");
   const [generalPaymentFeedback, setGeneralPaymentFeedback] = useState("");
   const [isSavingGeneralPayment, setIsSavingGeneralPayment] = useState(false);
+  const [messageCopyStatus, setMessageCopyStatus] = useState<MessageCopyStatus | null>(null);
   const [selectedItemsByCustomer, setSelectedItemsByCustomer] = useState<Record<string, string[]>>(
     {}
   );
@@ -658,6 +740,58 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
     });
   }
 
+  async function copyArrivalMessage(
+    customer: PendingCustomer,
+    selectedItemKeys: string[],
+    messageKey: string,
+    includesAllProducts: boolean
+  ) {
+    const printableCustomer = buildPrintableCustomer(customer, selectedItemKeys);
+    if (!printableCustomer) {
+      setMessageCopyStatus({
+        customerKey: customer.key,
+        key: messageKey,
+        message: "Selecciona al menos un producto para preparar el mensaje.",
+        isError: true,
+      });
+      return;
+    }
+
+    const hasProductsWithoutArrival = printableCustomer.orders.some(
+      ({ order }) => !order.arrivalRecordedAtIso
+    );
+    if (hasProductsWithoutArrival) {
+      setMessageCopyStatus({
+        customerKey: customer.key,
+        key: messageKey,
+        message: "Solo se pueden notificar productos con llegada a Colombia registrada.",
+        isError: true,
+      });
+      return;
+    }
+
+    try {
+      await copyTextToClipboard(
+        buildArrivalWhatsAppMessage(printableCustomer, includesAllProducts)
+      );
+      setMessageCopyStatus({
+        customerKey: customer.key,
+        key: messageKey,
+        message: includesAllProducts
+          ? "Mensaje copiado. Guarda el PDF y adjuntalo en WhatsApp."
+          : "Mensaje de llegada copiado.",
+        isError: false,
+      });
+    } catch {
+      setMessageCopyStatus({
+        customerKey: customer.key,
+        key: messageKey,
+        message: "No pudimos copiar el mensaje. Intenta nuevamente.",
+        isError: true,
+      });
+    }
+  }
+
   useEffect(() => {
     function clearPrintCustomer() {
       setPrintCustomer(null);
@@ -788,6 +922,12 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                     customer,
                     selectedItemsByCustomer[customer.key]
                   );
+                  const selectedProductsHaveArrived = Boolean(
+                    selectedReport?.orders.every(({ order }) => order.arrivalRecordedAtIso)
+                  );
+                  const selectedMessageKey = `selection:${customer.key}:${[...selectedKeys]
+                    .sort()
+                    .join("|")}`;
                   return (
                     <Fragment key={customer.key}>
                       <tr className={isExpanded ? "is-selected" : undefined}>
@@ -872,6 +1012,31 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                                   <button
                                     type="button"
                                     className="ops-button"
+                                    disabled={
+                                      selectedItemCount === 0 || !selectedProductsHaveArrived
+                                    }
+                                    title={
+                                      selectedProductsHaveArrived
+                                        ? "Copiar mensaje para WhatsApp"
+                                        : "Todos los productos seleccionados deben tener llegada registrada"
+                                    }
+                                    onClick={() =>
+                                      void copyArrivalMessage(
+                                        customer,
+                                        [...selectedKeys],
+                                        selectedMessageKey,
+                                        allItemsSelected
+                                      )
+                                    }
+                                  >
+                                    {messageCopyStatus?.key === selectedMessageKey &&
+                                    !messageCopyStatus.isError
+                                      ? "Mensaje copiado"
+                                      : "Copiar mensaje WhatsApp"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ops-button"
                                     disabled={printingCustomerKey !== null || selectedItemCount === 0}
                                     onClick={() => void printBalance(customer.key)}
                                   >
@@ -882,6 +1047,16 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                                   {selectedItemCount === 0 ? (
                                     <small className="balances-selection-warning" role="status">
                                       Selecciona al menos un producto.
+                                    </small>
+                                  ) : null}
+                                  {messageCopyStatus?.customerKey === customer.key ? (
+                                    <small
+                                      className={`balances-message-feedback${
+                                        messageCopyStatus.isError ? " is-error" : ""
+                                      }`}
+                                      role={messageCopyStatus.isError ? "alert" : "status"}
+                                    >
+                                      {messageCopyStatus.message}
                                     </small>
                                   ) : null}
                                 </div>
@@ -947,6 +1122,8 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                                       <div className="balances-product-list">
                                         {items.map((item, index) => {
                                           const itemKey = getItemSelectionKey(order.id, index);
+                                          const itemMessageKey = `product:${itemKey}`;
+                                          const canNotifyArrival = Boolean(order.arrivalRecordedAtIso);
                                           return (
                                           <div
                                             key={`${order.id}-${item.productId}-${index}`}
@@ -978,6 +1155,32 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                                             <div>
                                               <span>Subtotal</span>
                                               <strong>{formatCop(item.lineTotalCop)}</strong>
+                                            </div>
+                                            <div className="balances-product-message">
+                                              <button
+                                                type="button"
+                                                className="balances-message-button"
+                                                disabled={!canNotifyArrival}
+                                                title={
+                                                  canNotifyArrival
+                                                    ? "Copiar aviso de llegada"
+                                                    : "Registra primero la llegada a Colombia"
+                                                }
+                                                onClick={() =>
+                                                  void copyArrivalMessage(
+                                                    customer,
+                                                    [itemKey],
+                                                    itemMessageKey,
+                                                    false
+                                                  )
+                                                }
+                                              >
+                                                {messageCopyStatus?.key === itemMessageKey &&
+                                                !messageCopyStatus.isError
+                                                  ? "Copiado"
+                                                  : "Copiar aviso"}
+                                              </button>
+                                              {!canNotifyArrival ? <small>Sin llegada</small> : null}
                                             </div>
                                           </div>
                                           );
