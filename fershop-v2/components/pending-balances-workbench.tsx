@@ -1049,34 +1049,36 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                 </small>
               </div>
 
-              <label className="general-payment-field">
-                <span>Valor recibido</span>
-                <span className="money-input general-payment-money-input">
-                  <span>$</span>
-                  <FormattedNumberInput
-                    value={generalPaymentAmountCop}
-                    max={generalPaymentCustomer.pendingCop}
-                    disabled={isSavingGeneralPayment}
-                    aria-label="Valor del abono general"
-                    autoFocus
-                    onValueChange={(value) => {
-                      setGeneralPaymentAmountCop(value);
-                      setGeneralPaymentError("");
-                    }}
-                  />
-                </span>
-              </label>
+              <div className="general-payment-fields">
+                <label className="general-payment-field">
+                  <span>Valor recibido</span>
+                  <span className="money-input general-payment-money-input">
+                    <span>$</span>
+                    <FormattedNumberInput
+                      value={generalPaymentAmountCop}
+                      max={generalPaymentCustomer.pendingCop}
+                      disabled={isSavingGeneralPayment}
+                      aria-label="Valor del abono general"
+                      autoFocus
+                      onValueChange={(value) => {
+                        setGeneralPaymentAmountCop(value);
+                        setGeneralPaymentError("");
+                      }}
+                    />
+                  </span>
+                </label>
 
-              <label className="general-payment-field">
-                <span>Nota opcional</span>
-                <textarea
-                  value={generalPaymentNote}
-                  disabled={isSavingGeneralPayment}
-                  placeholder="Ejemplo: transferencia recibida por Nequi"
-                  rows={3}
-                  onChange={(event) => setGeneralPaymentNote(event.target.value)}
-                />
-              </label>
+                <label className="general-payment-field">
+                  <span>Nota opcional</span>
+                  <textarea
+                    value={generalPaymentNote}
+                    disabled={isSavingGeneralPayment}
+                    placeholder="Ejemplo: transferencia recibida por Nequi"
+                    rows={2}
+                    onChange={(event) => setGeneralPaymentNote(event.target.value)}
+                  />
+                </label>
+              </div>
 
               <div className="general-payment-rule">
                 <strong>Distribucion automatica</strong>

@@ -1613,32 +1613,10 @@
   min-height: 0;
   padding: 20px;
   display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   align-content: start;
   gap: 16px;
-  overflow-y: scroll;
-  overscroll-behavior: contain;
-  scrollbar-color: #57575d #ececef;
-  scrollbar-gutter: stable;
-  scrollbar-width: auto;
-}
-
-.general-payment-body::-webkit-scrollbar {
-  width: 13px;
-}
-
-.general-payment-body::-webkit-scrollbar-track {
-  border-left: 1px solid #dddde2;
-  background: #ececef;
-}
-
-.general-payment-body::-webkit-scrollbar-thumb {
-  border: 3px solid #ececef;
-  border-radius: 999px;
-  background: #57575d;
-}
-
-.general-payment-body::-webkit-scrollbar-thumb:hover {
-  background: #2f2f34;
+  overflow: hidden;
 }
 
 .general-payment-summary {
@@ -1674,8 +1652,17 @@
   font-weight: 700;
 }
 
+.general-payment-fields {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.7fr) minmax(280px, 1.3fr);
+  align-items: end;
+  gap: 16px;
+}
+
 .general-payment-field textarea {
   width: 100%;
+  min-height: 48px;
+  max-height: 72px;
   padding: 11px 12px;
   border: 1px solid #c9c9c3;
   border-radius: 9px;
@@ -1716,8 +1703,11 @@
 }
 
 .general-payment-allocation {
+  min-height: 0;
   border: 1px solid var(--ops-line);
   border-radius: 12px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -1738,7 +1728,31 @@
 }
 
 .general-payment-allocation__list {
-  overflow: visible;
+  min-height: 0;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
+  scrollbar-color: #57575d #ececef;
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+}
+
+.general-payment-allocation__list::-webkit-scrollbar {
+  width: 13px;
+}
+
+.general-payment-allocation__list::-webkit-scrollbar-track {
+  border-left: 1px solid #dddde2;
+  background: #ececef;
+}
+
+.general-payment-allocation__list::-webkit-scrollbar-thumb {
+  border: 3px solid #ececef;
+  border-radius: 999px;
+  background: #57575d;
+}
+
+.general-payment-allocation__list::-webkit-scrollbar-thumb:hover {
+  background: #2f2f34;
 }
 
 .general-payment-row {
@@ -1870,6 +1884,15 @@
 
   .general-payment-row {
     grid-template-columns: 28px minmax(0, 1fr) auto;
+  }
+
+  .general-payment-body {
+    grid-template-rows: auto auto auto minmax(180px, 1fr) auto;
+    overflow-y: auto;
+  }
+
+  .general-payment-fields {
+    grid-template-columns: 1fr;
   }
 
   .general-payment-row > div:last-child {
