@@ -1590,7 +1590,7 @@
   font-weight: 650;
 }
 
-.general-payment-modal {
+.order-modal.general-payment-modal {
   width: min(700px, 100%);
   height: min(720px, calc(100vh - 56px));
   height: min(720px, calc(100dvh - 56px));
@@ -1889,7 +1889,7 @@
     flex: 1;
   }
 
-  .general-payment-modal {
+  .order-modal.general-payment-modal {
     height: calc(100vh - 20px);
     height: calc(100dvh - 20px);
     max-height: calc(100vh - 20px);
