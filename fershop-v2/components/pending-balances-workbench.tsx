@@ -14,6 +14,8 @@ interface PendingBalancesWorkbenchProps {
   orders: DashboardOrder[];
 }
 
+type ArrivalFilter = "all" | "arrived";
+
 interface OrdersApiPayload {
   orders?: DashboardOrder[];
 }
@@ -117,6 +119,12 @@ async function fetchLatestOrders() {
   } catch {
     return null;
   }
+}
+
+function filterOrdersByArrival(orders: DashboardOrder[], filter: ArrivalFilter) {
+  return filter === "arrived"
+    ? orders.filter((order) => Boolean(order.arrivalRecordedAtIso))
+    : orders;
 }
 
 function getCustomerKey(order: DashboardOrder) {
@@ -489,6 +497,7 @@ function PrintableBalanceReport({ customer }: { customer: PrintableCustomer }) {
 export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalancesWorkbenchProps) {
   const [orders, setOrders] = useState(initialOrders);
   const [search, setSearch] = useState("");
+  const [arrivalFilter, setArrivalFilter] = useState<ArrivalFilter>("all");
   const [expandedCustomerKey, setExpandedCustomerKey] = useState<string | null>(null);
   const [printCustomer, setPrintCustomer] = useState<PrintableCustomer | null>(null);
   const [printingCustomerKey, setPrintingCustomerKey] = useState<string | null>(null);
@@ -542,11 +551,15 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
     };
   }, []);
 
-  const customers = useMemo(() => groupPendingCustomers(orders), [orders]);
+  const allCustomers = useMemo(() => groupPendingCustomers(orders), [orders]);
+  const customers = useMemo(
+    () => groupPendingCustomers(filterOrdersByArrival(orders, arrivalFilter)),
+    [arrivalFilter, orders]
+  );
   const generalPaymentCustomer = useMemo(
     () =>
-      customers.find((customer) => customer.key === generalPaymentCustomerKey) ?? null,
-    [customers, generalPaymentCustomerKey]
+      allCustomers.find((customer) => customer.key === generalPaymentCustomerKey) ?? null,
+    [allCustomers, generalPaymentCustomerKey]
   );
   const generalPaymentPreview = useMemo(() => {
     if (!generalPaymentCustomer) {
@@ -811,8 +824,9 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
       if (latestOrders) {
         setOrders(latestOrders);
         customer =
-          groupPendingCustomers(latestOrders).find((candidate) => candidate.key === customerKey) ??
-          null;
+          groupPendingCustomers(filterOrdersByArrival(latestOrders, arrivalFilter)).find(
+            (candidate) => candidate.key === customerKey
+          ) ?? null;
       }
 
       if (!customer) {
@@ -879,8 +893,26 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
         <div className="ops-card__header balances-section-header">
           <div>
             <h2>Cartera por persona</h2>
-            <span>Ordenada de mayor a menor saldo</span>
+            <span>
+              {arrivalFilter === "arrived"
+                ? "Solo pedidos con llegada a Colombia registrada"
+                : "Ordenada de mayor a menor saldo"}
+            </span>
           </div>
+          <label className="balances-arrival-filter">
+            <span>Estado del pedido</span>
+            <select
+              value={arrivalFilter}
+              onChange={(event) => {
+                setArrivalFilter(event.target.value as ArrivalFilter);
+                setExpandedCustomerKey(null);
+                setMessageCopyStatus(null);
+              }}
+            >
+              <option value="all">Todos los saldos</option>
+              <option value="arrived">Llegados a Colombia</option>
+            </select>
+          </label>
         </div>
         <ListSearch
           value={search}
@@ -918,6 +950,11 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                   const allItemKeys = getCustomerItemKeys(customer);
                   const selectedItemCount = allItemKeys.filter((key) => selectedKeys.has(key)).length;
                   const allItemsSelected = selectedItemCount === allItemKeys.length;
+                  const completeCustomer =
+                    allCustomers.find((candidate) => candidate.key === customer.key) ?? customer;
+                  const selectedIncludesAllCustomerProducts =
+                    allItemsSelected &&
+                    selectedItemCount === getCustomerItemKeys(completeCustomer).length;
                   const selectedReport = buildPrintableCustomer(
                     customer,
                     selectedItemsByCustomer[customer.key]
@@ -1025,7 +1062,7 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                                         customer,
                                         [...selectedKeys],
                                         selectedMessageKey,
-                                        allItemsSelected
+                                        selectedIncludesAllCustomerProducts
                                       )
                                     }
                                   >
@@ -1202,11 +1239,19 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
           </div>
         ) : (
           <div className="ops-empty-state reports-empty-state">
-            <h2>{customers.length ? "No encontramos coincidencias" : "No hay saldos pendientes"}</h2>
+            <h2>
+              {customers.length
+                ? "No encontramos coincidencias"
+                : arrivalFilter === "arrived"
+                  ? "No hay saldos de pedidos llegados"
+                  : "No hay saldos pendientes"}
+            </h2>
             <p>
               {customers.length
                 ? "Prueba buscando por otro nombre, pedido o producto."
-                : "Todos los pedidos registrados se encuentran pagados."}
+                : arrivalFilter === "arrived"
+                  ? "No hay pedidos con llegada registrada y saldo pendiente."
+                  : "Todos los pedidos registrados se encuentran pagados."}
             </p>
           </div>
         )}

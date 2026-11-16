@@ -1310,6 +1310,31 @@
   font-size: 0.78rem;
 }
 
+.balances-arrival-filter {
+  display: grid;
+  gap: 5px;
+  color: var(--ops-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.balances-arrival-filter select {
+  min-width: 190px;
+  height: 40px;
+  padding: 0 34px 0 11px;
+  border: 1px solid #c9c9c3;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ops-ink);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .balances-table {
   min-width: 980px;
 }
@@ -1916,6 +1941,15 @@
 
   .balances-detail-header {
     align-items: flex-start;
+  }
+
+  .balances-section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .balances-arrival-filter select {
+    width: 100%;
   }
 
   .balances-detail-actions {
