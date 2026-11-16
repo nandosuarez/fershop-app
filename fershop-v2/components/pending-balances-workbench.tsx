@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { Fragment, useEffect, useMemo, useState } from "react";
 
+import { FormattedNumberInput } from "@/components/formatted-number-input";
 import { ListSearch } from "@/components/list-search";
 import { formatCop, getOrderOutstandingCop, getOrderPaidCop } from "@/lib/commerce";
+import { allocateGeneralPayment } from "@/lib/general-payment";
 import { matchesSearch, normalizeSearchText } from "@/lib/search";
 import type { DashboardOrder, OrderItem } from "@/lib/types";
 
@@ -14,6 +16,12 @@ interface PendingBalancesWorkbenchProps {
 
 interface OrdersApiPayload {
   orders?: DashboardOrder[];
+}
+
+interface GeneralPaymentApiPayload {
+  message?: string;
+  orders?: DashboardOrder[];
+  remainingCustomerBalanceCop?: number;
 }
 
 interface PendingCustomer {
@@ -403,6 +411,12 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
   const [expandedCustomerKey, setExpandedCustomerKey] = useState<string | null>(null);
   const [printCustomer, setPrintCustomer] = useState<PrintableCustomer | null>(null);
   const [printingCustomerKey, setPrintingCustomerKey] = useState<string | null>(null);
+  const [generalPaymentCustomerKey, setGeneralPaymentCustomerKey] = useState<string | null>(null);
+  const [generalPaymentAmountCop, setGeneralPaymentAmountCop] = useState(0);
+  const [generalPaymentNote, setGeneralPaymentNote] = useState("");
+  const [generalPaymentError, setGeneralPaymentError] = useState("");
+  const [generalPaymentFeedback, setGeneralPaymentFeedback] = useState("");
+  const [isSavingGeneralPayment, setIsSavingGeneralPayment] = useState(false);
   const [selectedItemsByCustomer, setSelectedItemsByCustomer] = useState<Record<string, string[]>>(
     {}
   );
@@ -447,6 +461,31 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
   }, []);
 
   const customers = useMemo(() => groupPendingCustomers(orders), [orders]);
+  const generalPaymentCustomer = useMemo(
+    () =>
+      customers.find((customer) => customer.key === generalPaymentCustomerKey) ?? null,
+    [customers, generalPaymentCustomerKey]
+  );
+  const generalPaymentAllocations = useMemo(() => {
+    if (!generalPaymentCustomer || generalPaymentAmountCop <= 0) {
+      return [];
+    }
+
+    const ordersById = new Map(
+      generalPaymentCustomer.orders.map((order) => [order.id, order])
+    );
+    return allocateGeneralPayment(
+      generalPaymentCustomer.orders.map((order) => ({
+        orderId: order.id,
+        createdAtIso: order.createdAtIso,
+        outstandingCop: getOrderOutstandingCop(order),
+      })),
+      generalPaymentAmountCop
+    ).map((allocation) => ({
+      ...allocation,
+      order: ordersById.get(allocation.orderId),
+    }));
+  }, [generalPaymentAmountCop, generalPaymentCustomer]);
   const filteredCustomers = useMemo(
     () =>
       customers.filter((customer) =>
@@ -482,6 +521,84 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
       setExpandedCustomerKey(null);
     }
   }, [customers, expandedCustomerKey]);
+
+  useEffect(() => {
+    if (generalPaymentCustomerKey && !generalPaymentCustomer) {
+      setGeneralPaymentCustomerKey(null);
+    }
+  }, [generalPaymentCustomer, generalPaymentCustomerKey]);
+
+  function openGeneralPayment(customerKey: string) {
+    setGeneralPaymentCustomerKey(customerKey);
+    setGeneralPaymentAmountCop(0);
+    setGeneralPaymentNote("");
+    setGeneralPaymentError("");
+  }
+
+  function closeGeneralPayment() {
+    if (isSavingGeneralPayment) {
+      return;
+    }
+    setGeneralPaymentCustomerKey(null);
+    setGeneralPaymentAmountCop(0);
+    setGeneralPaymentNote("");
+    setGeneralPaymentError("");
+  }
+
+  async function saveGeneralPayment() {
+    const customer = generalPaymentCustomer;
+    if (!customer) {
+      return;
+    }
+    if (generalPaymentAmountCop <= 0) {
+      setGeneralPaymentError("Ingresa un valor mayor a cero.");
+      return;
+    }
+    if (generalPaymentAmountCop > customer.pendingCop) {
+      setGeneralPaymentError(`El abono no puede superar ${formatCop(customer.pendingCop)}.`);
+      return;
+    }
+
+    setIsSavingGeneralPayment(true);
+    setGeneralPaymentError("");
+    try {
+      const response = await fetch("/api/payments/general", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerKey: customer.key,
+          orderIds: customer.orders.map((order) => order.id),
+          amountCop: generalPaymentAmountCop,
+          note: generalPaymentNote,
+        }),
+      });
+      const payload = (await response.json()) as GeneralPaymentApiPayload;
+      if (!response.ok) {
+        setGeneralPaymentError(payload.message || "No pudimos registrar el abono general.");
+        return;
+      }
+
+      const latestOrders = await fetchLatestOrders();
+      if (latestOrders) {
+        setOrders(latestOrders);
+      } else if (payload.orders?.length) {
+        const updatedOrders = new Map(payload.orders.map((order) => [order.id, order]));
+        setOrders((current) =>
+          current.map((order) => updatedOrders.get(order.id) ?? order)
+        );
+      }
+      setGeneralPaymentFeedback(
+        `Se registraron ${formatCop(generalPaymentAmountCop)} para ${customer.name}.`
+      );
+      setGeneralPaymentCustomerKey(null);
+      setGeneralPaymentAmountCop(0);
+      setGeneralPaymentNote("");
+    } catch {
+      setGeneralPaymentError("No fue posible conectar con el servidor. Intenta nuevamente.");
+    } finally {
+      setIsSavingGeneralPayment(false);
+    }
+  }
 
   function updateCustomerSelection(customer: PendingCustomer, update: (keys: Set<string>) => void) {
     setSelectedItemsByCustomer((current) => {
@@ -621,6 +738,11 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
           placeholder="Buscar persona, pedido o producto..."
           resultLabel={`${numberFormatter.format(filteredCustomers.length)} de ${numberFormatter.format(customers.length)} personas`}
         />
+        {generalPaymentFeedback ? (
+          <p className="general-payment-success" role="status">
+            {generalPaymentFeedback}
+          </p>
+        ) : null}
 
         {filteredCustomers.length ? (
           <div className="ops-table-scroll">
@@ -727,6 +849,13 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                                   <button
                                     type="button"
                                     className="ops-button ops-button--primary"
+                                    onClick={() => openGeneralPayment(customer.key)}
+                                  >
+                                    Registrar abono general
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ops-button"
                                     disabled={printingCustomerKey !== null || selectedItemCount === 0}
                                     onClick={() => void printBalance(customer.key)}
                                   >
@@ -864,6 +993,146 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
         )}
         </section>
       </main>
+      {generalPaymentCustomer ? (
+        <div
+          className="order-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeGeneralPayment();
+            }
+          }}
+        >
+          <section
+            className="order-modal general-payment-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="general-payment-title"
+          >
+            <header className="order-modal__header">
+              <div>
+                <h2 id="general-payment-title">Registrar abono general</h2>
+                <small>{generalPaymentCustomer.name}</small>
+              </div>
+              <button
+                type="button"
+                aria-label="Cerrar"
+                disabled={isSavingGeneralPayment}
+                onClick={closeGeneralPayment}
+              >
+                x
+              </button>
+            </header>
+
+            <div className="general-payment-body">
+              <div className="general-payment-summary">
+                <span>Saldo total pendiente</span>
+                <strong>{formatCop(generalPaymentCustomer.pendingCop)}</strong>
+                <small>
+                  {numberFormatter.format(generalPaymentCustomer.orders.length)} pedido(s) con saldo
+                </small>
+              </div>
+
+              <label className="general-payment-field">
+                <span>Valor recibido</span>
+                <span className="money-input general-payment-money-input">
+                  <span>$</span>
+                  <FormattedNumberInput
+                    value={generalPaymentAmountCop}
+                    max={generalPaymentCustomer.pendingCop}
+                    disabled={isSavingGeneralPayment}
+                    aria-label="Valor del abono general"
+                    autoFocus
+                    onValueChange={(value) => {
+                      setGeneralPaymentAmountCop(value);
+                      setGeneralPaymentError("");
+                    }}
+                  />
+                </span>
+              </label>
+
+              <label className="general-payment-field">
+                <span>Nota opcional</span>
+                <textarea
+                  value={generalPaymentNote}
+                  disabled={isSavingGeneralPayment}
+                  placeholder="Ejemplo: transferencia recibida por Nequi"
+                  rows={3}
+                  onChange={(event) => setGeneralPaymentNote(event.target.value)}
+                />
+              </label>
+
+              <div className="general-payment-rule">
+                <strong>Distribucion automatica</strong>
+                <span>
+                  El dinero se aplicara primero al pedido mas antiguo y continuara en orden hasta
+                  agotar el valor recibido.
+                </span>
+              </div>
+
+              {generalPaymentAllocations.length ? (
+                <div className="general-payment-allocation">
+                  <div className="general-payment-allocation__header">
+                    <strong>Vista previa</strong>
+                    <span>{numberFormatter.format(generalPaymentAllocations.length)} pedido(s)</span>
+                  </div>
+                  {generalPaymentAllocations.map((allocation, index) => (
+                    <div className="general-payment-row" key={allocation.orderId}>
+                      <span className="general-payment-sequence">{index + 1}</span>
+                      <div>
+                        <strong>{allocation.orderId}</strong>
+                        <small>
+                          {allocation.order ? formatOrderDate(allocation.order.createdAtIso) : ""}
+                        </small>
+                      </div>
+                      <div>
+                        <span>Se aplica</span>
+                        <strong>{formatCop(allocation.appliedCop)}</strong>
+                      </div>
+                      <div>
+                        <span>Queda</span>
+                        <strong>{formatCop(allocation.remainingOutstandingCop)}</strong>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {generalPaymentError ? (
+                <p className="order-form-error" role="alert">
+                  {generalPaymentError}
+                </p>
+              ) : null}
+            </div>
+
+            <footer className="order-modal__footer">
+              <span>
+                Nuevo saldo: {formatCop(
+                  Math.max(generalPaymentCustomer.pendingCop - generalPaymentAmountCop, 0)
+                )}
+              </span>
+              <div>
+                <button
+                  type="button"
+                  className="ops-button"
+                  disabled={isSavingGeneralPayment}
+                  onClick={closeGeneralPayment}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="ops-button ops-button--primary"
+                  disabled={isSavingGeneralPayment || generalPaymentAmountCop <= 0}
+                  onClick={() => void saveGeneralPayment()}
+                >
+                  {isSavingGeneralPayment ? "Registrando..." : "Registrar y distribuir"}
+                </button>
+              </div>
+            </footer>
+          </section>
+        </div>
+      ) : null}
       {printCustomer ? <PrintableBalanceReport customer={printCustomer} /> : null}
     </>
   );

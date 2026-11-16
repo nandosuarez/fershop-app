@@ -8,6 +8,7 @@ import {
   summarizeCart,
 } from "@/lib/commerce";
 import { customers as seedCustomers } from "@/lib/customers";
+import { allocateGeneralPayment } from "@/lib/general-payment";
 import { deriveOrderStatusCode, getOrderStatusPresentation } from "@/lib/operations";
 import {
   normalizeOrderAttachments,
@@ -17,6 +18,7 @@ import { getCustomers } from "@/lib/server/customer-store";
 import { readAppDocument, writeAppDocument } from "@/lib/server/document-store";
 import { adjustInventoryForOrder, InventoryStoreError } from "@/lib/server/inventory-store";
 import { getProducts } from "@/lib/server/product-store";
+import { normalizeSearchText } from "@/lib/search";
 import type {
   ApplyOperationalActionInput,
   AddOrderCommentInput,
@@ -28,6 +30,8 @@ import type {
   OperationsSnapshot,
   OrderTimelineEvent,
   PaymentLogEntry,
+  GeneralPaymentResult,
+  RegisterGeneralPaymentInput,
   RegisterPaymentInput,
   UpdatePaymentInput,
   UpdateOrderInput,
@@ -336,6 +340,24 @@ function getOrderByIdOrThrow(store: OperationsStore, orderId: string): Dashboard
   }
   normalizeOrderDetails(order);
   return order;
+}
+
+function getOrderCustomerKey(order: DashboardOrder) {
+  const phone = order.customerPhone.replace(/\D/g, "");
+  if (phone) {
+    return `phone:${phone}`;
+  }
+
+  const email = normalizeSearchText(order.customerEmail);
+  if (email) {
+    return `email:${email}`;
+  }
+
+  if (order.customerId) {
+    return `id:${order.customerId}`;
+  }
+
+  return `name:${normalizeSearchText(order.customerName)}:${normalizeSearchText(order.customerCity)}`;
 }
 
 function buildPurchaseMessage(order: DashboardOrder) {
@@ -1045,6 +1067,104 @@ export async function registerPayment(
     );
     store.updatedAtIso = nowIso;
     return cloneValue(result);
+  });
+}
+
+export async function registerGeneralPayment(
+  input: RegisterGeneralPaymentInput
+): Promise<GeneralPaymentResult> {
+  return withStoreMutation((store) => {
+    const customerKey = input.customerKey.trim();
+    const orderIds = [...new Set(input.orderIds.map((orderId) => orderId.trim()).filter(Boolean))];
+    const amountCop = Math.round(Number(input.amountCop));
+
+    if (!customerKey || !orderIds.length) {
+      throw new OperationsStoreError("No encontramos los pedidos pendientes de esta persona.");
+    }
+    if (!Number.isFinite(amountCop) || amountCop <= 0) {
+      throw new OperationsStoreError("El monto del abono debe ser mayor a cero.");
+    }
+
+    const customerOrders = orderIds.map((orderId) => getOrderByIdOrThrow(store, orderId));
+    if (customerOrders.some((order) => getOrderCustomerKey(order) !== customerKey)) {
+      throw new OperationsStoreError(
+        "Los pedidos seleccionados ya no pertenecen a la misma persona. Actualiza el informe e intenta de nuevo."
+      );
+    }
+
+    const totalOutstandingCop = customerOrders.reduce(
+      (total, order) => total + getOrderOutstandingCop(order),
+      0
+    );
+    if (totalOutstandingCop <= 0) {
+      throw new OperationsStoreError("Esta persona ya no tiene saldos pendientes.");
+    }
+    if (amountCop > totalOutstandingCop) {
+      throw new OperationsStoreError(
+        `El abono supera el saldo total pendiente de ${formatCop(totalOutstandingCop)}.`
+      );
+    }
+
+    const allocations = allocateGeneralPayment(
+      customerOrders.map((order) => ({
+        orderId: order.id,
+        createdAtIso: order.createdAtIso,
+        outstandingCop: getOrderOutstandingCop(order),
+      })),
+      amountCop
+    );
+    const nowIso = new Date().toISOString();
+    const note = input.note?.trim() || "Pago aplicado desde un abono general del cliente.";
+
+    allocations.forEach((allocation) => {
+      const order = customerOrders.find((candidate) => candidate.id === allocation.orderId);
+      if (!order) {
+        throw new OperationsStoreError("No pudimos aplicar el abono a uno de los pedidos.", 500);
+      }
+
+      const payment = makePaymentEntry({
+        kind: order.arrivalRecordedAtIso ? "balance" : "advance",
+        statusCode: "received",
+        statusLabel: allocation.remainingOutstandingCop === 0 ? "Pago completo" : "Abono recibido",
+        amountCop: allocation.appliedCop,
+        recordedAtIso: nowIso,
+        recordedAtLabel: formatDateTimeLabel(nowIso),
+        note,
+      });
+      order.payments.push(payment);
+      reconcileOrderBalances(order);
+      order.updatedAtIso = nowIso;
+      order.timeline.push(
+        makeTimelineEvent({
+          type: "payment",
+          title:
+            allocation.remainingOutstandingCop === 0
+              ? "Pago completado con abono general"
+              : "Abono general aplicado",
+          detail: `Del abono general de ${formatCop(amountCop)}, se aplicaron ${formatCop(allocation.appliedCop)} a este pedido. Saldo pendiente: ${formatCop(allocation.remainingOutstandingCop)}.`,
+          atLabel: formatDateTimeLabel(nowIso),
+          completed: true,
+        })
+      );
+      updateOrderPresentation(order);
+      refreshPendingPaymentEntries(order);
+    });
+
+    store.updatedAtIso = nowIso;
+    return cloneValue({
+      amountCop,
+      allocations: allocations.map((allocation) => ({
+        orderId: allocation.orderId,
+        orderCreatedAtIso: allocation.createdAtIso,
+        appliedCop: allocation.appliedCop,
+        previousOutstandingCop: allocation.previousOutstandingCop,
+        remainingOutstandingCop: allocation.remainingOutstandingCop,
+      })),
+      orders: customerOrders.filter((order) =>
+        allocations.some((allocation) => allocation.orderId === order.id)
+      ),
+      remainingCustomerBalanceCop: totalOutstandingCop - amountCop,
+    });
   });
 }
 

@@ -429,6 +429,28 @@ export interface RegisterPaymentInput {
   note?: string;
 }
 
+export interface RegisterGeneralPaymentInput {
+  customerKey: string;
+  orderIds: string[];
+  amountCop: number;
+  note?: string;
+}
+
+export interface GeneralPaymentAllocationResult {
+  orderId: string;
+  orderCreatedAtIso: string;
+  appliedCop: number;
+  previousOutstandingCop: number;
+  remainingOutstandingCop: number;
+}
+
+export interface GeneralPaymentResult {
+  amountCop: number;
+  allocations: GeneralPaymentAllocationResult[];
+  orders: DashboardOrder[];
+  remainingCustomerBalanceCop: number;
+}
+
 export interface UpdatePaymentInput {
   amountCop: number;
   note?: string;
