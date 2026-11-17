@@ -10,6 +10,7 @@ import {
   OrderAttachmentPicker,
   uploadOrderAttachments,
 } from "@/components/order-attachment-picker";
+import { ProductImageThumb } from "@/components/product-image-thumb";
 import { formatCop } from "@/lib/commerce";
 import type {
   CartItem,
@@ -37,14 +38,6 @@ function getOrderDateValue(iso: string) {
       .map((part) => [part.type, part.value])
   );
   return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
-function ProductThumb({ name, imageUrl }: { name: string; imageUrl?: string }) {
-  return (
-    <span className="ops-product-thumb">
-      {imageUrl ? <img src={imageUrl} alt="" /> : name.slice(0, 2).toUpperCase()}
-    </span>
-  );
 }
 
 interface NewOrderWorkbenchProps {
@@ -390,7 +383,7 @@ export function NewOrderWorkbench({
                   <div className="selected-product-list">
                     {selectedLines.map(({ product, quantity }) => (
                       <div key={product.id} className="selected-product-row">
-                        <ProductThumb name={product.name} imageUrl={product.imageUrl} />
+                        <ProductImageThumb name={product.name} imageUrl={product.imageUrl} />
                         <div className="selected-product-row__name">
                           <strong>{product.name}</strong>
                           <small>
@@ -691,7 +684,7 @@ export function NewOrderWorkbench({
                     }
                     onChange={() => toggleProduct(product.id)}
                   />
-                  <ProductThumb name={product.name} imageUrl={product.imageUrl} />
+                  <ProductImageThumb name={product.name} imageUrl={product.imageUrl} />
                   <span className="product-picker-row__name">{product.name}</span>
                   <small>
                     {product.tracksInventory

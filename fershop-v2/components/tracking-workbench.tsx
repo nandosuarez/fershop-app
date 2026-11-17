@@ -9,6 +9,7 @@ import {
   OrderAttachmentPicker,
   uploadOrderAttachments,
 } from "@/components/order-attachment-picker";
+import { ProductImageThumb } from "@/components/product-image-thumb";
 import { formatCop } from "@/lib/commerce";
 import { getAvailableOperationalActions, getAvailablePaymentOptions } from "@/lib/operations";
 import type { DashboardOrder, OrderAttachment, PaymentLogEntry } from "@/lib/types";
@@ -424,13 +425,7 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
             <div className="order-detail-products">
               {items.map((item) => (
                 <div key={item.productId} className="order-detail-product">
-                  <span className="ops-product-thumb">
-                    {item.imageUrl ? (
-                      <img src={item.imageUrl} alt="" />
-                    ) : (
-                      item.productName.slice(0, 2).toUpperCase()
-                    )}
-                  </span>
+                  <ProductImageThumb name={item.productName} imageUrl={item.imageUrl} />
                   <div>
                     <strong>{item.productName}</strong>
                     <small>

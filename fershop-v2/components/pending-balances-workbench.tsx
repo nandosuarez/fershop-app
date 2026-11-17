@@ -5,6 +5,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 
 import { FormattedNumberInput } from "@/components/formatted-number-input";
 import { ListSearch } from "@/components/list-search";
+import { ProductImageThumb } from "@/components/product-image-thumb";
 import { formatCop, getOrderOutstandingCop, getOrderPaidCop } from "@/lib/commerce";
 import { allocateGeneralPayment } from "@/lib/general-payment";
 import { matchesSearch, normalizeSearchText } from "@/lib/search";
@@ -1174,13 +1175,10 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                                               checked={selectedKeys.has(itemKey)}
                                               onChange={() => toggleItemSelection(customer, itemKey)}
                                             />
-                                            <span className="ops-product-thumb">
-                                              {item.imageUrl ? (
-                                                <img src={item.imageUrl} alt="" />
-                                              ) : (
-                                                item.productName.slice(0, 2).toUpperCase()
-                                              )}
-                                            </span>
+                                            <ProductImageThumb
+                                              name={item.productName}
+                                              imageUrl={item.imageUrl}
+                                            />
                                             <div className="balances-product-name">
                                               <strong>{item.productName}</strong>
                                               <small>{numberFormatter.format(item.quantity)} unidad(es)</small>

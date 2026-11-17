@@ -970,6 +970,116 @@
   object-fit: cover;
 }
 
+.ops-product-thumb--clickable {
+  padding: 0;
+  cursor: zoom-in;
+}
+
+.ops-product-thumb--clickable:hover {
+  border-color: #8d8b84;
+  box-shadow: 0 0 0 3px rgba(40, 40, 38, 0.08);
+}
+
+.ops-product-thumb--clickable:focus-visible {
+  outline: 2px solid #255bac;
+  outline-offset: 2px;
+}
+
+.product-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  padding: 20px;
+  background: rgba(17, 17, 16, 0.82);
+  backdrop-filter: blur(5px);
+  display: grid;
+  place-items: center;
+}
+
+.product-image-lightbox__dialog {
+  width: min(920px, 100%);
+  height: min(780px, calc(100vh - 40px));
+  height: min(780px, calc(100dvh - 40px));
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.product-image-lightbox__dialog > header {
+  min-height: 60px;
+  padding: 10px 14px 10px 20px;
+  border-bottom: 1px solid var(--ops-line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.product-image-lightbox__dialog > header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-image-lightbox__dialog > header button {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border: 1px solid #d2d1cb;
+  border-radius: 50%;
+  background: #fff;
+  color: #343432;
+  display: grid;
+  place-items: center;
+  font-size: 1.45rem;
+  cursor: pointer;
+}
+
+.product-image-lightbox__canvas {
+  min-height: 0;
+  padding: 22px;
+  background:
+    linear-gradient(45deg, #f4f3ef 25%, transparent 25%),
+    linear-gradient(-45deg, #f4f3ef 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #f4f3ef 75%),
+    linear-gradient(-45deg, transparent 75%, #f4f3ef 75%),
+    #fff;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+  background-size: 20px 20px;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+}
+
+.product-image-lightbox__canvas img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 10px;
+  display: block;
+  object-fit: contain;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12);
+}
+
+@media (max-width: 680px) {
+  .product-image-lightbox {
+    padding: 8px;
+  }
+
+  .product-image-lightbox__dialog {
+    height: calc(100vh - 16px);
+    height: calc(100dvh - 16px);
+    border-radius: 14px;
+  }
+
+  .product-image-lightbox__canvas {
+    padding: 10px;
+  }
+}
+
 .product-row-actions {
   display: flex;
   justify-content: flex-end;
