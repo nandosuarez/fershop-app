@@ -2199,8 +2199,7 @@
 
   .balances-print-header small,
   .balances-print-customer span,
-  .balances-print-summary span,
-  .balances-print-order-meta small {
+  .balances-print-totals small {
     color: var(--print-muted);
     font-size: 7.5pt;
     font-weight: 650;
@@ -2219,8 +2218,7 @@
     gap: 14px;
   }
 
-  .balances-print-customer > div,
-  .balances-print-summary > div {
+  .balances-print-customer > div {
     display: grid;
     gap: 4px;
   }
@@ -2228,39 +2226,6 @@
   .balances-print-customer strong {
     font-size: 9.2pt;
     font-weight: 600;
-  }
-
-  .balances-print-summary {
-    margin-bottom: 18px;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-  }
-
-  .balances-print-summary > div {
-    min-height: 68px;
-    padding: 13px 15px;
-    border: 1px solid var(--print-line);
-    border-radius: 0;
-    justify-content: space-between;
-  }
-
-  .balances-print-summary strong {
-    font-family: Didot, "Bodoni MT", "Bodoni 72", "Iowan Old Style", serif;
-    font-size: 17.5pt;
-    font-weight: 400;
-    letter-spacing: -0.02em;
-  }
-
-  .balances-print-summary .is-pending {
-    border-color: #cfd0dd;
-    background: var(--print-lavender);
-  }
-
-  .balances-print-summary .is-pending strong,
-  .balances-print-order-totals .is-pending,
-  .balances-print-footer > div strong {
-    color: var(--print-ink);
   }
 
   .balances-print-orders {
@@ -2276,20 +2241,28 @@
     page-break-inside: auto;
   }
 
+  .balances-print-ledger col.is-order {
+    width: 10%;
+  }
+
+  .balances-print-ledger col.is-date {
+    width: 14%;
+  }
+
   .balances-print-ledger col.is-product {
-    width: 47%;
+    width: 28%;
   }
 
-  .balances-print-ledger col.is-quantity {
-    width: 11%;
+  .balances-print-ledger col.is-value {
+    width: 16%;
   }
 
-  .balances-print-ledger col.is-price {
-    width: 20%;
+  .balances-print-ledger col.is-paid {
+    width: 15%;
   }
 
-  .balances-print-ledger col.is-subtotal {
-    width: 22%;
+  .balances-print-ledger col.is-pending {
+    width: 17%;
   }
 
   .balances-print-ledger thead {
@@ -2303,124 +2276,89 @@
 
   .balances-print-ledger th,
   .balances-print-ledger td {
-    padding: 7px 10px;
+    padding: 8px 7px;
     border-bottom: 1px solid var(--print-line);
     text-align: left;
     vertical-align: top;
   }
 
   .balances-print-ledger th {
-    background: #fff;
+    border-bottom: 1.5px solid var(--print-ink);
+    background: var(--print-lavender);
     color: var(--print-muted);
     font-size: 7pt;
+    line-height: 1.25;
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
 
-  .balances-print-ledger th:not(:first-child),
-  .balances-print-item-line td:not(:first-child) {
+  .balances-print-ledger th:nth-child(n + 4),
+  .balances-print-entry td:nth-child(n + 4) {
     text-align: right;
   }
 
-  .balances-print-order-line {
-    break-after: avoid;
-    page-break-after: avoid;
-  }
-
-  .balances-print-order-line > td {
-    padding: 8px 10px;
-    border-top: 1.5px solid var(--print-ink);
-    background: var(--print-lavender);
-  }
-
-  .balances-print-ledger tbody:first-of-type .balances-print-order-line:first-child > td {
-    border-top: 0;
-  }
-
-  .balances-print-order-strip {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-  }
-
-  .balances-print-order-meta,
-  .balances-print-order-totals {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-
-  .balances-print-order-meta {
-    gap: 12px;
-  }
-
-  .balances-print-order-meta span {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 5px;
-  }
-
-  .balances-print-order-meta strong {
+  .balances-print-entry td {
     font-size: 8.2pt;
+    line-height: 1.35;
   }
 
-  .balances-print-order-totals {
-    justify-content: flex-end;
-    gap: 12px;
-    font-size: 7.6pt;
+  .balances-print-entry td:first-child,
+  .balances-print-entry td:nth-child(2),
+  .balances-print-entry td:nth-child(n + 4) {
     white-space: nowrap;
   }
 
-  .balances-print-item-line td {
-    font-size: 8.6pt;
+  .balances-print-product {
+    display: grid;
+    gap: 2px;
   }
 
-  .balances-print-payment-line td {
-    padding: 5px 10px 6px;
-    background: var(--print-soft);
+  .balances-print-product strong {
+    font-weight: 600;
+  }
+
+  .balances-print-product small {
     color: var(--print-muted);
-    font-size: 7.4pt;
+    font-size: 7.2pt;
   }
 
-  .balances-print-payment-line td > div {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 4px 12px;
-  }
-
-  .balances-print-payment-label {
-    font-weight: 650;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .balances-print-footer {
-    margin-top: 22px;
-    padding-top: 16px;
-    border-top: 1px solid var(--print-ink);
+  .balances-print-totals {
+    margin-top: -1px;
+    border: 1px solid var(--print-line);
+    border-top: 2px solid var(--print-ink);
+    background: var(--print-lavender);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  .balances-print-footer > div {
-    display: flex;
-    align-items: baseline;
-    justify-content: flex-end;
-    gap: 14px;
+  .balances-print-totals > div {
+    padding: 11px 12px;
+    display: grid;
+    gap: 4px;
   }
 
-  .balances-print-footer > div strong {
+  .balances-print-totals > div + div {
+    border-left: 1px solid var(--print-line);
+  }
+
+  .balances-print-totals strong {
     font-family: Didot, "Bodoni MT", "Bodoni 72", "Iowan Old Style", serif;
-    font-size: 22pt;
+    font-size: 15pt;
     font-weight: 400;
     letter-spacing: -0.02em;
   }
 
+  .balances-print-footer {
+    margin-top: 14px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
   .balances-print-footer p {
     max-width: 560px;
-    margin: 18px auto 0;
+    margin: 6px auto 0;
     color: var(--print-muted);
     font-size: 8pt;
     line-height: 1.5;

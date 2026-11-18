@@ -8,6 +8,7 @@ import { ListSearch } from "@/components/list-search";
 import { ProductImageThumb } from "@/components/product-image-thumb";
 import { formatCop, getOrderOutstandingCop, getOrderPaidCop } from "@/lib/commerce";
 import { allocateGeneralPayment } from "@/lib/general-payment";
+import { allocatePaymentByLineTotals } from "@/lib/line-item-payment-allocation";
 import { matchesSearch, normalizeSearchText } from "@/lib/search";
 import type { DashboardOrder, OrderItem } from "@/lib/types";
 
@@ -350,6 +351,20 @@ function groupPendingCustomers(orders: DashboardOrder[]) {
 }
 
 function PrintableBalanceReport({ customer }: { customer: PrintableCustomer }) {
+  const lines = customer.orders.flatMap(({ order, items, paidCop }) => {
+    const allocations = allocatePaymentByLineTotals(
+      items.map((item) => item.lineTotalCop),
+      paidCop
+    );
+
+    return items.map((item, index) => ({
+      order,
+      item,
+      allocation: allocations[index],
+      index,
+    }));
+  });
+
   return (
     <section className="balances-print-report" aria-label={`Estado de cuenta de ${customer.name}`}>
       <header className="balances-print-header">
@@ -381,125 +396,70 @@ function PrintableBalanceReport({ customer }: { customer: PrintableCustomer }) {
         </div>
       </section>
 
-      <section className="balances-print-summary" aria-label="Resumen del estado de cuenta">
-        <div>
-          <span>Total comprado</span>
-          <strong>{formatCop(customer.totalCop)}</strong>
-        </div>
-        <div>
-          <span>Total pagado</span>
-          <strong>{formatCop(customer.paidCop)}</strong>
-        </div>
-        <div className="is-pending">
-          <span>Saldo pendiente</span>
-          <strong>{formatCop(customer.pendingCop)}</strong>
-        </div>
-      </section>
-
       <div className="balances-print-orders">
         <table className="balances-print-ledger">
           <colgroup>
+            <col className="is-order" />
+            <col className="is-date" />
             <col className="is-product" />
-            <col className="is-quantity" />
-            <col className="is-price" />
-            <col className="is-subtotal" />
+            <col className="is-value" />
+            <col className="is-paid" />
+            <col className="is-pending" />
           </colgroup>
           <thead>
             <tr>
+              <th>Pedido</th>
+              <th>Fecha</th>
               <th>Producto</th>
-              <th>Cantidad</th>
-              <th>Precio unidad</th>
-              <th>Subtotal</th>
+              <th>Valor del producto</th>
+              <th>Abono</th>
+              <th>Saldo pendiente</th>
             </tr>
           </thead>
           <tbody>
-            {customer.orders.map(({ order, items, totalCop, paidCop, pendingCop, isPartial }) => {
-              const receivedPayments = order.payments.filter(
-                (payment) => payment.statusCode === "received"
-              );
-
-              return (
-                <Fragment key={order.id}>
-                  <tr className="balances-print-order-line">
-                    <td colSpan={4}>
-                      <div className="balances-print-order-strip">
-                        <div className="balances-print-order-meta">
-                          <span>
-                            <small>Pedido</small>
-                            <strong>{order.id}</strong>
-                          </span>
-                          <span>
-                            <small>Fecha</small>
-                            <strong>{formatOrderDate(order.createdAtIso)}</strong>
-                          </span>
-                          <span>
-                            <small>Estado</small>
-                            <strong>{order.statusLabel}</strong>
-                          </span>
-                        </div>
-                        <div className="balances-print-order-totals">
-                          <span>
-                            Total <strong>{formatCop(totalCop)}</strong>
-                          </span>
-                          <span>
-                            Pagado <strong>{formatCop(paidCop)}</strong>
-                          </span>
-                          <span className="is-pending">
-                            Pendiente <strong>{formatCop(pendingCop)}</strong>
-                          </span>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                  {items.map((item, index) => (
-                    <tr
-                      className="balances-print-item-line"
-                      key={`${order.id}-print-${item.productId}-${index}`}
-                    >
-                      <td>{item.productName}</td>
-                      <td>{numberFormatter.format(item.quantity)}</td>
-                      <td>{formatCop(item.unitPriceCop)}</td>
-                      <td>{formatCop(item.lineTotalCop)}</td>
-                    </tr>
-                  ))}
-                  <tr className="balances-print-payment-line">
-                    <td colSpan={4}>
-                      <div>
-                        {isPartial ? (
-                          <span>
-                            Seleccion parcial: el valor pagado se aplico proporcionalmente a los
-                            productos incluidos.
-                          </span>
-                        ) : receivedPayments.length ? (
-                          <>
-                            <span className="balances-print-payment-label">Pagos:</span>
-                            {receivedPayments.map((payment) => (
-                              <span key={payment.id}>
-                                {payment.recordedAtIso
-                                  ? formatOrderDate(payment.recordedAtIso)
-                                  : payment.recordedAtLabel}
-                                : <strong>{formatCop(payment.amountCop)}</strong>
-                              </span>
-                            ))}
-                          </>
-                        ) : (
-                          <span>Sin pagos registrados.</span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                </Fragment>
-              );
-            })}
+            {lines.map(({ order, item, allocation, index }) => (
+              <tr
+                className="balances-print-entry"
+                key={`${order.id}-print-${item.productId}-${index}`}
+              >
+                <td>
+                  <strong>{order.id}</strong>
+                </td>
+                <td>{formatOrderDate(order.createdAtIso)}</td>
+                <td>
+                  <div className="balances-print-product">
+                    <strong>{item.productName}</strong>
+                    <small>
+                      {numberFormatter.format(item.quantity)} {item.quantity === 1 ? "unidad" : "unidades"}
+                    </small>
+                  </div>
+                </td>
+                <td>{formatCop(allocation.totalCop)}</td>
+                <td>{formatCop(allocation.paidCop)}</td>
+                <td>
+                  <strong>{formatCop(allocation.pendingCop)}</strong>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
+        <section className="balances-print-totals" aria-label="Totales del estado de cuenta">
+          <div>
+            <small>Saldo total</small>
+            <strong>{formatCop(customer.totalCop)}</strong>
+          </div>
+          <div>
+            <small>Total abonado</small>
+            <strong>{formatCop(customer.paidCop)}</strong>
+          </div>
+          <div>
+            <small>Total pendiente</small>
+            <strong>{formatCop(customer.pendingCop)}</strong>
+          </div>
+        </section>
       </div>
 
       <footer className="balances-print-footer">
-        <div>
-          <span>Saldo total pendiente</span>
-          <strong>{formatCop(customer.pendingCop)}</strong>
-        </div>
         <p>
           Este estado de cuenta refleja los pagos registrados hasta la fecha de corte. Si tienes
           alguna inquietud, comunicate con FerShop USA al 304 575 0023.
