@@ -397,82 +397,102 @@ function PrintableBalanceReport({ customer }: { customer: PrintableCustomer }) {
       </section>
 
       <div className="balances-print-orders">
-        {customer.orders.map(({ order, items, totalCop, paidCop, pendingCop, isPartial }) => {
-          const receivedPayments = order.payments.filter(
-            (payment) => payment.statusCode === "received"
-          );
+        <table className="balances-print-ledger">
+          <colgroup>
+            <col className="is-product" />
+            <col className="is-quantity" />
+            <col className="is-price" />
+            <col className="is-subtotal" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th>Cantidad</th>
+              <th>Precio unidad</th>
+              <th>Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {customer.orders.map(({ order, items, totalCop, paidCop, pendingCop, isPartial }) => {
+              const receivedPayments = order.payments.filter(
+                (payment) => payment.statusCode === "received"
+              );
 
-          return (
-            <article key={order.id} className="balances-print-order">
-              <header>
-                <div>
-                  <span>Pedido</span>
-                  <strong>{order.id}</strong>
-                </div>
-                <div>
-                  <span>Fecha</span>
-                  <strong>{formatOrderDate(order.createdAtIso)}</strong>
-                </div>
-                <div>
-                  <span>Estado</span>
-                  <strong>{order.statusLabel}</strong>
-                </div>
-              </header>
-
-              <table>
-                <thead>
-                  <tr>
-                    <th>Producto</th>
-                    <th>Cantidad</th>
-                    <th>Precio unidad</th>
-                    <th>Subtotal</th>
+              return (
+                <Fragment key={order.id}>
+                  <tr className="balances-print-order-line">
+                    <td colSpan={4}>
+                      <div className="balances-print-order-strip">
+                        <div className="balances-print-order-meta">
+                          <span>
+                            <small>Pedido</small>
+                            <strong>{order.id}</strong>
+                          </span>
+                          <span>
+                            <small>Fecha</small>
+                            <strong>{formatOrderDate(order.createdAtIso)}</strong>
+                          </span>
+                          <span>
+                            <small>Estado</small>
+                            <strong>{order.statusLabel}</strong>
+                          </span>
+                        </div>
+                        <div className="balances-print-order-totals">
+                          <span>
+                            Total <strong>{formatCop(totalCop)}</strong>
+                          </span>
+                          <span>
+                            Pagado <strong>{formatCop(paidCop)}</strong>
+                          </span>
+                          <span className="is-pending">
+                            Pendiente <strong>{formatCop(pendingCop)}</strong>
+                          </span>
+                        </div>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
                   {items.map((item, index) => (
-                    <tr key={`${order.id}-print-${item.productId}-${index}`}>
+                    <tr
+                      className="balances-print-item-line"
+                      key={`${order.id}-print-${item.productId}-${index}`}
+                    >
                       <td>{item.productName}</td>
                       <td>{numberFormatter.format(item.quantity)}</td>
                       <td>{formatCop(item.unitPriceCop)}</td>
                       <td>{formatCop(item.lineTotalCop)}</td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
-
-              {isPartial ? (
-                <div className="balances-print-payments">
-                  <span>
-                    Seleccion parcial: el valor pagado se aplico proporcionalmente a los productos
-                    incluidos.
-                  </span>
-                </div>
-              ) : receivedPayments.length ? (
-                <div className="balances-print-payments">
-                  <span>Pagos registrados:</span>
-                  {receivedPayments.map((payment) => (
-                    <span key={payment.id}>
-                      {payment.recordedAtIso
-                        ? formatOrderDate(payment.recordedAtIso)
-                        : payment.recordedAtLabel}
-                      : <strong>{formatCop(payment.amountCop)}</strong>
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <div className="balances-print-payments">
-                  <span>No hay pagos registrados para este pedido.</span>
-                </div>
-              )}
-
-              <footer>
-                <span>Total: <strong>{formatCop(totalCop)}</strong></span>
-                <span>Pagado: <strong>{formatCop(paidCop)}</strong></span>
-                <span className="is-pending">Pendiente: <strong>{formatCop(pendingCop)}</strong></span>
-              </footer>
-            </article>
-          );
-        })}
+                  <tr className="balances-print-payment-line">
+                    <td colSpan={4}>
+                      <div>
+                        {isPartial ? (
+                          <span>
+                            Seleccion parcial: el valor pagado se aplico proporcionalmente a los
+                            productos incluidos.
+                          </span>
+                        ) : receivedPayments.length ? (
+                          <>
+                            <span className="balances-print-payment-label">Pagos:</span>
+                            {receivedPayments.map((payment) => (
+                              <span key={payment.id}>
+                                {payment.recordedAtIso
+                                  ? formatOrderDate(payment.recordedAtIso)
+                                  : payment.recordedAtLabel}
+                                : <strong>{formatCop(payment.amountCop)}</strong>
+                              </span>
+                            ))}
+                          </>
+                        ) : (
+                          <span>Sin pagos registrados.</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       <footer className="balances-print-footer">

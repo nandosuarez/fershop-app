@@ -2200,7 +2200,7 @@
   .balances-print-header small,
   .balances-print-customer span,
   .balances-print-summary span,
-  .balances-print-order header span {
+  .balances-print-order-meta small {
     color: var(--print-muted);
     font-size: 7.5pt;
     font-weight: 650;
@@ -2220,8 +2220,7 @@
   }
 
   .balances-print-customer > div,
-  .balances-print-summary > div,
-  .balances-print-order header > div {
+  .balances-print-summary > div {
     display: grid;
     gap: 4px;
   }
@@ -2259,7 +2258,7 @@
   }
 
   .balances-print-summary .is-pending strong,
-  .balances-print-order footer .is-pending,
+  .balances-print-order-totals .is-pending,
   .balances-print-footer > div strong {
     color: var(--print-ink);
   }
@@ -2268,84 +2267,133 @@
     display: block;
   }
 
-  .balances-print-order + .balances-print-order {
-    margin-top: 14px;
-  }
-
-  .balances-print-order {
-    border: 1px solid var(--print-line);
-    border-radius: 0;
-    break-inside: auto;
-    page-break-inside: auto;
-    overflow: visible;
-  }
-
-  .balances-print-order > header {
-    padding: 11px 13px;
-    background: var(--print-lavender);
-    display: grid;
-    grid-template-columns: 0.8fr 1fr 1.5fr;
-    gap: 14px;
-    break-after: avoid;
-    page-break-after: avoid;
-  }
-
-  .balances-print-order table {
+  .balances-print-ledger {
     width: 100%;
+    border: 1px solid var(--print-line);
     border-collapse: collapse;
+    table-layout: fixed;
     break-inside: auto;
     page-break-inside: auto;
   }
 
-  .balances-print-order thead {
+  .balances-print-ledger col.is-product {
+    width: 47%;
+  }
+
+  .balances-print-ledger col.is-quantity {
+    width: 11%;
+  }
+
+  .balances-print-ledger col.is-price {
+    width: 20%;
+  }
+
+  .balances-print-ledger col.is-subtotal {
+    width: 22%;
+  }
+
+  .balances-print-ledger thead {
     display: table-header-group;
   }
 
-  .balances-print-order tr {
+  .balances-print-ledger tr {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  .balances-print-order th,
-  .balances-print-order td {
-    padding: 9px 13px;
+  .balances-print-ledger th,
+  .balances-print-ledger td {
+    padding: 7px 10px;
     border-bottom: 1px solid var(--print-line);
     text-align: left;
+    vertical-align: top;
   }
 
-  .balances-print-order th {
+  .balances-print-ledger th {
+    background: #fff;
     color: var(--print-muted);
     font-size: 7pt;
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
 
-  .balances-print-order th:not(:first-child),
-  .balances-print-order td:not(:first-child) {
+  .balances-print-ledger th:not(:first-child),
+  .balances-print-item-line td:not(:first-child) {
     text-align: right;
   }
 
-  .balances-print-payments {
-    padding: 9px 13px;
-    border-bottom: 1px solid var(--print-line);
-    background: var(--print-soft);
-    color: var(--print-muted);
-    display: flex;
-    flex-wrap: wrap;
-    gap: 7px 14px;
-    font-size: 8pt;
-    break-inside: avoid;
-    page-break-inside: avoid;
+  .balances-print-order-line {
+    break-after: avoid;
+    page-break-after: avoid;
   }
 
-  .balances-print-order > footer {
-    padding: 10px 13px;
+  .balances-print-order-line > td {
+    padding: 8px 10px;
+    border-top: 1.5px solid var(--print-ink);
+    background: var(--print-lavender);
+  }
+
+  .balances-print-ledger tbody:first-of-type .balances-print-order-line:first-child > td {
+    border-top: 0;
+  }
+
+  .balances-print-order-strip {
     display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+
+  .balances-print-order-meta,
+  .balances-print-order-totals {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .balances-print-order-meta {
+    gap: 12px;
+  }
+
+  .balances-print-order-meta span {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+  }
+
+  .balances-print-order-meta strong {
+    font-size: 8.2pt;
+  }
+
+  .balances-print-order-totals {
     justify-content: flex-end;
-    gap: 20px;
-    font-size: 8.5pt;
-    break-inside: avoid;
-    page-break-inside: avoid;
+    gap: 12px;
+    font-size: 7.6pt;
+    white-space: nowrap;
+  }
+
+  .balances-print-item-line td {
+    font-size: 8.6pt;
+  }
+
+  .balances-print-payment-line td {
+    padding: 5px 10px 6px;
+    background: var(--print-soft);
+    color: var(--print-muted);
+    font-size: 7.4pt;
+  }
+
+  .balances-print-payment-line td > div {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+
+  .balances-print-payment-label {
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .balances-print-footer {
