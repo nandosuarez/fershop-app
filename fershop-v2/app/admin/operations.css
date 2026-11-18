@@ -4952,6 +4952,22 @@
     max-width: 100vw;
   }
 
+  .courier-detail-modal .order-modal__footer {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .courier-detail-modal .order-modal__footer > div {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .courier-detail-modal .order-modal__footer .ops-button:last-child {
+    grid-column: 1 / -1;
+  }
+
   .courier-upload-zone {
     min-height: 260px;
     padding: 24px 16px;

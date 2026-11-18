@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { FormattedNumberInput } from "@/components/formatted-number-input";
 import { ListSearch } from "@/components/list-search";
@@ -126,6 +126,7 @@ export function CourierInvoicesWorkbench({
   const [paymentReference, setPaymentReference] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const detailActionRef = useRef<HTMLDivElement>(null);
 
   const selectedInvoice = useMemo(
     () => snapshot.invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? null,
@@ -172,6 +173,29 @@ export function CourierInvoicesWorkbench({
             )
       )
     : 0;
+  const selectedPendingReceiptCount = selectedInvoice
+    ? selectedInvoice.guides.filter(
+        (guide) => selectedGuideIds.includes(guide.id) && !guide.receivedAtIso
+      ).length
+    : 0;
+  const selectedPendingPaymentCount = selectedInvoice
+    ? selectedInvoice.guides.filter(
+        (guide) =>
+          selectedGuideIds.includes(guide.id) &&
+          getGuidePaidUsd(selectedInvoice, guide.id) < guide.amountUsd - 0.02
+      ).length +
+      selectedInvoice.charges.filter(
+        (charge) =>
+          selectedChargeIds.includes(charge.id) &&
+          getChargePaidUsd(selectedInvoice, charge.id) < charge.amountUsd - 0.02
+      ).length
+    : 0;
+
+  useEffect(() => {
+    if (detailAction) {
+      detailActionRef.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [detailAction]);
 
   function resetImport() {
     setInvoiceFile(null);
@@ -293,6 +317,25 @@ export function CourierInvoicesWorkbench({
     setSelectedChargeIds((current) =>
       current.includes(chargeId) ? current.filter((id) => id !== chargeId) : [...current, chargeId]
     );
+  }
+
+  function openReceiptAction() {
+    if (!selectedPendingReceiptCount) {
+      setDetailError("Selecciona al menos una caja pendiente de recibir.");
+      return;
+    }
+    setDetailAction("receipt");
+    setDetailError(null);
+  }
+
+  function openPaymentAction() {
+    if (!selectedPendingPaymentCount) {
+      setDetailError("Selecciona cajas o cargos pendientes de pago.");
+      return;
+    }
+    setPaymentCop(0);
+    setDetailAction("payment");
+    setDetailError(null);
   }
 
   function selectPendingReceipt() {
@@ -598,8 +641,8 @@ export function CourierInvoicesWorkbench({
                 <a href={selectedInvoice.sourceFile.url} target="_blank" rel="noreferrer">Ver PDF original</a>
               </div>
               <div className="courier-detail-actions">
-                <button type="button" className="ops-button" onClick={selectPendingReceipt}>Seleccionar pendientes de recibir</button>
-                <button type="button" className="ops-button ops-button--primary" onClick={selectPendingPayment}>Seleccionar pendientes de pago</button>
+                <button type="button" className="ops-button" onClick={selectPendingReceipt}>Seleccionar todas por recibir</button>
+                <button type="button" className="ops-button ops-button--primary" onClick={selectPendingPayment}>Seleccionar todo por pagar</button>
               </div>
               <div className="courier-detail-table-wrap">
                 <table className="courier-detail-table">
@@ -626,7 +669,7 @@ export function CourierInvoicesWorkbench({
                 <div className="courier-extra-charges"><div className="courier-preview-section__title"><strong>Cargos adicionales</strong></div>{selectedInvoice.charges.map((charge) => { const paidUsd = getChargePaidUsd(selectedInvoice, charge.id); return <label key={charge.id}><input type="checkbox" checked={selectedChargeIds.includes(charge.id)} onChange={() => toggleCharge(charge.id)} /><span>{charge.description}</span><strong>{formatUsd.format(charge.amountUsd)}</strong><em className={paidUsd >= charge.amountUsd - 0.02 ? "is-paid" : ""}>{paidUsd >= charge.amountUsd - 0.02 ? "Pagado" : "Pendiente"}</em></label>; })}</div>
               ) : null}
               {detailAction === "receipt" ? (
-                <div className="courier-action-panel">
+                <div className="courier-action-panel" ref={detailActionRef}>
                   <div><strong>Confirmar recepcion</strong><span>Se marcaran solo las guias seleccionadas que aun esten pendientes.</span></div>
                   <label><span>Fecha de recepcion</span><input type="date" value={actionDate} onChange={(event) => setActionDate(event.target.value)} /></label>
                   <label className="is-wide"><span>Nota opcional</span><input value={actionNote} placeholder="Ej. Caja recibida completa y en buen estado" onChange={(event) => setActionNote(event.target.value)} /></label>
@@ -634,7 +677,7 @@ export function CourierInvoicesWorkbench({
                 </div>
               ) : null}
               {detailAction === "payment" ? (
-                <div className="courier-action-panel courier-payment-panel">
+                <div className="courier-action-panel courier-payment-panel" ref={detailActionRef}>
                   <div className="courier-payment-total"><span>Valor seleccionado</span><strong>{formatUsd.format(selectedPaymentUsd)}</strong></div>
                   <label><span>Fecha de pago</span><input type="date" value={actionDate} onChange={(event) => setActionDate(event.target.value)} /></label>
                   <label><span>Metodo</span><input list="courier-payment-methods" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} /><datalist id="courier-payment-methods"><option value="Zelle" /><option value="Bancolombia" /><option value="Transferencia" /><option value="Efectivo" /></datalist></label>
@@ -649,7 +692,21 @@ export function CourierInvoicesWorkbench({
                 <div className="courier-payment-history"><div className="courier-preview-section__title"><strong>Pagos registrados</strong></div>{[...selectedInvoice.payments].reverse().map((payment) => <div key={payment.id}><span>{formatDate(payment.paymentDate)} · {payment.method}{payment.reference ? ` · ${payment.reference}` : ""}</span><strong>{formatUsd.format(payment.amountUsd)} / {formatCop(payment.amountCop)}</strong><small>TRM efectiva {formatCop(Math.round(payment.exchangeRateCop))}</small></div>)}</div>
               ) : null}
             </div>
-            <div className="order-modal__footer"><span>{selectedGuideIds.length} guia{selectedGuideIds.length === 1 ? "" : "s"} seleccionada{selectedGuideIds.length === 1 ? "" : "s"}</span><div><button type="button" className="ops-button" onClick={() => setSelectedInvoiceId(null)}>Cerrar</button></div></div>
+            <div className="order-modal__footer">
+              <span>
+                {selectedGuideIds.length} guia{selectedGuideIds.length === 1 ? "" : "s"} seleccionada{selectedGuideIds.length === 1 ? "" : "s"}
+                {selectedChargeIds.length ? ` · ${selectedChargeIds.length} cargo${selectedChargeIds.length === 1 ? "" : "s"}` : ""}
+              </span>
+              <div>
+                <button type="button" className="ops-button" disabled={!selectedPendingReceiptCount || isUpdating} onClick={openReceiptAction}>
+                  Registrar recepcion{selectedPendingReceiptCount ? ` (${selectedPendingReceiptCount})` : ""}
+                </button>
+                <button type="button" className="ops-button ops-button--primary" disabled={!selectedPendingPaymentCount || isUpdating} onClick={openPaymentAction}>
+                  Registrar pago{selectedPendingPaymentCount ? ` (${selectedPendingPaymentCount})` : ""}
+                </button>
+                <button type="button" className="ops-button" onClick={() => setSelectedInvoiceId(null)}>Cerrar</button>
+              </div>
+            </div>
           </section>
         </div>
       ) : null}
