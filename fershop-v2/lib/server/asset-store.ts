@@ -6,7 +6,7 @@ interface AssetRow {
   mime_type: string;
 }
 
-type AssetType = "PRODUCT_IMAGE" | "ORDER_ATTACHMENT";
+type AssetType = "PRODUCT_IMAGE" | "ORDER_ATTACHMENT" | "COURIER_INVOICE";
 
 async function saveAsset(
   assetType: AssetType,
@@ -65,4 +65,16 @@ export async function saveOrderAttachment(input: {
 
 export async function getOrderAttachment(attachmentId: string) {
   return getAsset("ORDER_ATTACHMENT", attachmentId);
+}
+
+export async function saveCourierInvoice(input: {
+  data: Buffer;
+  fileName: string;
+  mimeType: string;
+}) {
+  return saveAsset("COURIER_INVOICE", input);
+}
+
+export async function getCourierInvoice(invoiceId: string) {
+  return getAsset("COURIER_INVOICE", invoiceId);
 }

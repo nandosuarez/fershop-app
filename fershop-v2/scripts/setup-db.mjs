@@ -14,6 +14,7 @@ const projectDir = join(currentDir, "..");
 const schemaPath = join(projectDir, "database", "schema.sql");
 const documentKeys = [
   "categories",
+  "courier-invoices",
   "customers",
   "expenses",
   "inventory",

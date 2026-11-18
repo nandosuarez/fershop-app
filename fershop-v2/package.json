@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "packageManager": "pnpm@11.16.0",
+  "engines": {
+    "node": ">=22.13.0 <25"
+  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
@@ -10,6 +13,7 @@
     "test:calculator": "node tests/price-calculation.test.mjs",
     "test:capital": "node --experimental-strip-types tests/capital-report.test.mjs",
     "test:general-payment": "node --experimental-strip-types tests/general-payment.test.mjs",
+    "test:courier": "node --experimental-strip-types tests/courier-invoice.test.mjs",
     "start:render": "next start -p $PORT",
     "db:setup": "node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/setup-db.mjs",
     "db:setup:render": "node scripts/setup-db.mjs",
@@ -17,6 +21,7 @@
   },
   "dependencies": {
     "next": "16",
+    "pdfjs-dist": "^6.5.438",
     "pg": "^8.23.0",
     "react": "19",
     "react-dom": "19"

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { FormattedNumberInput } from "@/components/formatted-number-input";
@@ -260,6 +261,7 @@ export function ExpensesWorkbench({ initialSnapshot }: ExpensesWorkbenchProps) {
                         <td>
                           <strong>{expense.description}</strong>
                           {expense.note ? <small>{expense.note}</small> : null}
+                          {expense.isAutomatic ? <small>Generado desde Cajas / Courier</small> : null}
                         </td>
                         <td>{expense.categoryLabel}</td>
                         <td>
@@ -270,13 +272,17 @@ export function ExpensesWorkbench({ initialSnapshot }: ExpensesWorkbenchProps) {
                         <td><strong>{formatCop(expense.amountCop)}</strong></td>
                         <td>
                           <div className="product-row-actions">
-                            <button
-                              type="button"
-                              disabled={deletingExpenseId === expense.id}
-                              onClick={() => void handleDelete(expense.id, expense.description)}
-                            >
-                              {deletingExpenseId === expense.id ? "Eliminando..." : "Eliminar"}
-                            </button>
+                            {expense.isAutomatic && expense.sourceHref ? (
+                              <Link href={expense.sourceHref}>Ver factura</Link>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={deletingExpenseId === expense.id}
+                                onClick={() => void handleDelete(expense.id, expense.description)}
+                              >
+                                {deletingExpenseId === expense.id ? "Eliminando..." : "Eliminar"}
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

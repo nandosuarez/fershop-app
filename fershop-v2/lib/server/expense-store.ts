@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { getItemShippingAllocations, getOrderFinancialBreakdown } from "@/lib/capital-report";
+import { getCourierInvoiceSnapshot } from "@/lib/server/courier-invoice-store";
 import { readAppDocument, writeAppDocument } from "@/lib/server/document-store";
 import { getOperationsSnapshot } from "@/lib/server/operations-store";
 import type {
@@ -180,11 +181,38 @@ async function getShippingContributions(): Promise<ShippingFundContribution[]> {
 }
 
 export async function getExpenseSnapshot(): Promise<ExpenseSnapshot> {
-  const [store, shippingContributions] = await Promise.all([
+  const [store, shippingContributions, courierSnapshot] = await Promise.all([
     ensureStore(),
     getShippingContributions(),
+    getCourierInvoiceSnapshot(),
   ]);
-  const expenses = [...store.expenses].sort((left, right) =>
+  const courierExpenses: Expense[] = courierSnapshot.invoices.flatMap((invoice) =>
+    invoice.payments.map((payment) => {
+      const guideCount = payment.allocations.filter((allocation) => allocation.guideId).length;
+      const chargeCount = payment.allocations.filter((allocation) => allocation.chargeId).length;
+      const covered = [
+        guideCount ? `${guideCount} guia${guideCount === 1 ? "" : "s"}` : "",
+        chargeCount ? `${chargeCount} cargo${chargeCount === 1 ? "" : "s"}` : "",
+      ].filter(Boolean).join(" y ");
+      return {
+        id: `expense-${payment.id}`,
+        description: `Factura ${invoice.invoiceNumber} - ${invoice.courierName}`,
+        category: "box_shipping",
+        categoryLabel: categoryLabels.box_shipping,
+        amountCop: payment.amountCop,
+        paymentSource: "shipping_fund",
+        paymentSourceLabel: paymentSourceLabels.shipping_fund,
+        expenseDate: payment.paymentDate,
+        note: `Pago automatico de ${covered || "courier"}. USD ${payment.amountUsd.toFixed(2)} a TRM ${payment.exchangeRateCop.toFixed(2)}.`,
+        sourceType: "courier_payment",
+        sourceId: payment.id,
+        sourceHref: `/admin/cajas?invoice=${encodeURIComponent(invoice.id)}`,
+        isAutomatic: true,
+        createdAtIso: payment.createdAtIso,
+      };
+    })
+  );
+  const expenses = [...store.expenses, ...courierExpenses].sort((left, right) =>
     right.expenseDate.localeCompare(left.expenseDate) ||
     right.createdAtIso.localeCompare(left.createdAtIso)
   );

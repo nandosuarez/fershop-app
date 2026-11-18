@@ -31,6 +31,8 @@ export type ExpenseCategory =
   | "operations"
   | "other";
 export type ExpensePaymentSource = "shipping_fund" | "general";
+export type CourierReceiptStatus = "pending" | "received";
+export type CourierPaymentStatus = "pending" | "paid";
 
 export interface Product {
   id: string;
@@ -183,6 +185,10 @@ export interface Expense {
   paymentSourceLabel: string;
   expenseDate: string;
   note?: string;
+  sourceType?: "courier_payment";
+  sourceId?: string;
+  sourceHref?: string;
+  isAutomatic?: boolean;
   createdAtIso: string;
 }
 
@@ -225,6 +231,131 @@ export interface ExpenseSnapshot {
   expenses: Expense[];
   shippingContributions: ShippingFundContribution[];
   metrics: ExpenseMetrics;
+}
+
+export interface CourierInvoiceFile {
+  id: string;
+  fileName: string;
+  mimeType: "application/pdf";
+  url: string;
+}
+
+export interface CourierGuide {
+  id: string;
+  guideNumber: string;
+  weightLb: number;
+  rateUsd: number;
+  amountUsd: number;
+  receivedAtIso?: string;
+  receiptNote?: string;
+}
+
+export interface CourierCharge {
+  id: string;
+  description: string;
+  amountUsd: number;
+}
+
+export interface CourierPaymentAllocation {
+  guideId?: string;
+  chargeId?: string;
+  amountUsd: number;
+}
+
+export interface CourierPayment {
+  id: string;
+  amountUsd: number;
+  amountCop: number;
+  exchangeRateCop: number;
+  paymentDate: string;
+  method: string;
+  reference?: string;
+  allocations: CourierPaymentAllocation[];
+  createdAtIso: string;
+}
+
+export interface CourierInvoice {
+  id: string;
+  courierName: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  billedTo?: string;
+  currency: "USD";
+  guides: CourierGuide[];
+  charges: CourierCharge[];
+  declaredTotalUsd: number;
+  sourceFile: CourierInvoiceFile;
+  payments: CourierPayment[];
+  createdAtIso: string;
+  updatedAtIso: string;
+}
+
+export interface CourierInvoicePreviewGuide {
+  guideNumber: string;
+  weightLb: number;
+  rateUsd: number;
+  amountUsd: number;
+}
+
+export interface CourierInvoicePreviewCharge {
+  description: string;
+  amountUsd: number;
+}
+
+export interface CourierInvoicePreview {
+  courierName: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  billedTo?: string;
+  currency: "USD";
+  guides: CourierInvoicePreviewGuide[];
+  charges: CourierInvoicePreviewCharge[];
+  declaredTotalUsd: number;
+  calculatedTotalUsd: number;
+  warnings: string[];
+}
+
+export interface CourierInvoiceMetrics {
+  totalInvoices: number;
+  totalGuides: number;
+  totalWeightLb: number;
+  receivedGuides: number;
+  pendingReceiptGuides: number;
+  totalUsd: number;
+  paidUsd: number;
+  pendingPaymentUsd: number;
+  paidCop: number;
+}
+
+export interface CourierInvoiceSnapshot {
+  invoices: CourierInvoice[];
+  metrics: CourierInvoiceMetrics;
+}
+
+export interface CreateCourierInvoiceInput {
+  courierName: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  billedTo?: string;
+  guides: CourierInvoicePreviewGuide[];
+  charges: CourierInvoicePreviewCharge[];
+  declaredTotalUsd: number;
+  sourceFile: CourierInvoiceFile;
+}
+
+export interface MarkCourierGuidesReceivedInput {
+  guideIds: string[];
+  receivedDate: string;
+  note?: string;
+}
+
+export interface RegisterCourierPaymentInput {
+  guideIds: string[];
+  chargeIds: string[];
+  amountCop: number;
+  paymentDate: string;
+  method: string;
+  reference?: string;
 }
 
 export interface OrderItem {
