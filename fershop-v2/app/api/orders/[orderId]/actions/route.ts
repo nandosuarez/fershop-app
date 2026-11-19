@@ -27,6 +27,7 @@ export async function POST(
     const result = await applyOperationalAction(orderId, {
       actionType: payload.actionType,
       note: payload.note,
+      arrivalItems: payload.arrivalItems,
     });
 
     return NextResponse.json(result);

@@ -369,6 +369,8 @@ export interface OrderItem {
   lineTotalCop: number;
   saleMode: SaleMode;
   paymentPolicy: PaymentPolicy;
+  arrivedQuantity?: number;
+  arrivalRecordedAtIso?: string;
 }
 
 export interface ComputedCartLine {
@@ -590,6 +592,10 @@ export interface UpdatePaymentInput {
 export interface ApplyOperationalActionInput {
   actionType: OperationalActionType;
   note?: string;
+  arrivalItems?: Array<{
+    itemIndex: number;
+    quantity: number;
+  }>;
 }
 
 export interface AddOrderCommentInput {

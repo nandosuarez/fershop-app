@@ -9,6 +9,7 @@ import {
 } from "@/lib/commerce";
 import { customers as seedCustomers } from "@/lib/customers";
 import { allocateGeneralPayment } from "@/lib/general-payment";
+import { getItemArrivedQuantity, getOrderArrivalProgress } from "@/lib/order-arrival";
 import { deriveOrderStatusCode, getOrderStatusPresentation } from "@/lib/operations";
 import {
   normalizeOrderAttachments,
@@ -28,6 +29,7 @@ import type {
   OperationMutationResult,
   OperationsMetrics,
   OperationsSnapshot,
+  OrderItem,
   OrderTimelineEvent,
   PaymentLogEntry,
   GeneralPaymentResult,
@@ -243,6 +245,16 @@ function normalizeOrderDetails(
   }
 
   order.items.forEach((item) => {
+    if (item.saleMode === "preorder") {
+      const arrivedQuantity = getItemArrivedQuantity(item, order.arrivalRecordedAtIso);
+      item.arrivedQuantity = arrivedQuantity;
+      if (arrivedQuantity >= item.quantity) {
+        item.arrivalRecordedAtIso ??= order.arrivalRecordedAtIso ?? order.updatedAtIso;
+      } else {
+        item.arrivalRecordedAtIso = undefined;
+      }
+    }
+
     const product = catalogProducts.find((candidate) => candidate.id === item.productId);
     if (product) {
       item.imageUrl ??= product.imageUrl;
@@ -250,6 +262,16 @@ function normalizeOrderDetails(
       item.unitShippingCostCop ??= product.shippingCostCop;
     }
   });
+
+  const arrivalProgress = getOrderArrivalProgress(order);
+  if (!order.arrivalRecordedAtIso && arrivalProgress.allArrived) {
+    order.arrivalRecordedAtIso =
+      order.items
+        .map((item) => item.arrivalRecordedAtIso)
+        .filter((value): value is string => Boolean(value))
+        .sort()
+        .at(-1) ?? order.updatedAtIso;
+  }
 
   const customer = catalogCustomers.find(
     (candidate) =>
@@ -364,10 +386,22 @@ function buildPurchaseMessage(order: DashboardOrder) {
   return `Hola ${order.customerName}, ya compramos tu pedido ${order.productName} en origen. Te avisaremos apenas llegue a Colombia para continuar el proceso.`;
 }
 
-function buildArrivalMessage(order: DashboardOrder) {
+function buildArrivalMessage(
+  order: DashboardOrder,
+  arrivedItems: Array<{ item: OrderItem; quantity: number }>,
+  allArrived: boolean
+) {
+  const productSummary = arrivedItems
+    .map(({ item, quantity }) => `${quantity} x ${item.productName}`)
+    .join(", ");
+
+  if (!allArrived) {
+    return `Hola ${order.customerName}, ya llego a Colombia parte de tu pedido: ${productSummary}. Los demas productos continuan en camino y te avisaremos cuando lleguen.`;
+  }
+
   return order.dueOnArrivalCop > 0
-    ? `Hola ${order.customerName}, tu pedido ${order.productName} ya llego a Colombia. Para continuar necesitamos registrar el saldo final de ${formatCop(order.dueOnArrivalCop)}.`
-    : `Hola ${order.customerName}, tu pedido ${order.productName} ya llego a Colombia y esta listo para entrega.`;
+    ? `Hola ${order.customerName}, ya llegaron a Colombia todos los productos de tu pedido. Para continuar necesitamos registrar el saldo final de ${formatCop(order.dueOnArrivalCop)}.`
+    : `Hola ${order.customerName}, ya llegaron a Colombia todos los productos de tu pedido y estan listos para entrega.`;
 }
 
 function buildDeliveryMessage(order: DashboardOrder) {
@@ -797,6 +831,13 @@ export async function updateOrder(
       const tracksInventory = currentItem
         ? currentItem.saleMode === "immediate"
         : Boolean(product.tracksInventory);
+      const saleMode = tracksInventory ? ("immediate" as const) : ("preorder" as const);
+      const arrivedQuantity = currentItem && saleMode === "preorder"
+        ? Math.min(
+            getItemArrivedQuantity(currentItem, order.arrivalRecordedAtIso),
+            quantity
+          )
+        : 0;
       return {
         productId: product.id,
         productName: product.name,
@@ -806,10 +847,15 @@ export async function updateOrder(
         unitCostCop,
         unitShippingCostCop,
         lineTotalCop: unitPriceCop * quantity,
-        saleMode: tracksInventory ? ("immediate" as const) : ("preorder" as const),
+        saleMode,
         paymentPolicy: tracksInventory
           ? ("full_today" as const)
           : ("split_50_50" as const),
+        arrivedQuantity: saleMode === "preorder" ? arrivedQuantity : undefined,
+        arrivalRecordedAtIso:
+          saleMode === "preorder" && arrivedQuantity >= quantity
+            ? currentItem?.arrivalRecordedAtIso ?? order.arrivalRecordedAtIso ?? nowIso
+            : undefined,
       };
     });
 
@@ -847,7 +893,13 @@ export async function updateOrder(
       await adjustInventoryForOrder(order.id, inventoryItems);
     }
 
+    const previousArrivalRecordedAtIso = order.arrivalRecordedAtIso;
     order.items = nextItems;
+    order.arrivalRecordedAtIso = undefined;
+    const arrivalProgress = getOrderArrivalProgress(order);
+    if (containsPreorder && arrivalProgress.allArrived) {
+      order.arrivalRecordedAtIso = previousArrivalRecordedAtIso ?? nowIso;
+    }
     order.productId = nextItems[0].productId;
     order.productName =
       nextItems.length === 1
@@ -870,7 +922,11 @@ export async function updateOrder(
       ? inventoryItems.length > 0
       : undefined;
     order.etaLabel = containsPreorder
-      ? "Incluye productos con pago 50/50"
+      ? arrivalProgress.allArrived
+        ? `Pedido completo en Colombia desde el ${formatDateLabel(order.arrivalRecordedAtIso ?? nowIso)}`
+        : arrivalProgress.hasPartialArrival
+          ? `${arrivalProgress.arrivedUnits} de ${arrivalProgress.totalUnits} unidades ya estan en Colombia`
+          : "Incluye productos con pago 50/50"
       : "Existencias reservadas en inventario";
     order.createdAtIso = orderDateIso;
     const registrationEvent = order.timeline.find(
@@ -1322,16 +1378,64 @@ export async function applyOperationalAction(
           throw new OperationsStoreError("Este pedido aun no tiene compra en origen registrada.");
         }
 
-        order.arrivalRecordedAtIso = nowIso;
+        const requestedItems = Array.isArray(input.arrivalItems) ? input.arrivalItems : [];
+        if (!requestedItems.length) {
+          throw new OperationsStoreError("Selecciona al menos un producto que llego a Colombia.");
+        }
+
+        const usedIndexes = new Set<number>();
+        const arrivedItems = requestedItems.map((requestedItem) => {
+          const itemIndex = Number(requestedItem.itemIndex);
+          const quantity = Number(requestedItem.quantity);
+          const item = order.items?.[itemIndex];
+
+          if (!Number.isInteger(itemIndex) || !item || item.saleMode !== "preorder") {
+            throw new OperationsStoreError("Uno de los productos seleccionados no es valido.");
+          }
+          if (usedIndexes.has(itemIndex)) {
+            throw new OperationsStoreError("Cada producto debe seleccionarse una sola vez.");
+          }
+          usedIndexes.add(itemIndex);
+
+          const currentQuantity = getItemArrivedQuantity(item);
+          const remainingQuantity = Math.max(item.quantity - currentQuantity, 0);
+          if (!Number.isInteger(quantity) || quantity <= 0 || quantity > remainingQuantity) {
+            throw new OperationsStoreError(
+              `La cantidad recibida de ${item.productName} debe estar entre 1 y ${remainingQuantity}.`
+            );
+          }
+
+          item.arrivedQuantity = currentQuantity + quantity;
+          if (item.arrivedQuantity >= item.quantity) {
+            item.arrivalRecordedAtIso = nowIso;
+          }
+
+          return { item, quantity };
+        });
+
+        const arrivalProgress = getOrderArrivalProgress(order);
+        order.arrivalRecordedAtIso = arrivalProgress.allArrived ? nowIso : undefined;
         order.updatedAtIso = nowIso;
-        order.etaLabel = `Llego a Colombia el ${formatDateLabel(nowIso)}`;
+        order.etaLabel = arrivalProgress.allArrived
+          ? `Pedido completo en Colombia desde el ${formatDateLabel(nowIso)}`
+          : `${arrivalProgress.arrivedUnits} de ${arrivalProgress.totalUnits} unidades ya estan en Colombia`;
+        const productSummary = arrivedItems
+          .map(({ item, quantity }) => `${quantity} x ${item.productName}`)
+          .join(", ");
+        const note = input.note?.trim();
         order.timeline.push(
           makeTimelineEvent({
             type: "arrival",
-            title: "Llegada a Colombia registrada",
-            detail:
-              input.note?.trim() ||
-              "La mercancia ya esta en Colombia y ahora corresponde gestionar el saldo final.",
+            title: arrivalProgress.allArrived
+              ? "Llegada completa a Colombia"
+              : "Llegada parcial a Colombia",
+            detail: [
+              `Se recibio: ${productSummary}.`,
+              arrivalProgress.allArrived
+                ? "Todos los productos del pedido ya estan en Colombia."
+                : `Quedan ${arrivalProgress.remainingUnits} unidades pendientes por llegar.`,
+              note,
+            ].filter(Boolean).join(" "),
             atLabel: formatDateTimeLabel(nowIso),
             completed: true,
           })
@@ -1339,10 +1443,16 @@ export async function applyOperationalAction(
         updateOrderPresentation(order);
         refreshPendingPaymentEntries(order);
 
-        const customerMessage = buildArrivalMessage(order);
+        const customerMessage = buildArrivalMessage(
+          order,
+          arrivedItems,
+          arrivalProgress.allArrived
+        );
         order.notifications.unshift(
           makeNotificationEntry({
-            triggerLabel: "Llegada a Colombia",
+            triggerLabel: arrivalProgress.allArrived
+              ? "Llegada completa a Colombia"
+              : "Llegada parcial a Colombia",
             statusLabel: "Enviado",
             messagePreview: customerMessage,
             sentAtIso: nowIso,
@@ -1352,9 +1462,11 @@ export async function applyOperationalAction(
         return cloneValue({
           order,
           internalNote:
-            order.dueOnArrivalCop > 0
-              ? "La mercancia ya llego. Caja debe registrar el saldo antes de pasar a entrega."
-              : "La mercancia llego y el pedido puede pasar a entrega.",
+            arrivalProgress.allArrived
+              ? order.dueOnArrivalCop > 0
+                ? "Todos los productos llegaron. Caja debe registrar el saldo antes de pasar a entrega."
+                : "Todos los productos llegaron y el pedido puede pasar a entrega."
+              : `Llegada parcial registrada. Quedan ${arrivalProgress.remainingUnits} unidades por recibir.`,
           customerMessage,
         });
       }

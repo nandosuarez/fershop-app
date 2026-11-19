@@ -12,6 +12,7 @@ import {
 import { ProductImageThumb } from "@/components/product-image-thumb";
 import { formatCop } from "@/lib/commerce";
 import { getAvailableOperationalActions, getAvailablePaymentOptions } from "@/lib/operations";
+import { getItemArrivedQuantity } from "@/lib/order-arrival";
 import type { DashboardOrder, OrderAttachment, PaymentLogEntry } from "@/lib/types";
 
 interface ApiErrorPayload {
@@ -102,9 +103,33 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
   const [isDeletingOrder, setIsDeletingOrder] = useState(false);
   const [editedPaymentAmountCop, setEditedPaymentAmountCop] = useState(0);
   const [editedPaymentNote, setEditedPaymentNote] = useState("");
+  const [isArrivalModalOpen, setIsArrivalModalOpen] = useState(false);
+  const [arrivalQuantities, setArrivalQuantities] = useState<Record<number, number>>({});
+  const [arrivalNote, setArrivalNote] = useState("");
 
   const paymentOptions = useMemo(() => (order ? getAvailablePaymentOptions(order) : []), [order]);
   const actions = useMemo(() => (order ? getAvailableOperationalActions(order) : []), [order]);
+  const arrivalCandidates = useMemo(
+    () =>
+      (order?.items ?? []).flatMap((item, itemIndex) => {
+        if (item.saleMode !== "preorder") {
+          return [];
+        }
+        const arrivedQuantity = getItemArrivedQuantity(item, order?.arrivalRecordedAtIso);
+        const remainingQuantity = Math.max(item.quantity - arrivedQuantity, 0);
+        return remainingQuantity > 0
+          ? [{ item, itemIndex, arrivedQuantity, remainingQuantity }]
+          : [];
+      }),
+    [order]
+  );
+  const selectedArrivalItems = arrivalCandidates.flatMap(({ itemIndex, remainingQuantity }) => {
+    const quantity = Math.min(
+      Math.max(Math.trunc(arrivalQuantities[itemIndex] ?? 0), 0),
+      remainingQuantity
+    );
+    return quantity > 0 ? [{ itemIndex, quantity }] : [];
+  });
   const receivedPayments = useMemo(
     () =>
       order?.payments
@@ -279,12 +304,50 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
     if (!action) {
       return;
     }
+    if (action.type === "mark_arrival") {
+      setArrivalQuantities({});
+      setArrivalNote("");
+      setError(null);
+      setFeedback(null);
+      setIsArrivalModalOpen(true);
+      return;
+    }
     await postOrderChange(
       "actions",
       { actionType: action.type },
       "action",
       `${action.label} registrado.`
     );
+  }
+
+  function toggleArrivalItem(itemIndex: number, remainingQuantity: number, checked: boolean) {
+    setArrivalQuantities((current) => ({
+      ...current,
+      [itemIndex]: checked ? remainingQuantity : 0,
+    }));
+  }
+
+  async function handleArrivalRegistration() {
+    if (!selectedArrivalItems.length) {
+      setError("Selecciona al menos un producto que llego a Colombia.");
+      return;
+    }
+
+    const success = await postOrderChange(
+      "actions",
+      {
+        actionType: "mark_arrival",
+        arrivalItems: selectedArrivalItems,
+        note: arrivalNote,
+      },
+      "action",
+      "Llegada de productos registrada."
+    );
+    if (success) {
+      setIsArrivalModalOpen(false);
+      setArrivalQuantities({});
+      setArrivalNote("");
+    }
   }
 
   async function handleComment() {
@@ -423,19 +486,41 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
             </div>
 
             <div className="order-detail-products">
-              {items.map((item) => (
-                <div key={item.productId} className="order-detail-product">
-                  <ProductImageThumb name={item.productName} imageUrl={item.imageUrl} />
-                  <div>
-                    <strong>{item.productName}</strong>
-                    <small>
-                      {item.saleMode === "preorder" ? "Pago 50/50" : "Salida de inventario"}
-                    </small>
+              {items.map((item) => {
+                const arrivedQuantity = getItemArrivedQuantity(
+                  item,
+                  order.arrivalRecordedAtIso
+                );
+                const arrivalLabel = item.saleMode === "immediate"
+                  ? "Salida de inventario"
+                  : arrivedQuantity >= item.quantity
+                    ? "Completo en Colombia"
+                    : arrivedQuantity > 0
+                      ? `${arrivedQuantity} de ${item.quantity} unidades en Colombia`
+                      : "Pendiente de llegada";
+
+                return (
+                  <div key={item.productId} className="order-detail-product">
+                    <ProductImageThumb name={item.productName} imageUrl={item.imageUrl} />
+                    <div>
+                      <strong>{item.productName}</strong>
+                      <small
+                        className={
+                          arrivedQuantity >= item.quantity && item.saleMode === "preorder"
+                            ? "order-product-arrival is-complete"
+                            : arrivedQuantity > 0
+                              ? "order-product-arrival is-partial"
+                              : "order-product-arrival"
+                        }
+                      >
+                        {arrivalLabel}
+                      </small>
+                    </div>
+                    <span>{formatCop(item.unitPriceCop)} × {item.quantity}</span>
+                    <strong>{formatCop(item.lineTotalCop)}</strong>
                   </div>
-                  <span>{formatCop(item.unitPriceCop)} × {item.quantity}</span>
-                  <strong>{formatCop(item.lineTotalCop)}</strong>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
 
@@ -620,6 +705,134 @@ export function TrackingWorkbench({ initialOrderId = "" }: TrackingWorkbenchProp
           </section>
         </aside>
       </div>
+
+      {isArrivalModalOpen ? (
+        <div className="order-modal-backdrop" role="presentation">
+          <section
+            className="order-modal arrival-registration-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="arrival-registration-title"
+          >
+            <div className="order-modal__header">
+              <div>
+                <h2 id="arrival-registration-title">Registrar llegada a Colombia</h2>
+                <small>Selecciona solamente lo que recibiste del pedido {order.id}.</small>
+              </div>
+              <button
+                type="button"
+                aria-label="Cerrar"
+                disabled={busyAction !== null}
+                onClick={() => setIsArrivalModalOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="arrival-registration-body">
+              {error ? (
+                <div className="order-form-error arrival-registration-error" role="alert">
+                  {error}
+                </div>
+              ) : null}
+              <div className="arrival-registration-list">
+                {arrivalCandidates.map(
+                  ({ item, itemIndex, arrivedQuantity, remainingQuantity }) => {
+                    const selectedQuantity = arrivalQuantities[itemIndex] ?? 0;
+                    const isSelected = selectedQuantity > 0;
+                    return (
+                      <div
+                        key={`${item.productId}-${itemIndex}`}
+                        className={
+                          isSelected
+                            ? "arrival-registration-item is-selected"
+                            : "arrival-registration-item"
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={`Seleccionar ${item.productName}`}
+                          checked={isSelected}
+                          onChange={(event) =>
+                            toggleArrivalItem(
+                              itemIndex,
+                              remainingQuantity,
+                              event.target.checked
+                            )
+                          }
+                        />
+                        <ProductImageThumb name={item.productName} imageUrl={item.imageUrl} />
+                        <div className="arrival-registration-item__info">
+                          <strong>{item.productName}</strong>
+                          <small>
+                            {arrivedQuantity > 0
+                              ? `${arrivedQuantity} de ${item.quantity} ya recibidas`
+                              : `${item.quantity} ${item.quantity === 1 ? "unidad pendiente" : "unidades pendientes"}`}
+                          </small>
+                        </div>
+                        <label>
+                          <span>Llegaron</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={remainingQuantity}
+                            disabled={!isSelected || busyAction !== null}
+                            value={isSelected ? selectedQuantity : remainingQuantity}
+                            onChange={(event) => {
+                              const quantity = Math.min(
+                                Math.max(Math.trunc(Number(event.target.value) || 1), 1),
+                                remainingQuantity
+                              );
+                              setArrivalQuantities((current) => ({
+                                ...current,
+                                [itemIndex]: quantity,
+                              }));
+                            }}
+                          />
+                          <small>de {remainingQuantity}</small>
+                        </label>
+                      </div>
+                    );
+                  }
+                )}
+              </div>
+              <label className="arrival-registration-note">
+                <span>Nota opcional</span>
+                <textarea
+                  rows={3}
+                  maxLength={500}
+                  placeholder="Ejemplo: esta caja llego primero; faltan dos productos."
+                  value={arrivalNote}
+                  disabled={busyAction !== null}
+                  onChange={(event) => setArrivalNote(event.target.value)}
+                />
+              </label>
+            </div>
+            <div className="order-modal__footer">
+              <span>
+                {selectedArrivalItems.length} {selectedArrivalItems.length === 1 ? "producto seleccionado" : "productos seleccionados"}
+              </span>
+              <div>
+                <button
+                  type="button"
+                  className="ops-button"
+                  disabled={busyAction !== null}
+                  onClick={() => setIsArrivalModalOpen(false)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="ops-button ops-button--primary"
+                  disabled={!selectedArrivalItems.length || busyAction !== null}
+                  onClick={() => void handleArrivalRegistration()}
+                >
+                  {busyAction === "action" ? "Guardando..." : "Registrar llegada"}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {editingPayment ? (
         <div className="order-modal-backdrop" role="presentation">

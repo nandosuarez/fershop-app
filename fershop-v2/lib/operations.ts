@@ -1,5 +1,6 @@
 import { products } from "@/lib/catalog";
 import { computeLine, formatCop, getPaymentPolicyLabel, getSaleModeLabel } from "@/lib/commerce";
+import { getOrderArrivalProgress } from "@/lib/order-arrival";
 import type {
   DashboardOrder,
   DraftOrderPreview,
@@ -234,6 +235,7 @@ export function getOrderStatusPresentation(order: Pick<
   | "purchaseRecordedAtIso"
   | "arrivalRecordedAtIso"
   | "deliveredAtIso"
+  | "items"
 >): {
   statusCode: OrderStatusCode;
   statusLabel: string;
@@ -241,6 +243,7 @@ export function getOrderStatusPresentation(order: Pick<
   nextActionLabel: string;
 } {
   const statusCode = deriveOrderStatusCode(order);
+  const arrivalProgress = getOrderArrivalProgress(order);
 
   switch (statusCode) {
     case "awaiting_initial_payment":
@@ -281,12 +284,19 @@ export function getOrderStatusPresentation(order: Pick<
         nextActionLabel: "Registrar compra internacional y avisar a la clienta",
       };
     case "purchased_in_origin":
-      return {
-        statusCode,
-        statusLabel: "En compra internacional",
-        currentStageTitle: "Esperando llegada a Colombia",
-        nextActionLabel: "Marcar llegada y abrir cobro del saldo",
-      };
+      return arrivalProgress.hasPartialArrival
+        ? {
+            statusCode,
+            statusLabel: "Llegada parcial a Colombia",
+            currentStageTitle: `${arrivalProgress.arrivedUnits} de ${arrivalProgress.totalUnits} unidades en Colombia`,
+            nextActionLabel: `Registrar las ${arrivalProgress.remainingUnits} unidades pendientes`,
+          }
+        : {
+            statusCode,
+            statusLabel: "En compra internacional",
+            currentStageTitle: "Esperando llegada a Colombia",
+            nextActionLabel: "Registrar los productos que llegaron",
+          };
     case "awaiting_balance":
       return {
         statusCode,
@@ -334,6 +344,7 @@ export function getOrderStatusPresentation(order: Pick<
 
 export function getAvailableOperationalActions(order: DashboardOrder): OperationalActionOption[] {
   const statusCode = deriveOrderStatusCode(order);
+  const arrivalProgress = getOrderArrivalProgress(order);
 
   if (statusCode === "ready_to_source") {
     return [
@@ -349,8 +360,10 @@ export function getAvailableOperationalActions(order: DashboardOrder): Operation
     return [
       {
         type: "mark_arrival",
-        label: "Marcar llegada a Colombia",
-        description: "Activa el saldo pendiente y deja lista la solicitud de segundo pago.",
+        label: arrivalProgress.hasPartialArrival
+          ? "Registrar otra llegada"
+          : "Registrar llegada a Colombia",
+        description: "Selecciona los productos y cantidades que llegaron en esta recepcion.",
       },
     ];
   }

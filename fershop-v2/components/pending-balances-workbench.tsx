@@ -9,6 +9,7 @@ import { ProductImageThumb } from "@/components/product-image-thumb";
 import { formatCop, getOrderOutstandingCop, getOrderPaidCop } from "@/lib/commerce";
 import { allocateGeneralPayment } from "@/lib/general-payment";
 import { allocatePaymentByLineTotals } from "@/lib/line-item-payment-allocation";
+import { getItemArrivedQuantity, getOrderArrivalProgress } from "@/lib/order-arrival";
 import { matchesSearch, normalizeSearchText } from "@/lib/search";
 import type { DashboardOrder, OrderItem } from "@/lib/types";
 
@@ -125,7 +126,7 @@ async function fetchLatestOrders() {
 
 function filterOrdersByArrival(orders: DashboardOrder[], filter: ArrivalFilter) {
   return filter === "arrived"
-    ? orders.filter((order) => Boolean(order.arrivalRecordedAtIso))
+    ? orders.filter((order) => getOrderArrivalProgress(order).arrivedUnits > 0)
     : orders;
 }
 
@@ -752,7 +753,11 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
     }
 
     const hasProductsWithoutArrival = printableCustomer.orders.some(
-      ({ order }) => !order.arrivalRecordedAtIso
+      ({ order, items }) =>
+        items.some(
+          (item) =>
+            getItemArrivedQuantity(item, order.arrivalRecordedAtIso) < item.quantity
+        )
     );
     if (hasProductsWithoutArrival) {
       setMessageCopyStatus({
@@ -941,7 +946,12 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                     selectedItemsByCustomer[customer.key]
                   );
                   const selectedProductsHaveArrived = Boolean(
-                    selectedReport?.orders.every(({ order }) => order.arrivalRecordedAtIso)
+                    selectedReport?.orders.every(({ order, items }) =>
+                      items.every(
+                        (item) =>
+                          getItemArrivedQuantity(item, order.arrivalRecordedAtIso) >= item.quantity
+                      )
+                    )
                   );
                   const selectedMessageKey = `selection:${customer.key}:${[...selectedKeys]
                     .sort()
@@ -1141,7 +1151,11 @@ export function PendingBalancesWorkbench({ orders: initialOrders }: PendingBalan
                                         {items.map((item, index) => {
                                           const itemKey = getItemSelectionKey(order.id, index);
                                           const itemMessageKey = `product:${itemKey}`;
-                                          const canNotifyArrival = Boolean(order.arrivalRecordedAtIso);
+                                          const canNotifyArrival =
+                                            getItemArrivedQuantity(
+                                              item,
+                                              order.arrivalRecordedAtIso
+                                            ) >= item.quantity;
                                           return (
                                           <div
                                             key={`${order.id}-${item.productId}-${index}`}
