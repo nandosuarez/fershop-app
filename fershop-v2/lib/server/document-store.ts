@@ -3,14 +3,17 @@ import path from "node:path";
 
 import { getDb, hasDatabaseConfiguration } from "@/lib/db";
 
-export type AppDocumentKey =
-  | "categories"
-  | "courier-invoices"
-  | "customers"
-  | "expenses"
-  | "inventory"
-  | "operations"
-  | "products";
+export const APP_DOCUMENT_KEYS = [
+  "categories",
+  "courier-invoices",
+  "customers",
+  "expenses",
+  "inventory",
+  "operations",
+  "products",
+] as const;
+
+export type AppDocumentKey = (typeof APP_DOCUMENT_KEYS)[number];
 
 interface DocumentRow {
   payload: unknown;
@@ -78,15 +81,8 @@ export async function getAllAppDocuments() {
     return Object.fromEntries(result.rows.map((row) => [row.document_key, row.payload]));
   }
 
-  const keys: AppDocumentKey[] = [
-    "categories",
-    "courier-invoices",
-    "customers",
-    "expenses",
-    "inventory",
-    "operations",
-    "products",
-  ];
-  const documents = await Promise.all(keys.map(async (key) => [key, await readAppDocument(key)]));
+  const documents = await Promise.all(
+    APP_DOCUMENT_KEYS.map(async (key) => [key, await readAppDocument(key)])
+  );
   return Object.fromEntries(documents);
 }

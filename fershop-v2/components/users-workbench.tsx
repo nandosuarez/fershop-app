@@ -146,7 +146,9 @@ export function UsersWorkbench({ initialUsers, currentUserId }: UsersWorkbenchPr
             <h1>Usuarios</h1>
           </div>
           <div className="users-page-actions">
-            <a href="/api/backup/export" className="ops-button">Descargar backup</a>
+            <a href="/api/backup/export" className="ops-button" download>
+              Descargar copia local
+            </a>
             <button type="button" className="ops-button ops-button--primary" onClick={openCreateModal}>
               <span aria-hidden="true">+</span> Agregar usuario
             </button>
@@ -158,9 +160,12 @@ export function UsersWorkbench({ initialUsers, currentUserId }: UsersWorkbenchPr
         <section className="ops-card backup-status-card">
           <div>
             <span>Copias de seguridad</span>
-            <strong>PostgreSQL + respaldo operativo</strong>
+            <strong>PostgreSQL + copia local comprimida</strong>
           </div>
-          <small>Render conserva recuperacion continua en la base pagada. El archivo JSON contiene toda la operacion y las imagenes.</small>
+          <small>
+            Solo administradores pueden descargar el archivo .json.gz. Incluye toda la
+            operacion, imagenes y documentos sin cargarlos simultaneamente en memoria.
+          </small>
         </section>
 
         <section className="ops-card ops-table-card">

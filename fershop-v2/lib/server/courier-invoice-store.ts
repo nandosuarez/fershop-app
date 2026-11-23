@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
 
+import {
+  allocateCourierPayment,
+  convertCourierPayment,
+  roundUsd,
+  type CourierPayableItem,
+  type CourierPaymentAllocationResult,
+} from "@/lib/courier-payment";
 import { readAppDocument, writeAppDocument } from "@/lib/server/document-store";
 import type {
   CourierCharge,
@@ -7,8 +14,10 @@ import type {
   CourierInvoice,
   CourierInvoiceSnapshot,
   CreateCourierInvoiceInput,
+  GeneralCourierPaymentResult,
   MarkCourierGuidesReceivedInput,
   RegisterCourierPaymentInput,
+  RegisterGeneralCourierPaymentInput,
 } from "@/lib/types";
 
 interface CourierInvoiceStore {
@@ -206,6 +215,80 @@ function getInvoiceOrThrow(store: CourierInvoiceStore, invoiceId: string) {
   return invoice;
 }
 
+function getInvoicePayableItems(
+  invoice: CourierInvoice,
+  selectedGuideIds?: Set<string>,
+  selectedChargeIds?: Set<string>
+) {
+  const items: CourierPayableItem[] = [];
+  invoice.guides.forEach((guide, index) => {
+    if (selectedGuideIds && !selectedGuideIds.has(guide.id)) return;
+    const pendingUsd = roundUsd(guide.amountUsd - getGuidePaidUsd(invoice, guide.id));
+    if (pendingUsd <= 0) return;
+    items.push({
+      invoiceId: invoice.id,
+      invoiceDate: invoice.invoiceDate,
+      invoiceCreatedAtIso: invoice.createdAtIso,
+      itemId: guide.id,
+      itemType: "guide",
+      itemOrder: index,
+      pendingUsd,
+    });
+  });
+  invoice.charges.forEach((charge, index) => {
+    if (selectedChargeIds && !selectedChargeIds.has(charge.id)) return;
+    const pendingUsd = roundUsd(charge.amountUsd - getChargePaidUsd(invoice, charge.id));
+    if (pendingUsd <= 0) return;
+    items.push({
+      invoiceId: invoice.id,
+      invoiceDate: invoice.invoiceDate,
+      invoiceCreatedAtIso: invoice.createdAtIso,
+      itemId: charge.id,
+      itemType: "charge",
+      itemOrder: invoice.guides.length + index,
+      pendingUsd,
+    });
+  });
+  return items;
+}
+
+function normalizePaymentAmounts(input: {
+  paymentCurrency: RegisterCourierPaymentInput["paymentCurrency"];
+  amount: number;
+  exchangeRateCop: number;
+}) {
+  try {
+    return convertCourierPayment(input.paymentCurrency, input.amount, input.exchangeRateCop);
+  } catch (error) {
+    throw new CourierInvoiceStoreError(
+      error instanceof Error ? error.message : "Revisa los valores del abono."
+    );
+  }
+}
+
+function distributePayment(
+  items: CourierPayableItem[],
+  amountUsd: number,
+  overpaymentMessage: string
+) {
+  try {
+    return allocateCourierPayment(items, amountUsd);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No pudimos distribuir el abono.";
+    throw new CourierInvoiceStoreError(
+      message === "El abono supera el saldo total pendiente." ? overpaymentMessage : message
+    );
+  }
+}
+
+function toStoredAllocations(allocations: CourierPaymentAllocationResult[]) {
+  return allocations.map((allocation) =>
+    allocation.itemType === "guide"
+      ? { guideId: allocation.itemId, amountUsd: allocation.amountUsd }
+      : { chargeId: allocation.itemId, amountUsd: allocation.amountUsd }
+  );
+}
+
 export async function getCourierInvoiceSnapshot() {
   return cloneValue(buildSnapshot(await ensureStore()));
 }
@@ -317,54 +400,112 @@ export async function registerCourierPayment(
 ) {
   return withMutation((store) => {
     const invoice = getInvoiceOrThrow(store, invoiceId);
-    const guideIds = [...new Set(input.guideIds)];
-    const chargeIds = [...new Set(input.chargeIds)];
-    if (!guideIds.length && !chargeIds.length) {
+    const guideIds = new Set(input.guideIds);
+    const chargeIds = new Set(input.chargeIds);
+    if (!guideIds.size && !chargeIds.size) {
       throw new CourierInvoiceStoreError("Selecciona al menos una guia o cargo por pagar.");
     }
-    const allocations = [];
-    for (const guideId of guideIds) {
-      const guide = invoice.guides.find((candidate) => candidate.id === guideId);
-      if (!guide) {
-        throw new CourierInvoiceStoreError("Una de las guias seleccionadas no pertenece a la factura.");
-      }
-      const pendingUsd = roundMoney(guide.amountUsd - getGuidePaidUsd(invoice, guideId));
-      if (pendingUsd <= 0) {
-        throw new CourierInvoiceStoreError(`La guia ${guide.guideNumber} ya esta pagada.`);
-      }
-      allocations.push({ guideId, amountUsd: pendingUsd });
+    if ([...guideIds].some((id) => !invoice.guides.some((guide) => guide.id === id))) {
+      throw new CourierInvoiceStoreError("Una de las guias seleccionadas no pertenece a la factura.");
     }
-    for (const chargeId of chargeIds) {
-      const charge = invoice.charges.find((candidate) => candidate.id === chargeId);
-      if (!charge) {
-        throw new CourierInvoiceStoreError("Uno de los cargos seleccionados no pertenece a la factura.");
-      }
-      const pendingUsd = roundMoney(charge.amountUsd - getChargePaidUsd(invoice, chargeId));
-      if (pendingUsd <= 0) {
-        throw new CourierInvoiceStoreError(`El cargo ${charge.description} ya esta pagado.`);
-      }
-      allocations.push({ chargeId, amountUsd: pendingUsd });
+    if ([...chargeIds].some((id) => !invoice.charges.some((charge) => charge.id === id))) {
+      throw new CourierInvoiceStoreError("Uno de los cargos seleccionados no pertenece a la factura.");
     }
-    const amountUsd = roundMoney(allocations.reduce((sum, allocation) => sum + allocation.amountUsd, 0));
-    const amountCop = Math.round(normalizeMoney(input.amountCop, "El valor pagado en COP"));
+    const payables = getInvoicePayableItems(invoice, guideIds, chargeIds);
+    if (!payables.length) {
+      throw new CourierInvoiceStoreError("Los elementos seleccionados ya estan pagados.");
+    }
+    const amounts = normalizePaymentAmounts(input);
+    const distributed = distributePayment(
+      payables,
+      amounts.amountUsd,
+      "El abono supera el saldo pendiente de los elementos seleccionados."
+    );
     const method = input.method.trim();
     if (method.length < 2) {
       throw new CourierInvoiceStoreError("Escribe el metodo de pago.");
     }
     const payment = {
       id: `courier-payment-${randomUUID()}`,
-      amountUsd,
-      amountCop,
-      exchangeRateCop: roundMoney(amountCop / amountUsd),
+      amountUsd: amounts.amountUsd,
+      amountCop: amounts.amountCop,
+      exchangeRateCop: amounts.exchangeRateCop,
+      paymentCurrency: input.paymentCurrency,
+      sourceAmount: roundMoney(input.amount),
       paymentDate: normalizeDate(input.paymentDate, "el pago"),
       method,
       reference: input.reference?.trim() || undefined,
-      allocations,
+      allocations: toStoredAllocations(distributed),
       createdAtIso: new Date().toISOString(),
     };
     invoice.payments.push(payment);
     invoice.updatedAtIso = new Date().toISOString();
     return cloneValue(invoice);
+  });
+}
+
+export async function registerGeneralCourierPayment(
+  input: RegisterGeneralCourierPaymentInput
+): Promise<GeneralCourierPaymentResult> {
+  return withMutation((store) => {
+    const payables = store.invoices.flatMap((invoice) => getInvoicePayableItems(invoice));
+    if (!payables.length) {
+      throw new CourierInvoiceStoreError("No hay cajas ni cargos pendientes de pago.");
+    }
+    const amounts = normalizePaymentAmounts(input);
+    const distributed = distributePayment(
+      payables,
+      amounts.amountUsd,
+      "El abono supera el saldo total pendiente de las cajas."
+    );
+    const method = input.method.trim();
+    if (method.length < 2) {
+      throw new CourierInvoiceStoreError("Escribe el metodo de pago.");
+    }
+    const paymentDate = normalizeDate(input.paymentDate, "el pago");
+    const batchId = `courier-payment-batch-${randomUUID()}`;
+    const allocationsByInvoice = new Map<string, CourierPaymentAllocationResult[]>();
+    distributed.forEach((allocation) => {
+      const current = allocationsByInvoice.get(allocation.invoiceId) ?? [];
+      current.push(allocation);
+      allocationsByInvoice.set(allocation.invoiceId, current);
+    });
+
+    const groups = [...allocationsByInvoice.entries()];
+    let assignedCop = 0;
+    groups.forEach(([invoiceId, allocations], index) => {
+      const invoice = getInvoiceOrThrow(store, invoiceId);
+      const amountUsd = roundUsd(
+        allocations.reduce((total, allocation) => total + allocation.amountUsd, 0)
+      );
+      const amountCop =
+        index === groups.length - 1
+          ? amounts.amountCop - assignedCop
+          : Math.round((amountUsd / amounts.amountUsd) * amounts.amountCop);
+      assignedCop += amountCop;
+      invoice.payments.push({
+        id: `courier-payment-${randomUUID()}`,
+        batchId,
+        amountUsd,
+        amountCop,
+        exchangeRateCop: roundMoney(amountCop / amountUsd),
+        paymentCurrency: input.paymentCurrency,
+        sourceAmount: input.paymentCurrency === "USD" ? amountUsd : amountCop,
+        paymentDate,
+        method,
+        reference: input.reference?.trim() || undefined,
+        allocations: toStoredAllocations(allocations),
+        createdAtIso: new Date().toISOString(),
+      });
+      invoice.updatedAtIso = new Date().toISOString();
+    });
+
+    return cloneValue({
+      amountUsd: amounts.amountUsd,
+      amountCop: amounts.amountCop,
+      allocatedItems: distributed.length,
+      affectedInvoices: groups.length,
+    });
   });
 }
 

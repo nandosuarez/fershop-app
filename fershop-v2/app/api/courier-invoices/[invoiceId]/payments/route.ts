@@ -17,7 +17,9 @@ export async function POST(
     const invoice = await registerCourierPayment(invoiceId, {
       guideIds: Array.isArray(payload.guideIds) ? payload.guideIds : [],
       chargeIds: Array.isArray(payload.chargeIds) ? payload.chargeIds : [],
-      amountCop: Number(payload.amountCop ?? 0),
+      paymentCurrency: payload.paymentCurrency === "USD" ? "USD" : "COP",
+      amount: Number(payload.amount ?? 0),
+      exchangeRateCop: Number(payload.exchangeRateCop ?? 0),
       paymentDate: payload.paymentDate ?? "",
       method: payload.method ?? "",
       reference: payload.reference,

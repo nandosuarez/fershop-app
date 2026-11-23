@@ -5,6 +5,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { FormattedNumberInput } from "@/components/formatted-number-input";
 import { ListSearch } from "@/components/list-search";
 import { formatCop } from "@/lib/commerce";
+import {
+  allocateCourierPayment,
+  convertCourierPayment,
+  roundUsd,
+  type CourierPayableItem,
+} from "@/lib/courier-payment";
 import { matchesSearch } from "@/lib/search";
 import type {
   CourierCharge,
@@ -12,6 +18,8 @@ import type {
   CourierInvoice,
   CourierInvoicePreview,
   CourierInvoiceSnapshot,
+  CourierPaymentCurrency,
+  GeneralCourierPaymentResult,
 } from "@/lib/types";
 
 interface CourierInvoicesWorkbenchProps {
@@ -97,6 +105,51 @@ function getCalculatedPreviewTotal(preview: CourierInvoicePreview) {
   );
 }
 
+function getPendingPayables(invoice: CourierInvoice) {
+  const items: CourierPayableItem[] = [];
+  invoice.guides.forEach((guide, index) => {
+    const pendingUsd = roundUsd(guide.amountUsd - getGuidePaidUsd(invoice, guide.id));
+    if (pendingUsd > 0) {
+      items.push({
+        invoiceId: invoice.id,
+        invoiceDate: invoice.invoiceDate,
+        invoiceCreatedAtIso: invoice.createdAtIso,
+        itemId: guide.id,
+        itemType: "guide",
+        itemOrder: index,
+        pendingUsd,
+      });
+    }
+  });
+  invoice.charges.forEach((charge, index) => {
+    const pendingUsd = roundUsd(charge.amountUsd - getChargePaidUsd(invoice, charge.id));
+    if (pendingUsd > 0) {
+      items.push({
+        invoiceId: invoice.id,
+        invoiceDate: invoice.invoiceDate,
+        invoiceCreatedAtIso: invoice.createdAtIso,
+        itemId: charge.id,
+        itemType: "charge",
+        itemOrder: invoice.guides.length + index,
+        pendingUsd,
+      });
+    }
+  });
+  return items;
+}
+
+function tryConvertPayment(
+  currency: CourierPaymentCurrency,
+  amount: number,
+  exchangeRateCop: number
+) {
+  try {
+    return convertCourierPayment(currency, amount, exchangeRateCop);
+  } catch {
+    return null;
+  }
+}
+
 export function CourierInvoicesWorkbench({
   initialSnapshot,
   initialInvoiceId,
@@ -121,11 +174,23 @@ export function CourierInvoicesWorkbench({
   const [detailAction, setDetailAction] = useState<DetailAction>(null);
   const [actionDate, setActionDate] = useState(getTodayInColombia);
   const [actionNote, setActionNote] = useState("");
-  const [paymentCop, setPaymentCop] = useState(0);
+  const [paymentCurrency, setPaymentCurrency] = useState<CourierPaymentCurrency>("COP");
+  const [paymentAmount, setPaymentAmount] = useState(0);
+  const [paymentExchangeRate, setPaymentExchangeRate] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState("Zelle");
   const [paymentReference, setPaymentReference] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [isGeneralPaymentOpen, setIsGeneralPaymentOpen] = useState(false);
+  const [generalPaymentCurrency, setGeneralPaymentCurrency] =
+    useState<CourierPaymentCurrency>("COP");
+  const [generalPaymentAmount, setGeneralPaymentAmount] = useState(0);
+  const [generalPaymentExchangeRate, setGeneralPaymentExchangeRate] = useState(0);
+  const [generalPaymentDate, setGeneralPaymentDate] = useState(getTodayInColombia);
+  const [generalPaymentMethod, setGeneralPaymentMethod] = useState("Transferencia");
+  const [generalPaymentReference, setGeneralPaymentReference] = useState("");
+  const [generalPaymentError, setGeneralPaymentError] = useState<string | null>(null);
+  const [isGeneralPaymentSaving, setIsGeneralPaymentSaving] = useState(false);
   const detailActionRef = useRef<HTMLDivElement>(null);
 
   const selectedInvoice = useMemo(
@@ -190,6 +255,28 @@ export function CourierInvoicesWorkbench({
           getChargePaidUsd(selectedInvoice, charge.id) < charge.amountUsd - 0.02
       ).length
     : 0;
+  const selectedPaymentAmounts = tryConvertPayment(
+    paymentCurrency,
+    paymentAmount,
+    paymentExchangeRate
+  );
+  const allPendingPayables = useMemo(
+    () => snapshot.invoices.flatMap((invoice) => getPendingPayables(invoice)),
+    [snapshot.invoices]
+  );
+  const generalPaymentAmounts = tryConvertPayment(
+    generalPaymentCurrency,
+    generalPaymentAmount,
+    generalPaymentExchangeRate
+  );
+  const generalPaymentAllocations = useMemo(() => {
+    if (!generalPaymentAmounts) return [];
+    try {
+      return allocateCourierPayment(allPendingPayables, generalPaymentAmounts.amountUsd);
+    } catch {
+      return [];
+    }
+  }, [allPendingPayables, generalPaymentAmounts]);
 
   useEffect(() => {
     if (detailAction) {
@@ -220,7 +307,8 @@ export function CourierInvoicesWorkbench({
     setDetailError(null);
     setActionDate(getTodayInColombia());
     setActionNote("");
-    setPaymentCop(0);
+    setPaymentAmount(0);
+    setPaymentExchangeRate(0);
     setPaymentReference("");
   }
 
@@ -333,7 +421,8 @@ export function CourierInvoicesWorkbench({
       setDetailError("Selecciona cajas o cargos pendientes de pago.");
       return;
     }
-    setPaymentCop(0);
+    setPaymentAmount(0);
+    setPaymentExchangeRate(0);
     setDetailAction("payment");
     setDetailError(null);
   }
@@ -358,7 +447,8 @@ export function CourierInvoicesWorkbench({
         .filter((charge) => getChargePaidUsd(selectedInvoice, charge.id) < charge.amountUsd - 0.02)
         .map((charge) => charge.id)
     );
-    setPaymentCop(0);
+    setPaymentAmount(0);
+    setPaymentExchangeRate(0);
     setDetailAction("payment");
     setDetailError(null);
   }
@@ -414,8 +504,12 @@ export function CourierInvoicesWorkbench({
       setDetailError("Selecciona guias o cargos pendientes de pago.");
       return;
     }
-    if (paymentCop <= 0) {
-      setDetailError("Escribe el valor real pagado en pesos colombianos.");
+    if (!selectedPaymentAmounts) {
+      setDetailError("Escribe el valor del abono y una tasa valida.");
+      return;
+    }
+    if (selectedPaymentAmounts.amountUsd > selectedPaymentUsd + 0.001) {
+      setDetailError("El abono supera el saldo pendiente de los elementos seleccionados.");
       return;
     }
     setIsUpdating(true);
@@ -427,7 +521,9 @@ export function CourierInvoicesWorkbench({
         body: JSON.stringify({
           guideIds,
           chargeIds,
-          amountCop: paymentCop,
+          paymentCurrency,
+          amount: paymentAmount,
+          exchangeRateCop: paymentExchangeRate,
           paymentDate: actionDate,
           method: paymentMethod,
           reference: paymentReference,
@@ -438,16 +534,80 @@ export function CourierInvoicesWorkbench({
         throw new Error(payload.message || "No pudimos registrar el pago.");
       }
       setSnapshot(payload.snapshot);
-      setFeedback(`Pago de ${formatUsd.format(selectedPaymentUsd)} registrado y descontado del fondo de envios.`);
+      setFeedback(
+        `Abono de ${formatUsd.format(selectedPaymentAmounts.amountUsd)} registrado y distribuido en lo seleccionado.`
+      );
       setSelectedGuideIds([]);
       setSelectedChargeIds([]);
       setDetailAction(null);
-      setPaymentCop(0);
+      setPaymentAmount(0);
+      setPaymentExchangeRate(0);
       setPaymentReference("");
     } catch (error) {
       setDetailError(error instanceof Error ? error.message : "No pudimos registrar el pago.");
     } finally {
       setIsUpdating(false);
+    }
+  }
+
+  function openGeneralPayment() {
+    setGeneralPaymentCurrency("COP");
+    setGeneralPaymentAmount(0);
+    setGeneralPaymentExchangeRate(0);
+    setGeneralPaymentDate(getTodayInColombia());
+    setGeneralPaymentMethod("Transferencia");
+    setGeneralPaymentReference("");
+    setGeneralPaymentError(null);
+    setIsGeneralPaymentOpen(true);
+  }
+
+  async function submitGeneralPayment() {
+    if (!generalPaymentAmounts) {
+      setGeneralPaymentError("Escribe el valor del abono y una tasa valida.");
+      return;
+    }
+    if (generalPaymentAmounts.amountUsd > snapshot.metrics.pendingPaymentUsd + 0.001) {
+      setGeneralPaymentError("El abono supera el saldo total pendiente de las cajas.");
+      return;
+    }
+    if (!generalPaymentAllocations.length) {
+      setGeneralPaymentError("No encontramos saldos para distribuir este abono.");
+      return;
+    }
+    setIsGeneralPaymentSaving(true);
+    setGeneralPaymentError(null);
+    try {
+      const response = await fetch("/api/courier-invoices/payments/general", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          paymentCurrency: generalPaymentCurrency,
+          amount: generalPaymentAmount,
+          exchangeRateCop: generalPaymentExchangeRate,
+          paymentDate: generalPaymentDate,
+          method: generalPaymentMethod,
+          reference: generalPaymentReference,
+        }),
+      });
+      const payload = (await response.json()) as {
+        snapshot?: CourierInvoiceSnapshot;
+        result?: GeneralCourierPaymentResult;
+        message?: string;
+      };
+      if (!response.ok || !payload.snapshot || !payload.result) {
+        throw new Error(payload.message || "No pudimos registrar el abono general.");
+      }
+      setSnapshot(payload.snapshot);
+      setFeedback(
+        `Abono general de ${formatUsd.format(payload.result.amountUsd)} distribuido en ${payload.result.allocatedItems} caja${payload.result.allocatedItems === 1 ? "" : "s"} o cargo${payload.result.allocatedItems === 1 ? "" : "s"}.`
+      );
+      setIsGeneralPaymentOpen(false);
+    } catch (error) {
+      setGeneralPaymentError(
+        error instanceof Error ? error.message : "No pudimos registrar el abono general."
+      );
+    } finally {
+      setIsGeneralPaymentSaving(false);
     }
   }
 
@@ -459,16 +619,26 @@ export function CourierInvoicesWorkbench({
             <p className="ops-kicker">Logistica internacional</p>
             <h1>Cajas / Courier</h1>
           </div>
-          <button
-            type="button"
-            className="ops-button ops-button--primary"
-            onClick={() => {
-              resetImport();
-              setIsImportOpen(true);
-            }}
-          >
-            <span aria-hidden="true">+</span> Importar factura PDF
-          </button>
+          <div className="courier-header-actions">
+            <button
+              type="button"
+              className="ops-button"
+              disabled={snapshot.metrics.pendingPaymentUsd <= 0}
+              onClick={openGeneralPayment}
+            >
+              Abono general
+            </button>
+            <button
+              type="button"
+              className="ops-button ops-button--primary"
+              onClick={() => {
+                resetImport();
+                setIsImportOpen(true);
+              }}
+            >
+              <span aria-hidden="true">+</span> Importar factura PDF
+            </button>
+          </div>
         </div>
 
         {feedback ? <p className="ops-success-notice" role="status">{feedback}</p> : null}
@@ -625,6 +795,201 @@ export function CourierInvoicesWorkbench({
         </div>
       ) : null}
 
+      {isGeneralPaymentOpen ? (
+        <div className="order-modal-backdrop courier-modal-backdrop" role="presentation">
+          <form
+            className="order-modal courier-general-payment-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="courier-general-payment-title"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitGeneralPayment();
+            }}
+          >
+            <div className="order-modal__header">
+              <div>
+                <p className="ops-kicker">Distribucion automatica</p>
+                <h2 id="courier-general-payment-title">Registrar abono general</h2>
+                <small>Se aplicara desde la factura mas antigua, sin importar si la caja ya fue recibida.</small>
+              </div>
+              <button
+                type="button"
+                aria-label="Cerrar"
+                disabled={isGeneralPaymentSaving}
+                onClick={() => setIsGeneralPaymentOpen(false)}
+              >
+                &times;
+              </button>
+            </div>
+            <div className="courier-general-payment-body">
+              <div className="courier-general-payment-summary">
+                <div>
+                  <span>Saldo total pendiente</span>
+                  <strong>{formatUsd.format(snapshot.metrics.pendingPaymentUsd)}</strong>
+                </div>
+                <small>{allPendingPayables.length} cajas o cargos con saldo</small>
+              </div>
+
+              <div className="courier-general-payment-fields">
+                <label>
+                  <span>Moneda del pago</span>
+                  <select
+                    value={generalPaymentCurrency}
+                    onChange={(event) => {
+                      setGeneralPaymentCurrency(event.target.value as CourierPaymentCurrency);
+                      setGeneralPaymentAmount(0);
+                      setGeneralPaymentError(null);
+                    }}
+                  >
+                    <option value="COP">Pesos colombianos</option>
+                    <option value="USD">Dolares</option>
+                  </select>
+                </label>
+                <label>
+                  <span>
+                    {generalPaymentCurrency === "USD" ? "Valor abonado en USD" : "Valor abonado en COP"}
+                  </span>
+                  <span className="product-money-input">
+                    <span>{generalPaymentCurrency === "USD" ? "US$" : "$"}</span>
+                    <FormattedNumberInput
+                      min={generalPaymentCurrency === "USD" ? 0.01 : 1}
+                      maxFractionDigits={generalPaymentCurrency === "USD" ? 2 : 0}
+                      value={generalPaymentAmount}
+                      onValueChange={(value) => {
+                        setGeneralPaymentAmount(value);
+                        setGeneralPaymentError(null);
+                      }}
+                    />
+                  </span>
+                </label>
+                <label>
+                  <span>Tasa COP por USD</span>
+                  <span className="product-money-input">
+                    <span>$</span>
+                    <FormattedNumberInput
+                      min={1}
+                      maxFractionDigits={2}
+                      value={generalPaymentExchangeRate}
+                      onValueChange={(value) => {
+                        setGeneralPaymentExchangeRate(value);
+                        setGeneralPaymentError(null);
+                      }}
+                    />
+                  </span>
+                </label>
+                <label>
+                  <span>Fecha de pago</span>
+                  <input
+                    type="date"
+                    value={generalPaymentDate}
+                    onChange={(event) => setGeneralPaymentDate(event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>Metodo</span>
+                  <input
+                    list="courier-general-payment-methods"
+                    value={generalPaymentMethod}
+                    onChange={(event) => setGeneralPaymentMethod(event.target.value)}
+                  />
+                  <datalist id="courier-general-payment-methods">
+                    <option value="Zelle" />
+                    <option value="Bancolombia" />
+                    <option value="Transferencia" />
+                    <option value="Efectivo" />
+                  </datalist>
+                </label>
+                <label>
+                  <span>Referencia opcional</span>
+                  <input
+                    value={generalPaymentReference}
+                    onChange={(event) => setGeneralPaymentReference(event.target.value)}
+                  />
+                </label>
+              </div>
+
+              <div className="courier-general-conversion">
+                <span>Este abono representa</span>
+                <strong>{formatUsd.format(generalPaymentAmounts?.amountUsd ?? 0)}</strong>
+                <small>{formatCop(generalPaymentAmounts?.amountCop ?? 0)}</small>
+              </div>
+
+              <section className="courier-general-preview">
+                <div className="courier-preview-section__title">
+                  <strong>Vista previa de la distribucion</strong>
+                  <span>
+                    {generalPaymentAllocations.length} caja
+                    {generalPaymentAllocations.length === 1 ? "" : "s"} o cargo
+                    {generalPaymentAllocations.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <div className="courier-general-preview-list">
+                  {generalPaymentAllocations.length ? (
+                    generalPaymentAllocations.map((allocation, index) => {
+                      const invoice = snapshot.invoices.find(
+                        (candidate) => candidate.id === allocation.invoiceId
+                      );
+                      const guide = invoice?.guides.find(
+                        (candidate) => candidate.id === allocation.itemId
+                      );
+                      const charge = invoice?.charges.find(
+                        (candidate) => candidate.id === allocation.itemId
+                      );
+                      return (
+                        <div key={`${allocation.invoiceId}-${allocation.itemId}`}>
+                          <span className="courier-general-preview-index">{index + 1}</span>
+                          <div>
+                            <strong>{guide?.guideNumber ?? charge?.description ?? "Cargo"}</strong>
+                            <small>
+                              Factura #{invoice?.invoiceNumber ?? "-"} · {formatDate(allocation.invoiceDate)}
+                              {guide?.receivedAtIso ? " · Recibida" : guide ? " · Sin recibir" : ""}
+                            </small>
+                          </div>
+                          <div>
+                            <span>Se aplica</span>
+                            <strong>{formatUsd.format(allocation.amountUsd)}</strong>
+                          </div>
+                          <div>
+                            <span>Queda</span>
+                            <strong>{formatUsd.format(roundUsd(allocation.pendingUsd - allocation.amountUsd))}</strong>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p>Escribe el valor y la tasa para ver como se distribuira el abono.</p>
+                  )}
+                </div>
+              </section>
+              {generalPaymentError ? (
+                <p className="order-form-error" role="alert">{generalPaymentError}</p>
+              ) : null}
+            </div>
+            <div className="order-modal__footer">
+              <span>La distribucion puede dejar una caja parcialmente pagada.</span>
+              <div>
+                <button
+                  type="button"
+                  className="ops-button"
+                  disabled={isGeneralPaymentSaving}
+                  onClick={() => setIsGeneralPaymentOpen(false)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="ops-button ops-button--primary"
+                  disabled={isGeneralPaymentSaving || !generalPaymentAllocations.length}
+                >
+                  {isGeneralPaymentSaving ? "Distribuyendo..." : "Registrar y distribuir"}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
       {selectedInvoice ? (
         <div className="order-modal-backdrop courier-modal-backdrop" role="presentation">
           <section className="order-modal courier-detail-modal" role="dialog" aria-modal="true" aria-labelledby="courier-detail-title">
@@ -678,18 +1043,65 @@ export function CourierInvoicesWorkbench({
               ) : null}
               {detailAction === "payment" ? (
                 <div className="courier-action-panel courier-payment-panel" ref={detailActionRef}>
-                  <div className="courier-payment-total"><span>Valor seleccionado</span><strong>{formatUsd.format(selectedPaymentUsd)}</strong></div>
+                  <div className="courier-payment-total"><span>Saldo seleccionado</span><strong>{formatUsd.format(selectedPaymentUsd)}</strong></div>
+                  <label>
+                    <span>Moneda</span>
+                    <select
+                      value={paymentCurrency}
+                      onChange={(event) => {
+                        setPaymentCurrency(event.target.value as CourierPaymentCurrency);
+                        setPaymentAmount(0);
+                        setDetailError(null);
+                      }}
+                    >
+                      <option value="COP">Pesos colombianos</option>
+                      <option value="USD">Dolares</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>{paymentCurrency === "USD" ? "Valor abonado en USD" : "Valor abonado en COP"}</span>
+                    <span className="product-money-input">
+                      <span>{paymentCurrency === "USD" ? "US$" : "$"}</span>
+                      <FormattedNumberInput
+                        min={paymentCurrency === "USD" ? 0.01 : 1}
+                        maxFractionDigits={paymentCurrency === "USD" ? 2 : 0}
+                        value={paymentAmount}
+                        onValueChange={(value) => {
+                          setPaymentAmount(value);
+                          setDetailError(null);
+                        }}
+                      />
+                    </span>
+                  </label>
+                  <label>
+                    <span>Tasa COP por USD</span>
+                    <span className="product-money-input">
+                      <span>$</span>
+                      <FormattedNumberInput
+                        min={1}
+                        maxFractionDigits={2}
+                        value={paymentExchangeRate}
+                        onValueChange={(value) => {
+                          setPaymentExchangeRate(value);
+                          setDetailError(null);
+                        }}
+                      />
+                    </span>
+                  </label>
                   <label><span>Fecha de pago</span><input type="date" value={actionDate} onChange={(event) => setActionDate(event.target.value)} /></label>
                   <label><span>Metodo</span><input list="courier-payment-methods" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} /><datalist id="courier-payment-methods"><option value="Zelle" /><option value="Bancolombia" /><option value="Transferencia" /><option value="Efectivo" /></datalist></label>
-                  <label><span>Valor real pagado en COP</span><span className="product-money-input"><span>$</span><FormattedNumberInput min={1} value={paymentCop} onValueChange={setPaymentCop} /></span></label>
                   <label><span>Referencia opcional</span><input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} /></label>
-                  <div className="courier-derived-rate"><span>Tasa efectiva</span><strong>{selectedPaymentUsd > 0 && paymentCop > 0 ? formatCop(Math.round(paymentCop / selectedPaymentUsd)) : "$ 0"} por USD</strong></div>
-                  <button type="button" className="ops-button ops-button--primary" disabled={isUpdating} onClick={() => void submitPayment()}>{isUpdating ? "Guardando..." : "Registrar pago"}</button>
+                  <div className="courier-derived-rate">
+                    <span>Se aplicara</span>
+                    <strong>{formatUsd.format(selectedPaymentAmounts?.amountUsd ?? 0)}</strong>
+                    <small>{formatCop(selectedPaymentAmounts?.amountCop ?? 0)}</small>
+                  </div>
+                  <button type="button" className="ops-button ops-button--primary" disabled={isUpdating || !selectedPaymentAmounts} onClick={() => void submitPayment()}>{isUpdating ? "Guardando..." : "Registrar abono"}</button>
                 </div>
               ) : null}
               {detailError ? <p className="order-form-error" role="alert">{detailError}</p> : null}
               {selectedInvoice.payments.length ? (
-                <div className="courier-payment-history"><div className="courier-preview-section__title"><strong>Pagos registrados</strong></div>{[...selectedInvoice.payments].reverse().map((payment) => <div key={payment.id}><span>{formatDate(payment.paymentDate)} · {payment.method}{payment.reference ? ` · ${payment.reference}` : ""}</span><strong>{formatUsd.format(payment.amountUsd)} / {formatCop(payment.amountCop)}</strong><small>TRM efectiva {formatCop(Math.round(payment.exchangeRateCop))}</small></div>)}</div>
+                <div className="courier-payment-history"><div className="courier-preview-section__title"><strong>Pagos registrados</strong></div>{[...selectedInvoice.payments].reverse().map((payment) => <div key={payment.id}><span>{formatDate(payment.paymentDate)} · {payment.method}{payment.reference ? ` · ${payment.reference}` : ""}{payment.batchId ? " · Abono general" : ""}</span><strong>{formatUsd.format(payment.amountUsd)} / {formatCop(payment.amountCop)}</strong><small>TRM efectiva {formatCop(Math.round(payment.exchangeRateCop))}{payment.paymentCurrency ? ` · Pagado en ${payment.paymentCurrency}` : ""}</small></div>)}</div>
               ) : null}
             </div>
             <div className="order-modal__footer">

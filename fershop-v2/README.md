@@ -53,5 +53,5 @@ Los archivos reales de `data/` no se publican porque contienen informacion priva
 
 ## Respaldos
 
-- En la app: `Usuarios > Descargar backup` exporta documentos, usuarios sin hashes de clave e imagenes.
+- En la app: `Usuarios > Descargar copia local` genera para administradores un archivo `.json.gz` con documentos, usuarios sin hashes de clave, imagenes y adjuntos. La respuesta consulta y comprime cada elemento de forma incremental para evitar picos de memoria.
 - En Render: una base PostgreSQL pagada incluye recuperacion a un punto en el tiempo y exportaciones logicas bajo demanda.

@@ -33,6 +33,7 @@ export type ExpenseCategory =
 export type ExpensePaymentSource = "shipping_fund" | "general";
 export type CourierReceiptStatus = "pending" | "received";
 export type CourierPaymentStatus = "pending" | "paid";
+export type CourierPaymentCurrency = "USD" | "COP";
 
 export interface Product {
   id: string;
@@ -267,6 +268,9 @@ export interface CourierPayment {
   amountUsd: number;
   amountCop: number;
   exchangeRateCop: number;
+  paymentCurrency?: CourierPaymentCurrency;
+  sourceAmount?: number;
+  batchId?: string;
   paymentDate: string;
   method: string;
   reference?: string;
@@ -352,10 +356,28 @@ export interface MarkCourierGuidesReceivedInput {
 export interface RegisterCourierPaymentInput {
   guideIds: string[];
   chargeIds: string[];
-  amountCop: number;
+  paymentCurrency: CourierPaymentCurrency;
+  amount: number;
+  exchangeRateCop: number;
   paymentDate: string;
   method: string;
   reference?: string;
+}
+
+export interface RegisterGeneralCourierPaymentInput {
+  paymentCurrency: CourierPaymentCurrency;
+  amount: number;
+  exchangeRateCop: number;
+  paymentDate: string;
+  method: string;
+  reference?: string;
+}
+
+export interface GeneralCourierPaymentResult {
+  amountUsd: number;
+  amountCop: number;
+  allocatedItems: number;
+  affectedInvoices: number;
 }
 
 export interface OrderItem {

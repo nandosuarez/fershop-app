@@ -4286,6 +4286,12 @@
 }
 
 /* Courier invoices and international boxes */
+.courier-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
 .courier-summary-grid {
   margin-bottom: 18px;
   display: grid;
@@ -4381,7 +4387,8 @@
 }
 
 .courier-import-modal,
-.courier-detail-modal {
+.courier-detail-modal,
+.courier-general-payment-modal {
   width: min(1120px, 100%);
   min-width: 0;
   max-height: calc(100vh - 44px);
@@ -4394,14 +4401,16 @@
 }
 
 .courier-import-modal .order-modal__header > div,
-.courier-detail-modal .order-modal__header > div {
+.courier-detail-modal .order-modal__header > div,
+.courier-general-payment-modal .order-modal__header > div {
   min-width: 0;
   display: grid;
   gap: 2px;
 }
 
 .courier-import-modal .order-modal__header small,
-.courier-detail-modal .order-modal__header small {
+.courier-detail-modal .order-modal__header small,
+.courier-general-payment-modal .order-modal__header small {
   overflow: hidden;
   color: var(--ops-muted);
   font-size: 0.72rem;
@@ -4410,7 +4419,8 @@
 }
 
 .courier-import-body,
-.courier-detail-body {
+.courier-detail-body,
+.courier-general-payment-body {
   width: 100%;
   min-width: 0;
   min-height: 0;
@@ -4536,6 +4546,7 @@
 
 .courier-preview-fields input,
 .courier-action-panel input,
+.courier-action-panel select,
 .courier-charge-editor input,
 .courier-preview-totals input {
   width: 100%;
@@ -4837,7 +4848,7 @@
 }
 
 .courier-payment-panel {
-  grid-template-columns: 160px repeat(2, minmax(150px, 1fr));
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
 }
 
 .courier-payment-total,
@@ -4866,6 +4877,159 @@
   font-size: 0.76rem;
 }
 
+.courier-derived-rate small {
+  color: var(--ops-muted);
+  font-size: 0.68rem;
+}
+
+.courier-general-payment-modal {
+  width: min(960px, 100%);
+}
+
+.courier-general-payment-summary {
+  margin-bottom: 16px;
+  padding: 16px 18px;
+  border: 1px solid #d9d8d1;
+  border-radius: 12px;
+  background: linear-gradient(110deg, #f0eee7, #f5f6f1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.courier-general-payment-summary > div {
+  display: grid;
+  gap: 4px;
+}
+
+.courier-general-payment-summary span,
+.courier-general-payment-summary small {
+  color: var(--ops-muted);
+  font-size: 0.72rem;
+}
+
+.courier-general-payment-summary strong {
+  font-family: "Iowan Old Style", "Palatino Linotype", serif;
+  font-size: 1.65rem;
+  font-weight: 500;
+}
+
+.courier-general-payment-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.courier-general-payment-fields label {
+  display: grid;
+  gap: 6px;
+}
+
+.courier-general-payment-fields label > span:first-child {
+  color: var(--ops-muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.courier-general-payment-fields input,
+.courier-general-payment-fields select {
+  width: 100%;
+  height: 42px;
+  padding: 0 11px;
+  border: 1px solid #c5c4bd;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ops-ink);
+  font: inherit;
+}
+
+.courier-general-conversion {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border-left: 4px solid #272724;
+  border-radius: 8px;
+  background: #f3f1ea;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.courier-general-conversion span,
+.courier-general-conversion small {
+  color: var(--ops-muted);
+  font-size: 0.74rem;
+}
+
+.courier-general-conversion strong {
+  font-family: "Iowan Old Style", "Palatino Linotype", serif;
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+.courier-general-preview {
+  border: 1px solid var(--ops-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.courier-general-preview .courier-preview-section__title span {
+  color: var(--ops-muted);
+  font-size: 0.7rem;
+}
+
+.courier-general-preview-list {
+  max-height: 310px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.courier-general-preview-list > div {
+  min-height: 62px;
+  padding: 9px 13px;
+  border-top: 1px solid var(--ops-line);
+  display: grid;
+  grid-template-columns: 30px minmax(220px, 1fr) minmax(100px, auto) minmax(100px, auto);
+  align-items: center;
+  gap: 12px;
+}
+
+.courier-general-preview-list > div:first-child {
+  border-top: 0;
+}
+
+.courier-general-preview-list > p {
+  margin: 0;
+  padding: 24px;
+  color: var(--ops-muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.courier-general-preview-index {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #272724;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.courier-general-preview-list > div > div {
+  display: grid;
+  gap: 3px;
+}
+
+.courier-general-preview-list small,
+.courier-general-preview-list div > span {
+  color: var(--ops-muted);
+  font-size: 0.68rem;
+}
+
 .courier-payment-history > div:not(:first-child) {
   min-height: 56px;
   padding: 9px 13px;
@@ -4891,6 +5055,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .courier-general-payment-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .courier-action-panel,
   .courier-payment-panel {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4908,6 +5076,7 @@
 @media (max-width: 680px) {
   .courier-summary-grid,
   .courier-preview-fields,
+  .courier-general-payment-fields,
   .courier-action-panel,
   .courier-payment-panel {
     grid-template-columns: 1fr;
@@ -4933,7 +5102,8 @@
   }
 
   .courier-import-modal,
-  .courier-detail-modal {
+  .courier-detail-modal,
+  .courier-general-payment-modal {
     width: 100vw;
     max-width: 100vw;
   }
@@ -4979,6 +5149,26 @@
 
   .courier-detail-actions .ops-button {
     width: 100%;
+  }
+
+  .courier-header-actions {
+    width: 100%;
+    display: grid;
+  }
+
+  .courier-general-payment-summary,
+  .courier-general-conversion {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .courier-general-preview-list > div {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+  }
+
+  .courier-general-preview-list > div > div:last-child {
+    grid-column: 2 / -1;
   }
 
   .courier-extra-charges label {

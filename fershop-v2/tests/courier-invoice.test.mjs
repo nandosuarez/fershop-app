@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 
+import {
+  allocateCourierPayment,
+  convertCourierPayment,
+} from "../lib/courier-payment.ts";
 import { parseCourierInvoiceTextItems } from "../lib/courier-invoice-parser.ts";
 
 function item(text, x, y) {
@@ -42,4 +46,55 @@ assert.equal(preview.calculatedTotalUsd, 114.2);
 assert.equal(preview.declaredTotalUsd, 114.2);
 assert.deepEqual(preview.warnings, []);
 
-console.log("Courier invoice parser tests passed.");
+assert.deepEqual(convertCourierPayment("USD", 25, 4100), {
+  amountUsd: 25,
+  amountCop: 102500,
+  exchangeRateCop: 4100,
+});
+assert.deepEqual(convertCourierPayment("COP", 102500, 4100), {
+  amountUsd: 25,
+  amountCop: 102500,
+  exchangeRateCop: 4100,
+});
+
+const allocations = allocateCourierPayment(
+  [
+    {
+      invoiceId: "newer",
+      invoiceDate: "2026-11-20",
+      invoiceCreatedAtIso: "2026-11-20T12:00:00.000Z",
+      itemId: "guide-3",
+      itemType: "guide",
+      itemOrder: 0,
+      pendingUsd: 40,
+    },
+    {
+      invoiceId: "older",
+      invoiceDate: "2026-11-10",
+      invoiceCreatedAtIso: "2026-11-10T12:00:00.000Z",
+      itemId: "guide-1",
+      itemType: "guide",
+      itemOrder: 0,
+      pendingUsd: 30,
+    },
+    {
+      invoiceId: "older",
+      invoiceDate: "2026-11-10",
+      invoiceCreatedAtIso: "2026-11-10T12:00:00.000Z",
+      itemId: "guide-2",
+      itemType: "guide",
+      itemOrder: 1,
+      pendingUsd: 50,
+    },
+  ],
+  65
+);
+assert.deepEqual(
+  allocations.map(({ invoiceId, itemId, amountUsd }) => ({ invoiceId, itemId, amountUsd })),
+  [
+    { invoiceId: "older", itemId: "guide-1", amountUsd: 30 },
+    { invoiceId: "older", itemId: "guide-2", amountUsd: 35 },
+  ]
+);
+
+console.log("Courier invoice and payment tests passed.");
