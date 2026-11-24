@@ -16,7 +16,6 @@ import type {
   CartItem,
   Customer,
   DashboardOrder,
-  InventoryItem,
   OperationMutationResult,
   Product,
 } from "@/lib/types";
@@ -43,14 +42,14 @@ function getOrderDateValue(iso: string) {
 interface NewOrderWorkbenchProps {
   products: Product[];
   customers: Customer[];
-  inventoryItems: InventoryItem[];
+  inventoryAvailability: Array<{ productId: string; availableQuantity: number }>;
   initialOrder?: DashboardOrder;
 }
 
 export function NewOrderWorkbench({
   products,
   customers,
-  inventoryItems,
+  inventoryAvailability,
   initialOrder,
 }: NewOrderWorkbenchProps) {
   const router = useRouter();
@@ -123,8 +122,11 @@ export function NewOrderWorkbench({
   const [initialFiles, setInitialFiles] = useState<File[]>([]);
 
   const inventoryByProduct = useMemo(
-    () => new Map(inventoryItems.map((item) => [item.product.id, item.availableQuantity])),
-    [inventoryItems]
+    () =>
+      new Map(
+        inventoryAvailability.map((item) => [item.productId, item.availableQuantity])
+      ),
+    [inventoryAvailability]
   );
 
   function getAvailableQuantity(productId: string) {

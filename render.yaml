@@ -1,6 +1,6 @@
 databases:
   - name: fershop-postgres
-    plan: basic-256mb
+    plan: 0.5c-1g
     databaseName: fershop_app
 
 services:
@@ -26,7 +26,7 @@ services:
       - key: POSTGRES_SSL
         value: "false"
       - key: POSTGRES_POOL_MAX
-        value: "10"
+        value: "4"
       - key: SESSION_SECRET
         generateValue: true
       - key: SESSION_SECURE

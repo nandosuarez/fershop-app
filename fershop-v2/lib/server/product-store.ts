@@ -144,7 +144,7 @@ function setAutomaticInventoryMode(product: Product, tracksInventory: boolean) {
     : "Pago 50/50";
 }
 
-export async function getProducts(): Promise<Product[]> {
+export async function getProductsWithInventoryBalances() {
   const [store, balances, categories] = await Promise.all([
     ensureStore(),
     getInventoryBalances(),
@@ -153,7 +153,7 @@ export async function getProducts(): Promise<Product[]> {
   const categoryLabels = new Map(
     categories.map((category) => [category.id, category.label])
   );
-  return cloneValue(
+  const products = cloneValue(
     store.products.map((product) => {
       const normalizedProduct = cloneValue(product);
       normalizedProduct.categoryLabel =
@@ -165,6 +165,11 @@ export async function getProducts(): Promise<Product[]> {
       return normalizedProduct;
     })
   );
+  return { products, inventoryBalances: balances };
+}
+
+export async function getProducts(): Promise<Product[]> {
+  return (await getProductsWithInventoryBalances()).products;
 }
 
 export async function createProduct(input: CreateProductInput): Promise<Product> {
